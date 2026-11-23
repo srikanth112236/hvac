@@ -1,10 +1,9 @@
 import { expect, test } from '@playwright/test'
 
-const ORIGIN = 'http://127.0.0.1:5175'
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? 'admin@coolvane.example'
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'Coolvane!2026'
 
-test('lead → admin invoice → customer portal journey', async ({ page, browser, request }) => {
+test('lead → admin invoice → customer portal journey', async ({ page, browser }) => {
   const stamp = Date.now()
   const email = `journey-${stamp}@example.com`
   const password = 'JourneyPass123!'
@@ -39,6 +38,14 @@ test('lead → admin invoice → customer portal journey', async ({ page, browse
   await page.getByLabel('Line 1 unit price').fill('1250')
   await page.getByRole('button', { name: /^Create invoice$/i }).click()
   await expect(page).toHaveURL(/\/admin\/invoices\/[^/]+$/)
+  const invoiceRef =
+    (
+      await page
+        .getByText(/^INV-\d{4}-\d{4}$/)
+        .first()
+        .textContent()
+    )?.trim() ?? ''
+  expect(invoiceRef).toMatch(/^INV-\d{4}-\d{4}$/)
 
   // 3. Customer registers through the portal UI.
   const portalContext = await browser.newContext()
@@ -53,33 +60,18 @@ test('lead → admin invoice → customer portal journey', async ({ page, browse
   await portal.getByRole('button', { name: /Create my account/i }).click()
   await expect(portal.getByText(/Account created|Check your email/i)).toBeVisible()
 
-  // 4. Admin approval (API helper) then portal sign-in and invoice visibility.
-  await request.post('/api/v1/auth/login', {
-    headers: { Origin: ORIGIN },
-    data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
-  })
-  const customersResponse = await request.get('/api/v1/admin/customers')
-  const customer = (await customersResponse.json()).data.find(
-    (entry: { email: string }) => entry.email === email,
-  )
-  expect(customer).toBeTruthy()
-  await request.patch(`/api/v1/admin/customers/${customer.id}`, {
-    headers: { Origin: ORIGIN, 'X-Admin-Request': '1' },
-    data: { status: 'active' },
-  })
+  // 4. Approve the pending account in the admin UI, then sign in to the portal.
+  await page.goto('/admin/customers')
+  await page.getByLabel('Search customers').fill(email)
+  await expect(page.getByText(email)).toBeVisible()
+  await page.getByRole('button', { name: /^Approve$/ }).click()
 
   await portal.getByLabel('Email').fill(email)
   await portal.getByLabel('Password').fill(password)
   await portal.getByRole('button', { name: /Sign in to portal/i }).click()
   await expect(portal.getByRole('tab', { name: /Invoices/i })).toBeVisible()
-
-  const invoicesResponse = await request.get('/api/v1/admin/invoices')
-  const invoice = (await invoicesResponse.json()).data.find(
-    (entry: { customerEmail: string }) => entry.customerEmail === email,
-  )
-  expect(invoice).toBeTruthy()
   await portal.getByRole('tab', { name: /Invoices/i }).click()
-  await expect(portal.getByText(invoice.ref)).toBeVisible()
+  await expect(portal.getByText(invoiceRef)).toBeVisible()
 
   await portalContext.close()
 })

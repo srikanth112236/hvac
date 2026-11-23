@@ -119,7 +119,8 @@ async function runAmcReminders(now: number): Promise<void> {
     const end = Date.parse(contract.endDate)
     if (!Number.isFinite(end)) continue
     const days = Math.ceil((end - now) / DAY)
-    const threshold = days <= 0 ? 'expired' : days <= 7 ? 7 : days <= 30 ? 30 : days <= 60 ? 60 : null
+    const threshold =
+      days <= 0 ? 'expired' : days <= 7 ? 7 : days <= 30 ? 30 : days <= 60 ? 60 : null
     if (threshold === null) continue
     const key = `${contract.id}:${threshold}:${contract.endDate}`
     if (state.amcNotified[key]) continue
@@ -277,9 +278,7 @@ async function tick(): Promise<void> {
     console.error('[hvac-api] background job failed', error)
   } finally {
     await lockStore
-      .mutate((current) =>
-        current.owner === instanceId ? { owner: '', until: 0 } : current,
-      )
+      .mutate((current) => (current.owner === instanceId ? { owner: '', until: 0 } : current))
       .catch(() => undefined)
     running = false
   }

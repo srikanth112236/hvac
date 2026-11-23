@@ -41,7 +41,7 @@ cookies `SameSite=Strict`. If they must be separate origins, set
 | `PUBLIC_BRAND_NAME`                    | recommended | Brand name used in the 2FA email shell                                                                                                                      |
 | `ADMIN_NOTIFY_EMAIL`                   | recommended | Desk inbox for leads, reminders, digests                                                                                                                    |
 | `UPLOAD_ROOT`                          | no          | Defaults to the repo `uploads/` directory                                                                                                                   |
-| `DATABASE_URL`                         | multi       | PostgreSQL connection string; enables shared sessions, rate counters, jobs state and records                                                               |
+| `DATABASE_URL`                         | multi       | PostgreSQL connection string; enables shared sessions, rate counters, jobs state and records                                                                |
 | `DATABASE_POOL_SIZE`                   | no          | PostgreSQL pool size, default 10                                                                                                                            |
 | `JOBS_ENABLED`                         | no          | Set `false` on extra workers; jobs also use a shared lease                                                                                                  |
 | `AUDIT_RETENTION_DAYS`                 | no          | Default 365                                                                                                                                                 |
@@ -127,8 +127,10 @@ Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
 
 - Migrations run at API startup (`apps/api/src/migrations.ts`) and are idempotent.
 - With `DATA_ENCRYPTION_KEY` set, every JSON store is AES-256-GCM encrypted on
-  disk (`ENC1:` prefix). The first production boot encrypts existing plaintext
-  files. A wrong or missing key fails startup instead of resetting data.
+  disk (`ENC1:` prefix) and in PostgreSQL payloads. The first production boot
+  encrypts existing plaintext files. A wrong or missing key fails startup instead
+  of resetting data. Store the key in Key Vault **and** a separate secure backup:
+  losing it makes all encrypted stores unreadable.
 - A daily backup is written to `data/backups/YYYY-MM-DD/` and seven days are kept.
   The copies are encrypted because the source files are.
 - Admin → Settings → **Download JSON backup** produces a full export over the
@@ -151,7 +153,8 @@ Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
    fields).
 
 Dependabot is configured for weekly minor/patch updates. Majors are explicit
-changes because Vite, React Router and Tiptap have breaking migrations.
+changes because Vite and React Router have breaking migrations; the unused
+Tiptap editor stack was removed.
 
 ## Multi-instance deployment
 

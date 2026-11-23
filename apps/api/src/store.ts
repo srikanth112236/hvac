@@ -40,7 +40,6 @@ function ensureSchema(client: Pool | PoolClient): Promise<void> {
   return schemaReady
 }
 
-
 export function isEncryptedText(value: string): boolean {
   return value.startsWith(ENC_PREFIX)
 }

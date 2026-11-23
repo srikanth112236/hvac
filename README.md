@@ -98,7 +98,7 @@ npm run typecheck
 npm run lint
 npm run test        # Vitest + Supertest (API)
 npm run test:ssr    # production SSR + hydration: every public route × both themes
-npm run test:e2e    # Playwright smoke (needs a browser; dev server auto-start)
+npm run test:e2e    # 6 Playwright tests incl. lead → invoice → portal journey
 npm run build
 npm run audit
 npm run verify      # typecheck + lint + test + build + audit

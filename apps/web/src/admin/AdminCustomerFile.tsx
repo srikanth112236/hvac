@@ -29,7 +29,14 @@ import {
 } from '@/components/ui'
 import { adminApi } from '@/admin/api'
 import { Icon } from '@/components/icons'
-import { AdminLoading, AdminPageHeader, InlineError, formatDate, formatDateTime, formatMoney } from '@/admin/ui'
+import {
+  AdminLoading,
+  AdminPageHeader,
+  InlineError,
+  formatDate,
+  formatDateTime,
+  formatMoney,
+} from '@/admin/ui'
 
 type Tab = 'sites' | 'equipment' | 'quotations' | 'amc' | 'reports' | 'tickets' | 'preferences'
 
@@ -68,7 +75,9 @@ export function AdminCustomerFile() {
   const { customerId = '' } = useParams()
   const navigate = useNavigate()
   const { toast } = useToast()
-  const [data, setData] = useState<{ customer: CustomerAccount; file: CustomerPortalFile } | null>(null)
+  const [data, setData] = useState<{ customer: CustomerAccount; file: CustomerPortalFile } | null>(
+    null,
+  )
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [tab, setTab] = useState<Tab>('sites')
@@ -165,7 +174,10 @@ export function AdminCustomerFile() {
       quotations: file?.quotations.length ?? 0,
       amc: file?.amc.length ?? 0,
       reports: file?.reports.length ?? 0,
-      tickets: file?.tickets.filter((ticket) => ticket.status === 'open' || ticket.status === 'in-progress').length ?? 0,
+      tickets:
+        file?.tickets.filter(
+          (ticket) => ticket.status === 'open' || ticket.status === 'in-progress',
+        ).length ?? 0,
     }),
     [file],
   )
@@ -212,25 +224,38 @@ export function AdminCustomerFile() {
 
   const saveEquipment = async (event: FormEvent) => {
     event.preventDefault()
-    await run(async () => {
-      const payload = {
-        ...equipmentForm,
-        siteId: equipmentForm.siteId || null,
-      }
-      if (equipmentEditing) {
-        await adminApi.patchEquipment(
-          customerId,
-          equipmentEditing.id,
-          payload,
-          equipmentEditing.updatedAt,
-        )
-      } else {
-        await adminApi.createEquipment(customerId, payload)
-      }
-      setEquipmentOpen(false)
-      setEquipmentEditing(null)
-      setEquipmentForm({ name: '', brand: '', model: '', serial: '', capacity: '', siteId: '', installedAt: '', warrantyUntil: '', notes: '' })
-    }, equipmentEditing ? 'Equipment updated' : 'Equipment added')
+    await run(
+      async () => {
+        const payload = {
+          ...equipmentForm,
+          siteId: equipmentForm.siteId || null,
+        }
+        if (equipmentEditing) {
+          await adminApi.patchEquipment(
+            customerId,
+            equipmentEditing.id,
+            payload,
+            equipmentEditing.updatedAt,
+          )
+        } else {
+          await adminApi.createEquipment(customerId, payload)
+        }
+        setEquipmentOpen(false)
+        setEquipmentEditing(null)
+        setEquipmentForm({
+          name: '',
+          brand: '',
+          model: '',
+          serial: '',
+          capacity: '',
+          siteId: '',
+          installedAt: '',
+          warrantyUntil: '',
+          notes: '',
+        })
+      },
+      equipmentEditing ? 'Equipment updated' : 'Equipment added',
+    )
   }
 
   const editEquipment = (item: EquipmentRecord) => {
@@ -253,40 +278,54 @@ export function AdminCustomerFile() {
     event.preventDefault()
     const lines = parseQuotationLines(quoteForm.lines)
     if (!lines.length) {
-      toast({ title: 'Add at least one line', description: 'Use description | qty | rate | tax.', tone: 'warn' })
+      toast({
+        title: 'Add at least one line',
+        description: 'Use description | qty | rate | tax.',
+        tone: 'warn',
+      })
       return
     }
-    await run(async () => {
-      if (quoteEditing) {
-        await adminApi.patchQuotation(
-          customerId,
-          quoteEditing.id,
-          {
+    await run(
+      async () => {
+        if (quoteEditing) {
+          await adminApi.patchQuotation(
+            customerId,
+            quoteEditing.id,
+            {
+              title: quoteForm.title,
+              service: quoteForm.service,
+              status: quoteForm.status,
+              validUntil: quoteForm.validUntil,
+              lines,
+              notes: quoteForm.notes,
+            },
+            quoteEditing.updatedAt,
+          )
+        } else {
+          await adminApi.createQuotation(customerId, {
             title: quoteForm.title,
             service: quoteForm.service,
             status: quoteForm.status,
             validUntil: quoteForm.validUntil,
             lines,
+            discount: 0,
             notes: quoteForm.notes,
-          },
-          quoteEditing.updatedAt,
-        )
-      } else {
-        await adminApi.createQuotation(customerId, {
-          title: quoteForm.title,
-          service: quoteForm.service,
-          status: quoteForm.status,
-          validUntil: quoteForm.validUntil,
-          lines,
-          discount: 0,
-          notes: quoteForm.notes,
-          terms: '',
+            terms: '',
+          })
+        }
+        setQuoteOpen(false)
+        setQuoteEditing(null)
+        setQuoteForm({
+          title: '',
+          service: '',
+          validUntil: '',
+          status: 'draft',
+          lines: '',
+          notes: '',
         })
-      }
-      setQuoteOpen(false)
-      setQuoteEditing(null)
-      setQuoteForm({ title: '', service: '', validUntil: '', status: 'draft', lines: '', notes: '' })
-    }, quoteEditing ? 'Quotation updated' : 'Quotation created')
+      },
+      quoteEditing ? 'Quotation updated' : 'Quotation created',
+    )
   }
 
   const editQuotation = (quote: QuotationRecord) => {
@@ -309,25 +348,28 @@ export function AdminCustomerFile() {
 
   const saveAmc = async (event: FormEvent) => {
     event.preventDefault()
-    await run(async () => {
-      const payload = {
-        plan: amcForm.plan,
-        startDate: amcForm.startDate,
-        endDate: amcForm.endDate,
-        visitsPerYear: Number.parseInt(amcForm.visitsPerYear, 10) || 0,
-        price: Number.parseFloat(amcForm.price) || 0,
-        status: amcForm.status,
-        notes: amcForm.notes,
-        equipmentIds: amcForm.equipmentIds,
-      }
-      if (amcEditing) {
-        await adminApi.patchAmc(customerId, amcEditing.id, payload, amcEditing.updatedAt)
-      } else {
-        await adminApi.createAmc(customerId, payload)
-      }
-      setAmcOpen(false)
-      setAmcEditing(null)
-    }, amcEditing ? 'Contract updated' : 'Contract created')
+    await run(
+      async () => {
+        const payload = {
+          plan: amcForm.plan,
+          startDate: amcForm.startDate,
+          endDate: amcForm.endDate,
+          visitsPerYear: Number.parseInt(amcForm.visitsPerYear, 10) || 0,
+          price: Number.parseFloat(amcForm.price) || 0,
+          status: amcForm.status,
+          notes: amcForm.notes,
+          equipmentIds: amcForm.equipmentIds,
+        }
+        if (amcEditing) {
+          await adminApi.patchAmc(customerId, amcEditing.id, payload, amcEditing.updatedAt)
+        } else {
+          await adminApi.createAmc(customerId, payload)
+        }
+        setAmcOpen(false)
+        setAmcEditing(null)
+      },
+      amcEditing ? 'Contract updated' : 'Contract created',
+    )
   }
 
   const editAmc = (contract: AmcContract) => {
@@ -512,7 +554,9 @@ export function AdminCustomerFile() {
           ['Open tickets', counts.tickets],
         ].map(([label, value]) => (
           <div key={label} className="border border-line bg-panel/30 p-4">
-            <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">{label}</span>
+            <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">
+              {label}
+            </span>
             <p className="mt-2 font-display text-2xl text-fg">{value}</p>
           </div>
         ))}
@@ -525,7 +569,9 @@ export function AdminCustomerFile() {
             type="button"
             onClick={() => setTab(entry.id)}
             className={`border-b-2 px-3 py-2.5 font-mono text-[9px] uppercase tracking-[0.1em] ${
-              tab === entry.id ? 'border-cold text-cold' : 'border-transparent text-fg-faint hover:text-fg'
+              tab === entry.id
+                ? 'border-cold text-cold'
+                : 'border-transparent text-fg-faint hover:text-fg'
             }`}
           >
             {entry.label}
@@ -537,22 +583,53 @@ export function AdminCustomerFile() {
         <section className="border border-line bg-panel/20">
           <div className="flex items-center justify-between border-b border-line px-4 py-3">
             <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">Sites</h2>
-            <Button size="sm" icon="plus" onClick={() => openSite()}>Add site</Button>
+            <Button size="sm" icon="plus" onClick={() => openSite()}>
+              Add site
+            </Button>
           </div>
           {file.sites.length === 0 ? (
-            <div className="p-4"><EmptyState title="No sites" description="Add the first service address for this customer." /></div>
+            <div className="p-4">
+              <EmptyState
+                title="No sites"
+                description="Add the first service address for this customer."
+              />
+            </div>
           ) : (
             <div className="divide-y divide-line">
               {file.sites.map((site) => (
-                <article key={site.id} className="flex flex-wrap items-start justify-between gap-3 px-4 py-4">
+                <article
+                  key={site.id}
+                  className="flex flex-wrap items-start justify-between gap-3 px-4 py-4"
+                >
                   <div>
-                    <p className="text-sm text-fg">{site.label} {site.isPrimary ? <Badge tone="cold">Primary</Badge> : null}</p>
+                    <p className="text-sm text-fg">
+                      {site.label} {site.isPrimary ? <Badge tone="cold">Primary</Badge> : null}
+                    </p>
                     <p className="mt-1 text-[11px] text-fg-dim">{site.address}</p>
-                    <p className="text-[10px] text-fg-faint">{[site.city, site.region, site.postalCode].filter(Boolean).join(', ')}</p>
+                    <p className="text-[10px] text-fg-faint">
+                      {[site.city, site.region, site.postalCode].filter(Boolean).join(', ')}
+                    </p>
                   </div>
                   <div className="flex gap-3">
-                    <button type="button" onClick={() => openSite(site)} className="font-mono text-[9px] uppercase text-cold hover:text-fg">Edit</button>
-                    <button type="button" onClick={() => void run(() => adminApi.deleteCustomerSite(customerId, site.id), 'Site removed')} className="font-mono text-[9px] uppercase text-fg-faint hover:text-danger">Remove</button>
+                    <button
+                      type="button"
+                      onClick={() => openSite(site)}
+                      className="font-mono text-[9px] uppercase text-cold hover:text-fg"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void run(
+                          () => adminApi.deleteCustomerSite(customerId, site.id),
+                          'Site removed',
+                        )
+                      }
+                      className="font-mono text-[9px] uppercase text-fg-faint hover:text-danger"
+                    >
+                      Remove
+                    </button>
                   </div>
                 </article>
               ))}
@@ -564,7 +641,9 @@ export function AdminCustomerFile() {
       {tab === 'equipment' ? (
         <section className="border border-line bg-panel/20">
           <div className="flex items-center justify-between border-b border-line px-4 py-3">
-            <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">Equipment</h2>
+            <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+              Equipment
+            </h2>
             <Button
               size="sm"
               icon="plus"
@@ -577,19 +656,55 @@ export function AdminCustomerFile() {
             </Button>
           </div>
           {file.equipment.length === 0 ? (
-            <div className="p-4"><EmptyState title="No equipment" description="Register each installed unit so the portal shows its history." /></div>
+            <div className="p-4">
+              <EmptyState
+                title="No equipment"
+                description="Register each installed unit so the portal shows its history."
+              />
+            </div>
           ) : (
             <div className="divide-y divide-line">
               {file.equipment.map((item) => (
-                <article key={item.id} className="flex flex-wrap items-start justify-between gap-3 px-4 py-4">
+                <article
+                  key={item.id}
+                  className="flex flex-wrap items-start justify-between gap-3 px-4 py-4"
+                >
                   <div>
                     <p className="text-sm text-fg">{item.name}</p>
-                    <p className="text-[11px] text-fg-dim">{[item.brand, item.model, item.serial].filter(Boolean).join(' · ') || 'No model data'}</p>
-                    <p className="text-[10px] text-fg-faint">{[item.capacity, item.installedAt ? `installed ${formatDate(item.installedAt)}` : '', item.warrantyUntil ? `warranty to ${formatDate(item.warrantyUntil)}` : ''].filter(Boolean).join(' · ')}</p>
+                    <p className="text-[11px] text-fg-dim">
+                      {[item.brand, item.model, item.serial].filter(Boolean).join(' · ') ||
+                        'No model data'}
+                    </p>
+                    <p className="text-[10px] text-fg-faint">
+                      {[
+                        item.capacity,
+                        item.installedAt ? `installed ${formatDate(item.installedAt)}` : '',
+                        item.warrantyUntil ? `warranty to ${formatDate(item.warrantyUntil)}` : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
-                    <button type="button" onClick={() => editEquipment(item)} className="font-mono text-[9px] uppercase text-cold hover:text-fg">Edit</button>
-                    <button type="button" onClick={() => void run(() => adminApi.deleteEquipment(customerId, item.id), 'Equipment removed')} className="font-mono text-[9px] uppercase text-fg-faint hover:text-danger">Remove</button>
+                    <button
+                      type="button"
+                      onClick={() => editEquipment(item)}
+                      className="font-mono text-[9px] uppercase text-cold hover:text-fg"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void run(
+                          () => adminApi.deleteEquipment(customerId, item.id),
+                          'Equipment removed',
+                        )
+                      }
+                      className="font-mono text-[9px] uppercase text-fg-faint hover:text-danger"
+                    >
+                      Remove
+                    </button>
                   </div>
                 </article>
               ))}
@@ -601,7 +716,9 @@ export function AdminCustomerFile() {
       {tab === 'quotations' ? (
         <section className="border border-line bg-panel/20">
           <div className="flex items-center justify-between border-b border-line px-4 py-3">
-            <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">Quotations</h2>
+            <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+              Quotations
+            </h2>
             <Button
               size="sm"
               icon="plus"
@@ -614,25 +731,47 @@ export function AdminCustomerFile() {
             </Button>
           </div>
           {file.quotations.length === 0 ? (
-            <div className="p-4"><EmptyState title="No quotations" description="Create a quotation to send into the customer portal." /></div>
+            <div className="p-4">
+              <EmptyState
+                title="No quotations"
+                description="Create a quotation to send into the customer portal."
+              />
+            </div>
           ) : (
             <div className="divide-y divide-line">
               {file.quotations.map((quote) => (
-                <article key={quote.id} className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto_170px_auto] md:items-center">
+                <article
+                  key={quote.id}
+                  className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto_170px_auto] md:items-center"
+                >
                   <div>
                     <p className="font-mono text-[9px] text-cold">{quote.ref}</p>
                     <p className="text-sm text-fg">{quote.title}</p>
-                    <p className="text-[10px] text-fg-faint">{quote.lines.length} lines · created {formatDate(quote.createdAt)}</p>
+                    <p className="text-[10px] text-fg-faint">
+                      {quote.lines.length} lines · created {formatDate(quote.createdAt)}
+                    </p>
                   </div>
-                  <span className="font-display text-lg text-fg">{formatMoney(quote.totals.total)}</span>
+                  <span className="font-display text-lg text-fg">
+                    {formatMoney(quote.totals.total)}
+                  </span>
                   <Select
                     aria-label={`Status for ${quote.ref}`}
                     value={quote.status}
-                    onChange={(event) => void setQuotationStatus(quote, event.target.value as QuotationStatus)}
-                    options={(Object.keys(quotationStatusLabel) as QuotationStatus[]).map((status) => ({ value: status, label: quotationStatusLabel[status] }))}
+                    onChange={(event) =>
+                      void setQuotationStatus(quote, event.target.value as QuotationStatus)
+                    }
+                    options={(Object.keys(quotationStatusLabel) as QuotationStatus[]).map(
+                      (status) => ({ value: status, label: quotationStatusLabel[status] }),
+                    )}
                   />
                   <div className="flex flex-wrap items-center gap-3">
-                    <button type="button" onClick={() => editQuotation(quote)} className="font-mono text-[9px] uppercase text-cold hover:text-fg">Edit lines</button>
+                    <button
+                      type="button"
+                      onClick={() => editQuotation(quote)}
+                      className="font-mono text-[9px] uppercase text-cold hover:text-fg"
+                    >
+                      Edit lines
+                    </button>
                     <ButtonAnchor
                       href={`/api/v1/admin/customers/${customerId}/quotations/${quote.id}/pdf`}
                       download
@@ -652,24 +791,67 @@ export function AdminCustomerFile() {
       {tab === 'amc' ? (
         <section className="border border-line bg-panel/20">
           <div className="flex items-center justify-between border-b border-line px-4 py-3">
-            <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">AMC cover</h2>
-            <Button size="sm" icon="plus" onClick={() => { setAmcEditing(null); setAmcOpen(true) }}>New contract</Button>
+            <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+              AMC cover
+            </h2>
+            <Button
+              size="sm"
+              icon="plus"
+              onClick={() => {
+                setAmcEditing(null)
+                setAmcOpen(true)
+              }}
+            >
+              New contract
+            </Button>
           </div>
           {file.amc.length === 0 ? (
-            <div className="p-4"><EmptyState title="No contract" description="Create the first maintenance contract for this customer." /></div>
+            <div className="p-4">
+              <EmptyState
+                title="No contract"
+                description="Create the first maintenance contract for this customer."
+              />
+            </div>
           ) : (
             <div className="divide-y divide-line">
               {file.amc.map((contract) => (
-                <article key={contract.id} className="flex flex-wrap items-start justify-between gap-3 px-4 py-4">
+                <article
+                  key={contract.id}
+                  className="flex flex-wrap items-start justify-between gap-3 px-4 py-4"
+                >
                   <div>
                     <p className="font-mono text-[9px] text-cold">{contract.ref}</p>
-                    <p className="text-sm text-fg">{contract.plan} · {formatMoney(contract.price)} / year</p>
-                    <p className="text-[10px] text-fg-faint">{formatDate(contract.startDate)} → {formatDate(contract.endDate)} · {contract.visitsPerYear} visits</p>
-                    {contract.renewalRequestedAt ? <Badge tone="warn">Renewal requested</Badge> : null}
+                    <p className="text-sm text-fg">
+                      {contract.plan} · {formatMoney(contract.price)} / year
+                    </p>
+                    <p className="text-[10px] text-fg-faint">
+                      {formatDate(contract.startDate)} → {formatDate(contract.endDate)} ·{' '}
+                      {contract.visitsPerYear} visits
+                    </p>
+                    {contract.renewalRequestedAt ? (
+                      <Badge tone="warn">Renewal requested</Badge>
+                    ) : null}
                   </div>
                   <div className="flex flex-wrap gap-3">
-                    <button type="button" onClick={() => editAmc(contract)} className="font-mono text-[9px] uppercase text-cold hover:text-fg">Edit</button>
-                    <button type="button" onClick={() => void run(() => adminApi.deleteAmc(customerId, contract.id), 'Contract removed')} className="font-mono text-[9px] uppercase text-fg-faint hover:text-danger">Remove</button>
+                    <button
+                      type="button"
+                      onClick={() => editAmc(contract)}
+                      className="font-mono text-[9px] uppercase text-cold hover:text-fg"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void run(
+                          () => adminApi.deleteAmc(customerId, contract.id),
+                          'Contract removed',
+                        )
+                      }
+                      className="font-mono text-[9px] uppercase text-fg-faint hover:text-danger"
+                    >
+                      Remove
+                    </button>
                   </div>
                 </article>
               ))}
@@ -681,18 +863,30 @@ export function AdminCustomerFile() {
       {tab === 'reports' ? (
         <section className="border border-line bg-panel/20">
           <div className="flex items-center justify-between border-b border-line px-4 py-3">
-            <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">Job reports</h2>
-            <Button size="sm" icon="plus" onClick={() => setReportOpen(true)}>File report</Button>
+            <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+              Job reports
+            </h2>
+            <Button size="sm" icon="plus" onClick={() => setReportOpen(true)}>
+              File report
+            </Button>
           </div>
           {file.reports.length === 0 ? (
-            <div className="p-4"><EmptyState title="No reports" description="File the checklist and photos after a visit; the customer sees them immediately." /></div>
+            <div className="p-4">
+              <EmptyState
+                title="No reports"
+                description="File the checklist and photos after a visit; the customer sees them immediately."
+              />
+            </div>
           ) : (
             <div className="divide-y divide-line">
               {file.reports.map((report) => (
                 <article key={report.id} className="px-4 py-4">
                   <p className="font-mono text-[9px] text-cold">{report.ref}</p>
                   <p className="text-sm text-fg">{report.title}</p>
-                  <p className="text-[10px] text-fg-faint">{formatDate(report.completedAt)} · {report.technician || 'engineer not named'} · {report.checklist.length} checks · {report.photos.length} photos</p>
+                  <p className="text-[10px] text-fg-faint">
+                    {formatDate(report.completedAt)} · {report.technician || 'engineer not named'} ·{' '}
+                    {report.checklist.length} checks · {report.photos.length} photos
+                  </p>
                 </article>
               ))}
             </div>
@@ -703,23 +897,56 @@ export function AdminCustomerFile() {
       {tab === 'tickets' ? (
         <section className="border border-line bg-panel/20">
           <div className="flex items-center justify-between border-b border-line px-4 py-3">
-            <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">Support tickets</h2>
+            <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+              Support tickets
+            </h2>
             <Badge tone="neutral">{file.tickets.length}</Badge>
           </div>
           {file.tickets.length === 0 ? (
-            <div className="p-4"><EmptyState title="No requests" description="Customer complaints, billing questions and AMC renewals appear here." /></div>
+            <div className="p-4">
+              <EmptyState
+                title="No requests"
+                description="Customer complaints, billing questions and AMC renewals appear here."
+              />
+            </div>
           ) : (
             <div className="divide-y divide-line">
               {file.tickets.map((ticket) => (
-                <article key={ticket.id} className="flex flex-wrap items-start justify-between gap-3 px-4 py-4">
+                <article
+                  key={ticket.id}
+                  className="flex flex-wrap items-start justify-between gap-3 px-4 py-4"
+                >
                   <div>
-                    <p className="font-mono text-[9px] text-cold">{ticket.ref} · {ticket.category}</p>
+                    <p className="font-mono text-[9px] text-cold">
+                      {ticket.ref} · {ticket.category}
+                    </p>
                     <p className="text-sm text-fg">{ticket.subject}</p>
-                    <p className="text-[10px] text-fg-faint">{ticket.messages.length} messages · updated {formatDateTime(ticket.updatedAt)}</p>
+                    <p className="text-[10px] text-fg-faint">
+                      {ticket.messages.length} messages · updated {formatDateTime(ticket.updatedAt)}
+                    </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge tone={ticket.status === 'open' ? 'warn' : ticket.status === 'in-progress' ? 'cold' : 'success'}>{ticketStatusLabel[ticket.status]}</Badge>
-                    <Button size="sm" variant="secondary" onClick={() => { setTicketOpen(ticket); setReply('') }}>Open</Button>
+                    <Badge
+                      tone={
+                        ticket.status === 'open'
+                          ? 'warn'
+                          : ticket.status === 'in-progress'
+                            ? 'cold'
+                            : 'success'
+                      }
+                    >
+                      {ticketStatusLabel[ticket.status]}
+                    </Badge>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        setTicketOpen(ticket)
+                        setReply('')
+                      }}
+                    >
+                      Open
+                    </Button>
                   </div>
                 </article>
               ))}
@@ -730,7 +957,9 @@ export function AdminCustomerFile() {
 
       {tab === 'preferences' ? (
         <section className="border border-line bg-panel/20 p-5">
-          <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">Notification preferences</h2>
+          <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+            Notification preferences
+          </h2>
           <dl className="mt-4 grid gap-3 text-[12px] sm:grid-cols-2">
             {[
               ['Service updates', file.preferences.emailService],
@@ -738,88 +967,403 @@ export function AdminCustomerFile() {
               ['AMC and renewals', file.preferences.emailAmc],
               ['Seasonal notes', file.preferences.emailMarketing],
             ].map(([label, value]) => (
-              <div key={String(label)} className="flex items-center justify-between gap-3 border border-line px-3 py-2">
+              <div
+                key={String(label)}
+                className="flex items-center justify-between gap-3 border border-line px-3 py-2"
+              >
                 <dt className="text-fg-dim">{label}</dt>
-                <dd><Badge tone={value ? 'success' : 'neutral'}>{value ? 'On' : 'Off'}</Badge></dd>
+                <dd>
+                  <Badge tone={value ? 'success' : 'neutral'}>{value ? 'On' : 'Off'}</Badge>
+                </dd>
               </div>
             ))}
           </dl>
-          <p className="mt-4 text-[11px] text-fg-faint">The customer controls these switches from the portal.</p>
+          <p className="mt-4 text-[11px] text-fg-faint">
+            The customer controls these switches from the portal.
+          </p>
         </section>
       ) : null}
 
       {/* Modals */}
       <Modal
         open={siteOpen}
-        onClose={() => { setSiteOpen(false); setSiteEditing(null) }}
+        onClose={() => {
+          setSiteOpen(false)
+          setSiteEditing(null)
+        }}
         title={siteEditing ? 'Edit site' : 'Add site'}
-        footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setSiteOpen(false)}>Cancel</Button><Button type="submit" form="admin-site-form" loading={busy}>Save</Button></div>}
-      >
-        <form id="admin-site-form" className="grid gap-4 sm:grid-cols-2" onSubmit={(event) => void saveSite(event)}>
-          <Input label="Site name" required value={siteForm.label} onChange={(event) => setSiteForm({ ...siteForm, label: event.target.value })} />
-          <Input label="City" value={siteForm.city} onChange={(event) => setSiteForm({ ...siteForm, city: event.target.value })} />
-          <div className="sm:col-span-2"><Textarea label="Address" rows={2} required value={siteForm.address} onChange={(event) => setSiteForm({ ...siteForm, address: event.target.value })} /></div>
-          <Input label="Region" value={siteForm.region} onChange={(event) => setSiteForm({ ...siteForm, region: event.target.value })} />
-          <Input label="Postal code" value={siteForm.postalCode} onChange={(event) => setSiteForm({ ...siteForm, postalCode: event.target.value })} />
-          <div className="sm:col-span-2"><Checkbox label="Primary site" checked={siteForm.isPrimary} onChange={(event) => setSiteForm({ ...siteForm, isPrimary: event.target.checked })} /></div>
-        </form>
-      </Modal>
-
-      <Modal open={equipmentOpen} onClose={() => setEquipmentOpen(false)} title={equipmentEditing ? 'Edit equipment' : 'Add equipment'} footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setEquipmentOpen(false)}>Cancel</Button><Button type="submit" form="admin-equipment-form" loading={busy}>{equipmentEditing ? 'Save changes' : 'Save'}</Button></div>}>
-        <form id="admin-equipment-form" className="grid gap-4 sm:grid-cols-2" onSubmit={(event) => void saveEquipment(event)}>
-          <Input label="Name" required value={equipmentForm.name} onChange={(event) => setEquipmentForm({ ...equipmentForm, name: event.target.value })} />
-          <Input label="Capacity" value={equipmentForm.capacity} onChange={(event) => setEquipmentForm({ ...equipmentForm, capacity: event.target.value })} />
-          <Input label="Brand" value={equipmentForm.brand} onChange={(event) => setEquipmentForm({ ...equipmentForm, brand: event.target.value })} />
-          <Input label="Model" value={equipmentForm.model} onChange={(event) => setEquipmentForm({ ...equipmentForm, model: event.target.value })} />
-          <Input label="Serial" value={equipmentForm.serial} onChange={(event) => setEquipmentForm({ ...equipmentForm, serial: event.target.value })} />
-          <Select label="Site" value={equipmentForm.siteId} onChange={(event) => setEquipmentForm({ ...equipmentForm, siteId: event.target.value })} options={[{ value: '', label: 'Primary site' }, ...file.sites.map((site) => ({ value: site.id, label: site.label }))]} />
-          <Input label="Installed" type="date" value={equipmentForm.installedAt} onChange={(event) => setEquipmentForm({ ...equipmentForm, installedAt: event.target.value })} />
-          <Input label="Warranty until" type="date" value={equipmentForm.warrantyUntil} onChange={(event) => setEquipmentForm({ ...equipmentForm, warrantyUntil: event.target.value })} />
-          <div className="sm:col-span-2"><Textarea label="Notes" rows={2} value={equipmentForm.notes} onChange={(event) => setEquipmentForm({ ...equipmentForm, notes: event.target.value })} /></div>
-        </form>
-      </Modal>
-
-      <Modal open={quoteOpen} onClose={() => setQuoteOpen(false)} title={quoteEditing ? 'Edit quotation' : 'New quotation'} size="lg" footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setQuoteOpen(false)}>Cancel</Button><Button type="submit" form="admin-quote-form" loading={busy}>{quoteEditing ? 'Save lines' : 'Create'}</Button></div>}>
-        <form id="admin-quote-form" className="grid gap-4 sm:grid-cols-2" onSubmit={(event) => void saveQuotation(event)}>
-          <Input label="Title" required value={quoteForm.title} onChange={(event) => setQuoteForm({ ...quoteForm, title: event.target.value })} />
-          <Input label="Service" value={quoteForm.service} onChange={(event) => setQuoteForm({ ...quoteForm, service: event.target.value })} />
-          <Input label="Valid until" type="date" value={quoteForm.validUntil} onChange={(event) => setQuoteForm({ ...quoteForm, validUntil: event.target.value })} />
-          <Select label="Status" value={quoteForm.status} onChange={(event) => setQuoteForm({ ...quoteForm, status: event.target.value as QuotationStatus })} options={(Object.keys(quotationStatusLabel) as QuotationStatus[]).map((status) => ({ value: status, label: quotationStatusLabel[status] }))} />
-          <div className="sm:col-span-2">
-            <Textarea label="Lines — description | qty | rate | tax %" rows={5} value={quoteForm.lines} onChange={(event) => setQuoteForm({ ...quoteForm, lines: event.target.value })} placeholder={'Two 5.5 TR cassettes | 2 | 2400 | 8.25\nCrane and access | 1 | 350 | 0'} />
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setSiteOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" form="admin-site-form" loading={busy}>
+              Save
+            </Button>
           </div>
-          <div className="sm:col-span-2"><Textarea label="Notes" rows={2} value={quoteForm.notes} onChange={(event) => setQuoteForm({ ...quoteForm, notes: event.target.value })} /></div>
+        }
+      >
+        <form
+          id="admin-site-form"
+          className="grid gap-4 sm:grid-cols-2"
+          onSubmit={(event) => void saveSite(event)}
+        >
+          <Input
+            label="Site name"
+            required
+            value={siteForm.label}
+            onChange={(event) => setSiteForm({ ...siteForm, label: event.target.value })}
+          />
+          <Input
+            label="City"
+            value={siteForm.city}
+            onChange={(event) => setSiteForm({ ...siteForm, city: event.target.value })}
+          />
+          <div className="sm:col-span-2">
+            <Textarea
+              label="Address"
+              rows={2}
+              required
+              value={siteForm.address}
+              onChange={(event) => setSiteForm({ ...siteForm, address: event.target.value })}
+            />
+          </div>
+          <Input
+            label="Region"
+            value={siteForm.region}
+            onChange={(event) => setSiteForm({ ...siteForm, region: event.target.value })}
+          />
+          <Input
+            label="Postal code"
+            value={siteForm.postalCode}
+            onChange={(event) => setSiteForm({ ...siteForm, postalCode: event.target.value })}
+          />
+          <div className="sm:col-span-2">
+            <Checkbox
+              label="Primary site"
+              checked={siteForm.isPrimary}
+              onChange={(event) => setSiteForm({ ...siteForm, isPrimary: event.target.checked })}
+            />
+          </div>
         </form>
       </Modal>
 
-      <Modal open={amcOpen} onClose={() => setAmcOpen(false)} title={amcEditing ? 'Edit AMC contract' : 'New AMC contract'} footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setAmcOpen(false)}>Cancel</Button><Button type="submit" form="admin-amc-form" loading={busy}>{amcEditing ? 'Save changes' : 'Create'}</Button></div>}>
-        <form id="admin-amc-form" className="grid gap-4 sm:grid-cols-2" onSubmit={(event) => void saveAmc(event)}>
-          <Input label="Plan" required value={amcForm.plan} onChange={(event) => setAmcForm({ ...amcForm, plan: event.target.value })} />
-          <Select label="Status" value={amcForm.status} onChange={(event) => setAmcForm({ ...amcForm, status: event.target.value as AmcStatus })} options={['pending', 'active', 'expired', 'cancelled'].map((status) => ({ value: status, label: status }))} />
-          <Input label="Start" type="date" required value={amcForm.startDate} onChange={(event) => setAmcForm({ ...amcForm, startDate: event.target.value })} />
-          <Input label="End" type="date" required value={amcForm.endDate} onChange={(event) => setAmcForm({ ...amcForm, endDate: event.target.value })} />
-          <Input label="Visits / year" type="number" min="0" max="52" value={amcForm.visitsPerYear} onChange={(event) => setAmcForm({ ...amcForm, visitsPerYear: event.target.value })} />
-          <Input label="Annual price" type="number" min="0" step="0.01" value={amcForm.price} onChange={(event) => setAmcForm({ ...amcForm, price: event.target.value })} />
+      <Modal
+        open={equipmentOpen}
+        onClose={() => setEquipmentOpen(false)}
+        title={equipmentEditing ? 'Edit equipment' : 'Add equipment'}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setEquipmentOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" form="admin-equipment-form" loading={busy}>
+              {equipmentEditing ? 'Save changes' : 'Save'}
+            </Button>
+          </div>
+        }
+      >
+        <form
+          id="admin-equipment-form"
+          className="grid gap-4 sm:grid-cols-2"
+          onSubmit={(event) => void saveEquipment(event)}
+        >
+          <Input
+            label="Name"
+            required
+            value={equipmentForm.name}
+            onChange={(event) => setEquipmentForm({ ...equipmentForm, name: event.target.value })}
+          />
+          <Input
+            label="Capacity"
+            value={equipmentForm.capacity}
+            onChange={(event) =>
+              setEquipmentForm({ ...equipmentForm, capacity: event.target.value })
+            }
+          />
+          <Input
+            label="Brand"
+            value={equipmentForm.brand}
+            onChange={(event) => setEquipmentForm({ ...equipmentForm, brand: event.target.value })}
+          />
+          <Input
+            label="Model"
+            value={equipmentForm.model}
+            onChange={(event) => setEquipmentForm({ ...equipmentForm, model: event.target.value })}
+          />
+          <Input
+            label="Serial"
+            value={equipmentForm.serial}
+            onChange={(event) => setEquipmentForm({ ...equipmentForm, serial: event.target.value })}
+          />
+          <Select
+            label="Site"
+            value={equipmentForm.siteId}
+            onChange={(event) => setEquipmentForm({ ...equipmentForm, siteId: event.target.value })}
+            options={[
+              { value: '', label: 'Primary site' },
+              ...file.sites.map((site) => ({ value: site.id, label: site.label })),
+            ]}
+          />
+          <Input
+            label="Installed"
+            type="date"
+            value={equipmentForm.installedAt}
+            onChange={(event) =>
+              setEquipmentForm({ ...equipmentForm, installedAt: event.target.value })
+            }
+          />
+          <Input
+            label="Warranty until"
+            type="date"
+            value={equipmentForm.warrantyUntil}
+            onChange={(event) =>
+              setEquipmentForm({ ...equipmentForm, warrantyUntil: event.target.value })
+            }
+          />
           <div className="sm:col-span-2">
-            <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">Equipment covered</span>
+            <Textarea
+              label="Notes"
+              rows={2}
+              value={equipmentForm.notes}
+              onChange={(event) =>
+                setEquipmentForm({ ...equipmentForm, notes: event.target.value })
+              }
+            />
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={quoteOpen}
+        onClose={() => setQuoteOpen(false)}
+        title={quoteEditing ? 'Edit quotation' : 'New quotation'}
+        size="lg"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setQuoteOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" form="admin-quote-form" loading={busy}>
+              {quoteEditing ? 'Save lines' : 'Create'}
+            </Button>
+          </div>
+        }
+      >
+        <form
+          id="admin-quote-form"
+          className="grid gap-4 sm:grid-cols-2"
+          onSubmit={(event) => void saveQuotation(event)}
+        >
+          <Input
+            label="Title"
+            required
+            value={quoteForm.title}
+            onChange={(event) => setQuoteForm({ ...quoteForm, title: event.target.value })}
+          />
+          <Input
+            label="Service"
+            value={quoteForm.service}
+            onChange={(event) => setQuoteForm({ ...quoteForm, service: event.target.value })}
+          />
+          <Input
+            label="Valid until"
+            type="date"
+            value={quoteForm.validUntil}
+            onChange={(event) => setQuoteForm({ ...quoteForm, validUntil: event.target.value })}
+          />
+          <Select
+            label="Status"
+            value={quoteForm.status}
+            onChange={(event) =>
+              setQuoteForm({ ...quoteForm, status: event.target.value as QuotationStatus })
+            }
+            options={(Object.keys(quotationStatusLabel) as QuotationStatus[]).map((status) => ({
+              value: status,
+              label: quotationStatusLabel[status],
+            }))}
+          />
+          <div className="sm:col-span-2">
+            <Textarea
+              label="Lines — description | qty | rate | tax %"
+              rows={5}
+              value={quoteForm.lines}
+              onChange={(event) => setQuoteForm({ ...quoteForm, lines: event.target.value })}
+              placeholder={'Two 5.5 TR cassettes | 2 | 2400 | 8.25\nCrane and access | 1 | 350 | 0'}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <Textarea
+              label="Notes"
+              rows={2}
+              value={quoteForm.notes}
+              onChange={(event) => setQuoteForm({ ...quoteForm, notes: event.target.value })}
+            />
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={amcOpen}
+        onClose={() => setAmcOpen(false)}
+        title={amcEditing ? 'Edit AMC contract' : 'New AMC contract'}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setAmcOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" form="admin-amc-form" loading={busy}>
+              {amcEditing ? 'Save changes' : 'Create'}
+            </Button>
+          </div>
+        }
+      >
+        <form
+          id="admin-amc-form"
+          className="grid gap-4 sm:grid-cols-2"
+          onSubmit={(event) => void saveAmc(event)}
+        >
+          <Input
+            label="Plan"
+            required
+            value={amcForm.plan}
+            onChange={(event) => setAmcForm({ ...amcForm, plan: event.target.value })}
+          />
+          <Select
+            label="Status"
+            value={amcForm.status}
+            onChange={(event) =>
+              setAmcForm({ ...amcForm, status: event.target.value as AmcStatus })
+            }
+            options={['pending', 'active', 'expired', 'cancelled'].map((status) => ({
+              value: status,
+              label: status,
+            }))}
+          />
+          <Input
+            label="Start"
+            type="date"
+            required
+            value={amcForm.startDate}
+            onChange={(event) => setAmcForm({ ...amcForm, startDate: event.target.value })}
+          />
+          <Input
+            label="End"
+            type="date"
+            required
+            value={amcForm.endDate}
+            onChange={(event) => setAmcForm({ ...amcForm, endDate: event.target.value })}
+          />
+          <Input
+            label="Visits / year"
+            type="number"
+            min="0"
+            max="52"
+            value={amcForm.visitsPerYear}
+            onChange={(event) => setAmcForm({ ...amcForm, visitsPerYear: event.target.value })}
+          />
+          <Input
+            label="Annual price"
+            type="number"
+            min="0"
+            step="0.01"
+            value={amcForm.price}
+            onChange={(event) => setAmcForm({ ...amcForm, price: event.target.value })}
+          />
+          <div className="sm:col-span-2">
+            <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
+              Equipment covered
+            </span>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
-              {file.equipment.length === 0 ? <p className="text-[11px] text-fg-faint">No equipment on file.</p> : file.equipment.map((item) => (
-                <Checkbox key={item.id} label={item.name} checked={amcForm.equipmentIds.includes(item.id)} onChange={(event) => toggleAmcEquipment(item.id, event.target.checked)} />
-              ))}
+              {file.equipment.length === 0 ? (
+                <p className="text-[11px] text-fg-faint">No equipment on file.</p>
+              ) : (
+                file.equipment.map((item) => (
+                  <Checkbox
+                    key={item.id}
+                    label={item.name}
+                    checked={amcForm.equipmentIds.includes(item.id)}
+                    onChange={(event) => toggleAmcEquipment(item.id, event.target.checked)}
+                  />
+                ))
+              )}
             </div>
           </div>
-          <div className="sm:col-span-2"><Textarea label="Notes" rows={2} value={amcForm.notes} onChange={(event) => setAmcForm({ ...amcForm, notes: event.target.value })} /></div>
+          <div className="sm:col-span-2">
+            <Textarea
+              label="Notes"
+              rows={2}
+              value={amcForm.notes}
+              onChange={(event) => setAmcForm({ ...amcForm, notes: event.target.value })}
+            />
+          </div>
         </form>
       </Modal>
 
-      <Modal open={reportOpen} onClose={() => setReportOpen(false)} title="File job report" size="lg" footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setReportOpen(false)}>Cancel</Button><Button type="submit" form="admin-report-form" loading={busy}>Publish report</Button></div>}>
-        <form id="admin-report-form" className="grid gap-4 sm:grid-cols-2" onSubmit={(event) => void saveReport(event)}>
-          <Input label="Title" required value={reportForm.title} onChange={(event) => setReportForm({ ...reportForm, title: event.target.value })} />
-          <Input label="Technician" value={reportForm.technician} onChange={(event) => setReportForm({ ...reportForm, technician: event.target.value })} />
-          <Select label="Equipment" value={reportForm.equipmentId} onChange={(event) => setReportForm({ ...reportForm, equipmentId: event.target.value })} options={[{ value: '', label: 'Not linked' }, ...file.equipment.map((item) => ({ value: item.id, label: item.name }))]} />
-          <Input label="Completed" type="date" value={reportForm.completedAt} onChange={(event) => setReportForm({ ...reportForm, completedAt: event.target.value })} />
-          <div className="sm:col-span-2"><Textarea label="Summary" rows={2} value={reportForm.summary} onChange={(event) => setReportForm({ ...reportForm, summary: event.target.value })} /></div>
-          <div className="sm:col-span-2"><Textarea label="Checklist — one per line, prefix [x] for done" rows={4} value={reportForm.checklist} onChange={(event) => setReportForm({ ...reportForm, checklist: event.target.value })} placeholder={'[x] Coil cleaned\n[x] Drain tested\n[ ] Filter replaced'} /></div>
+      <Modal
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        title="File job report"
+        size="lg"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setReportOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" form="admin-report-form" loading={busy}>
+              Publish report
+            </Button>
+          </div>
+        }
+      >
+        <form
+          id="admin-report-form"
+          className="grid gap-4 sm:grid-cols-2"
+          onSubmit={(event) => void saveReport(event)}
+        >
+          <Input
+            label="Title"
+            required
+            value={reportForm.title}
+            onChange={(event) => setReportForm({ ...reportForm, title: event.target.value })}
+          />
+          <Input
+            label="Technician"
+            value={reportForm.technician}
+            onChange={(event) => setReportForm({ ...reportForm, technician: event.target.value })}
+          />
+          <Select
+            label="Equipment"
+            value={reportForm.equipmentId}
+            onChange={(event) => setReportForm({ ...reportForm, equipmentId: event.target.value })}
+            options={[
+              { value: '', label: 'Not linked' },
+              ...file.equipment.map((item) => ({ value: item.id, label: item.name })),
+            ]}
+          />
+          <Input
+            label="Completed"
+            type="date"
+            value={reportForm.completedAt}
+            onChange={(event) => setReportForm({ ...reportForm, completedAt: event.target.value })}
+          />
+          <div className="sm:col-span-2">
+            <Textarea
+              label="Summary"
+              rows={2}
+              value={reportForm.summary}
+              onChange={(event) => setReportForm({ ...reportForm, summary: event.target.value })}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <Textarea
+              label="Checklist — one per line, prefix [x] for done"
+              rows={4}
+              value={reportForm.checklist}
+              onChange={(event) => setReportForm({ ...reportForm, checklist: event.target.value })}
+              placeholder={'[x] Coil cleaned\n[x] Drain tested\n[ ] Filter replaced'}
+            />
+          </div>
           <div className="sm:col-span-2">
             <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
               Report photos
@@ -876,31 +1420,89 @@ export function AdminCustomerFile() {
               />
             </details>
           </div>
-          <div className="sm:col-span-2"><Textarea label="Findings" rows={2} value={reportForm.findings} onChange={(event) => setReportForm({ ...reportForm, findings: event.target.value })} /></div>
-          <div className="sm:col-span-2"><Textarea label="Recommendations" rows={2} value={reportForm.recommendations} onChange={(event) => setReportForm({ ...reportForm, recommendations: event.target.value })} /></div>
+          <div className="sm:col-span-2">
+            <Textarea
+              label="Findings"
+              rows={2}
+              value={reportForm.findings}
+              onChange={(event) => setReportForm({ ...reportForm, findings: event.target.value })}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <Textarea
+              label="Recommendations"
+              rows={2}
+              value={reportForm.recommendations}
+              onChange={(event) =>
+                setReportForm({ ...reportForm, recommendations: event.target.value })
+              }
+            />
+          </div>
         </form>
       </Modal>
 
       <Modal
         open={Boolean(ticketOpen)}
-        onClose={() => { setTicketOpen(null); setReply('') }}
+        onClose={() => {
+          setTicketOpen(null)
+          setReply('')
+        }}
         title={ticketOpen ? `${ticketOpen.ref} · ${ticketOpen.subject}` : 'Ticket'}
         size="lg"
-        footer={<div className="flex justify-between gap-2"><Button variant="secondary" onClick={() => setTicketOpen(null)}>Close</Button><Button type="submit" form="admin-ticket-reply" loading={busy}>Send reply</Button></div>}
+        footer={
+          <div className="flex justify-between gap-2">
+            <Button variant="secondary" onClick={() => setTicketOpen(null)}>
+              Close
+            </Button>
+            <Button type="submit" form="admin-ticket-reply" loading={busy}>
+              Send reply
+            </Button>
+          </div>
+        }
       >
         {ticketOpen ? (
           <div className="flex flex-col gap-4">
             <ul className="flex flex-col gap-3">
               {ticketOpen.messages.map((message) => (
-                <li key={message.id} className={message.authorRole === 'admin' ? 'ml-auto max-w-[85%] border border-cold/30 bg-cold/[0.06] p-3' : 'mr-auto max-w-[85%] border border-line bg-panel/40 p-3'}>
-                  <p className="font-mono text-[9px] uppercase tracking-[0.08em] text-fg-faint">{message.authorName} · {formatDateTime(message.at)}</p>
+                <li
+                  key={message.id}
+                  className={
+                    message.authorRole === 'admin'
+                      ? 'ml-auto max-w-[85%] border border-cold/30 bg-cold/[0.06] p-3'
+                      : 'mr-auto max-w-[85%] border border-line bg-panel/40 p-3'
+                  }
+                >
+                  <p className="font-mono text-[9px] uppercase tracking-[0.08em] text-fg-faint">
+                    {message.authorName} · {formatDateTime(message.at)}
+                  </p>
                   <p className="mt-1 whitespace-pre-wrap text-[12px] text-fg-dim">{message.body}</p>
                 </li>
               ))}
             </ul>
-            <Select label="Status" value={ticketOpen.status} onChange={(event) => void run(async () => { const updated = await adminApi.patchSupportTicket(ticketOpen.id, event.target.value as TicketStatus); setTicketOpen(updated) }, 'Status updated')} options={(['open', 'in-progress', 'resolved', 'closed'] as const).map((status) => ({ value: status, label: ticketStatusLabel[status] }))} />
+            <Select
+              label="Status"
+              value={ticketOpen.status}
+              onChange={(event) =>
+                void run(async () => {
+                  const updated = await adminApi.patchSupportTicket(
+                    ticketOpen.id,
+                    event.target.value as TicketStatus,
+                  )
+                  setTicketOpen(updated)
+                }, 'Status updated')
+              }
+              options={(['open', 'in-progress', 'resolved', 'closed'] as const).map((status) => ({
+                value: status,
+                label: ticketStatusLabel[status],
+              }))}
+            />
             <form id="admin-ticket-reply" onSubmit={(event) => void replyTicket(event)}>
-              <Textarea label="Reply" rows={3} value={reply} onChange={(event) => setReply(event.target.value)} />
+              <Textarea
+                label="Reply"
+                rows={3}
+                value={reply}
+                onChange={(event) => setReply(event.target.value)}
+              />
             </form>
           </div>
         ) : null}
