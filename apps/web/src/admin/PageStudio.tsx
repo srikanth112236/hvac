@@ -504,14 +504,20 @@ export function PageStudio({
   update,
   onNavigate,
   onEditService,
+  initialPage = 'home',
+  initialView = 'grid',
+  hideGrid = false,
 }: {
   draft: SiteContent
   update: ContentUpdate
   onNavigate: (tab: ContentTab) => void
   onEditService: (serviceId: string) => void
+  initialPage?: string
+  initialView?: 'grid' | 'page' | 'services'
+  hideGrid?: boolean
 }) {
-  const [view, setView] = useState<'grid' | 'page' | 'services'>('grid')
-  const [activePage, setActivePage] = useState('home')
+  const [view, setView] = useState<'grid' | 'page' | 'services'>(initialView)
+  const [activePage, setActivePage] = useState(initialPage)
   const [picker, setPicker] = useState<{ folder: string; select: (asset: SiteMediaAsset) => void } | null>(null)
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({})
 
@@ -1180,7 +1186,7 @@ export function PageStudio({
   /*  Landing grid                                                          */
   /* ---------------------------------------------------------------------- */
 
-  if (view === 'grid') {
+  if (view === 'grid' && !hideGrid) {
     return (
       <div className="flex flex-col gap-8">
         <header className="flex flex-col gap-4 border-b border-line pb-5 md:flex-row md:items-end md:justify-between">
@@ -1297,14 +1303,16 @@ export function PageStudio({
 
   return (
     <div className="flex flex-col gap-5">
-      <StudioBreadcrumb
-        items={[
-          { label: 'All pages', onClick: () => setView('grid') },
-          ...(current.id === 'home'
-            ? []
-            : [{ label: current.name }]),
-        ]}
-      />
+      {hideGrid ? null : (
+        <StudioBreadcrumb
+          items={[
+            { label: 'All pages', onClick: () => setView('grid') },
+            ...(current.id === 'home'
+              ? []
+              : [{ label: current.name }]),
+          ]}
+        />
+      )}
 
       <header className="flex flex-col gap-4 border-b border-line pb-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">

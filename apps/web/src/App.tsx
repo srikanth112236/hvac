@@ -51,6 +51,9 @@ const AdminTeam = lazy(() =>
 const AdminContent = lazy(() =>
   import('@/admin/AdminContent').then((module) => ({ default: module.AdminContent })),
 )
+const ContentStudioV2 = lazy(() =>
+  import('@/admin/ContentStudioV2').then((module) => ({ default: module.ContentStudioV2 })),
+)
 const AdminRevisions = lazy(() =>
   import('@/admin/AdminRevisions').then((module) => ({ default: module.AdminRevisions })),
 )
@@ -155,7 +158,8 @@ export function App() {
           <Route path="quotations" element={<AdminQuotations />} />
           <Route path="expenses" element={<AdminExpenses />} />
           <Route path="team" element={<AdminTeam />} />
-          <Route path="content" element={<AdminContent />} />
+          <Route path="content" element={<ContentStudioV2 />} />
+          <Route path="content/classic" element={<AdminContent />} />
           <Route path="content/revisions" element={<AdminRevisions />} />
           <Route path="blog" element={<AdminBlog />} />
           <Route path="products" element={<Navigate to="/admin/content" replace />} />

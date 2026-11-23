@@ -103,7 +103,10 @@ export function buildSeoPayload(
     : `${brand.name} — ${brand.tagline}`
   const resolvedDescription = description ?? page?.description ?? seo.defaultDescription
   const canonical = `${base}${path.startsWith('/') ? path : `/${path}`}`
-  const image = absoluteUrl(base, seo.ogImage)
+  const image = absoluteUrl(
+    base,
+    seo.ogImage || brand.socialImage || brand.logo?.wordmark || brand.logo?.mark || '',
+  )
   const robots = noindex ? 'noindex, nofollow' : seo.robots
 
   const trail = breadcrumbs
@@ -123,7 +126,10 @@ export function buildSeoPayload(
       telephone: brand.contact.phone,
       email: brand.contact.email,
       image,
-      logo: { '@type': 'ImageObject', url: image },
+      logo: {
+        '@type': 'ImageObject',
+        url: absoluteUrl(base, brand.logo?.mark || brand.logo?.wordmark || image),
+      },
       address: {
         '@type': 'PostalAddress',
         streetAddress: [brand.address.line1, brand.address.line2].filter(Boolean).join(', '),

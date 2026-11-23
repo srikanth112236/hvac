@@ -68,6 +68,9 @@ export interface SiteBrand {
   tagline: string
   description: string
   monogram: string
+  logo?: { mark: string | null; wordmark: string | null }
+  favicon?: string
+  socialImage?: string
   contact: {
     phone: string
     phoneDisplay: string
@@ -218,7 +221,14 @@ export interface SiteProcessExtras {
 }
 
 export interface SiteAmcDetails {
-  terms: { id: string; response: string; parts: string; reporting: string; bestFor: string; commitment: string }[]
+  terms: {
+    id: string
+    response: string
+    parts: string
+    reporting: string
+    bestFor: string
+    commitment: string
+  }[]
   schedule: { period: string; essential: string; comprehensive: string; precision: string }[]
   sla: { metric: string; standard: string; note: string }[]
   includes: string[]
@@ -407,8 +417,36 @@ export interface SiteSeo {
   pages: SeoPage[]
 }
 
+export interface SiteTheme {
+  defaultVariant: 'foundry' | 'atelier'
+  palette: {
+    base: string
+    panel: string
+    panel2: string
+    text: string
+    muted: string
+    faint: string
+    line: string
+    lineStrong: string
+    cold: string
+    coldInk: string
+    heat: string
+    success: string
+    warn: string
+    danger: string
+    accent: string
+  }
+  buttons: {
+    primaryBg: string
+    primaryText: string
+    secondaryBorder: string
+    radius: string
+  }
+}
+
 export interface SiteContentPayload {
   brand: SiteBrand
+  theme?: SiteTheme
   home: SiteHome
   about: SiteAbout
   workCases: SiteWorkCase[]
@@ -518,7 +556,12 @@ const workCaseSchema = z.object({
 
 const postSchema = z.object({
   id: z.string().trim().min(1).max(80),
-  slug: z.string().trim().min(2).max(90).regex(/^[a-z0-9-]+$/),
+  slug: z
+    .string()
+    .trim()
+    .min(2)
+    .max(90)
+    .regex(/^[a-z0-9-]+$/),
   title: trimmed(180).min(1),
   excerpt: trimmed(500).min(1),
   answer: trimmed(1200).min(1),
@@ -544,7 +587,12 @@ const postSchema = z.object({
 
 const productSchema = z.object({
   id: z.string().trim().min(1).max(80),
-  slug: z.string().trim().min(2).max(90).regex(/^[a-z0-9-]+$/),
+  slug: z
+    .string()
+    .trim()
+    .min(2)
+    .max(90)
+    .regex(/^[a-z0-9-]+$/),
   name: trimmed(160).min(1),
   category: trimmed(60).min(1),
   brand: trimmed(80),
@@ -576,7 +624,12 @@ const processStageSchema = z.object({
 })
 
 const legalDocumentSchema = z.object({
-  slug: z.string().trim().min(2).max(60).regex(/^[a-z0-9-]+$/),
+  slug: z
+    .string()
+    .trim()
+    .min(2)
+    .max(60)
+    .regex(/^[a-z0-9-]+$/),
   title: trimmed(160).min(1),
   summary: trimmed(600),
   updatedAt: trimmed(40),
@@ -674,6 +727,14 @@ export const siteContentPayloadSchema: z.ZodType<SiteContentPayload> = z.object(
     tagline: trimmed(200),
     description: trimmed(600),
     monogram: trimmed(4),
+    logo: z
+      .object({
+        mark: z.string().trim().max(500).nullable(),
+        wordmark: z.string().trim().max(500).nullable(),
+      })
+      .optional(),
+    favicon: trimmed(500).optional(),
+    socialImage: trimmed(500).optional(),
     contact: z.object({
       phone: trimmed(40),
       phoneDisplay: trimmed(40),
@@ -725,6 +786,34 @@ export const siteContentPayloadSchema: z.ZodType<SiteContentPayload> = z.object(
       invoiceNotes: trimmed(1000),
     }),
   }),
+  theme: z
+    .object({
+      defaultVariant: z.enum(['foundry', 'atelier']),
+      palette: z.object({
+        base: z.string().trim().min(1).max(40),
+        panel: z.string().trim().min(1).max(40),
+        panel2: z.string().trim().min(1).max(40),
+        text: z.string().trim().min(1).max(40),
+        muted: z.string().trim().min(1).max(40),
+        faint: z.string().trim().min(1).max(40),
+        line: z.string().trim().min(1).max(40),
+        lineStrong: z.string().trim().min(1).max(40),
+        cold: z.string().trim().min(1).max(40),
+        coldInk: z.string().trim().min(1).max(40),
+        heat: z.string().trim().min(1).max(40),
+        success: z.string().trim().min(1).max(40),
+        warn: z.string().trim().min(1).max(40),
+        danger: z.string().trim().min(1).max(40),
+        accent: z.string().trim().min(1).max(40),
+      }),
+      buttons: z.object({
+        primaryBg: z.string().trim().min(1).max(40),
+        primaryText: z.string().trim().min(1).max(40),
+        secondaryBorder: z.string().trim().min(1).max(40),
+        radius: z.string().trim().min(1).max(40),
+      }),
+    })
+    .optional(),
   home: z.object({
     heroEyebrow: trimmed(160),
     heroTitle: trimmed(160),
@@ -989,4 +1078,3 @@ export const reminderPatchSchema = z.object({
   dueAt: z.string().trim().min(4).max(40).optional(),
   status: z.enum(['open', 'done']).optional(),
 })
-

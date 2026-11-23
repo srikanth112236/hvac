@@ -119,13 +119,25 @@ export function SiteHeader() {
           )}
         >
           <Link to="/" className="group flex items-center gap-3" aria-label={`${brand.name} home`}>
-            <span className="flex h-9 w-9 items-center justify-center border border-line-strong/90 font-mono text-[13px] font-semibold tracking-[0.04em] text-cold transition-colors duration-2 group-hover:border-cold">
-              {brand.name.split(' ')[0]}
+            <span className="flex h-9 w-9 items-center justify-center overflow-hidden border border-line-strong/90 font-mono text-[13px] font-semibold tracking-[0.04em] text-cold transition-colors duration-2 group-hover:border-cold">
+              {brand.logo?.mark ? (
+                <img src={brand.logo.mark} alt="" className="h-full w-full object-contain" />
+              ) : (
+                brand.name.split(' ')[0]
+              )}
             </span>
             <span className="flex flex-col leading-tight">
-              <span className="font-display text-[15px] font-semibold uppercase leading-none tracking-[0.02em] text-fg sm:text-[16px]">
-                {brand.name}
-              </span>
+              {brand.logo?.wordmark ? (
+                <img
+                  src={brand.logo.wordmark}
+                  alt={brand.name}
+                  className="h-6 w-auto max-w-[180px] object-contain object-left"
+                />
+              ) : (
+                <span className="font-display text-[15px] font-semibold uppercase leading-none tracking-[0.02em] text-fg sm:text-[16px]">
+                  {brand.name}
+                </span>
+              )}
               <span className="mt-0.5 hidden font-mono text-[9px] uppercase tracking-[0.16em] text-fg-faint lg:block">
                 Thermal systems · {brand.address.locality}
               </span>

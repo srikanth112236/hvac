@@ -119,6 +119,7 @@ export function AdminContent({
     if (!draft) return
     const payload: SiteContentPayload = {
       brand: draft.brand,
+      theme: draft.theme,
       home: draft.home,
       about: draft.about,
       workCases: draft.workCases,
@@ -217,6 +218,14 @@ export function AdminContent({
               <Icon name="external" size={12} />
               View site
             </Link>
+            {!journalWorkspace ? (
+              <Link
+                to="/admin/content"
+                className="flex h-9 items-center gap-2 border border-cold/40 px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-cold hover:border-cold"
+              >
+                New studio
+              </Link>
+            ) : null}
             <Link
               to="/admin/content/revisions"
               className="flex h-9 items-center gap-2 border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:text-cold"
@@ -385,7 +394,7 @@ function Wide({ children, span = 2 }: { children: React.ReactNode; span?: 2 | 3 
   return <div className={span === 3 ? 'md:col-span-3' : 'md:col-span-2'}>{children}</div>
 }
 
-function BrandTab({ draft, update }: { draft: SiteContent; update: Update }) {
+export function BrandTab({ draft, update }: { draft: SiteContent; update: Update }) {
   const brand = draft.brand
   return (
     <div className="flex flex-col gap-4">
@@ -475,7 +484,7 @@ function BrandTab({ draft, update }: { draft: SiteContent; update: Update }) {
 /*  Home & About                                                               */
 /* -------------------------------------------------------------------------- */
 
-function HomeTab({ draft, update }: { draft: SiteContent; update: Update }) {
+export function HomeTab({ draft, update }: { draft: SiteContent; update: Update }) {
   const home = draft.home
   const fields: { key: keyof typeof home; label: string; long?: boolean }[] = [
     { key: 'heroEyebrow', label: 'Hero eyebrow' },
@@ -534,7 +543,7 @@ function HomeTab({ draft, update }: { draft: SiteContent; update: Update }) {
   )
 }
 
-function AboutTab({ draft, update }: { draft: SiteContent; update: Update }) {
+export function AboutTab({ draft, update }: { draft: SiteContent; update: Update }) {
   return (
     <Section title="About page" description="Headline, lead and story paragraphs. Separate paragraphs with a blank line." columns={1}>
       <Input label="Headline" value={draft.about.headline} onChange={(event) => update((current) => ({ ...current, about: { ...current.about, headline: event.target.value } }))} />
@@ -563,7 +572,7 @@ const pageFields: { key: keyof SiteContent['pages']; label: string; path: string
   { key: 'products', label: 'Systems', path: '/products' },
 ]
 
-function PagesTab({ draft, update }: { draft: SiteContent; update: Update }) {
+export function PagesTab({ draft, update }: { draft: SiteContent; update: Update }) {
   return (
     <div className="flex flex-col gap-4">
       {pageFields.map((field) => {
@@ -608,7 +617,7 @@ function PagesTab({ draft, update }: { draft: SiteContent; update: Update }) {
 /*  Services                                                                   */
 /* -------------------------------------------------------------------------- */
 
-function ServicesTab({
+export function ServicesTab({
   draft,
   update,
   selected,
@@ -1069,7 +1078,7 @@ function PairListEditor<T extends Record<string, string>>({
   )
 }
 
-function PlansTab({ draft, update }: { draft: SiteContent; update: Update }) {
+export function PlansTab({ draft, update }: { draft: SiteContent; update: Update }) {
   const patch = (id: string, change: Partial<SiteContent['plans'][number]>) =>
     update((current) => ({
       ...current,
@@ -1132,7 +1141,7 @@ function PlansTab({ draft, update }: { draft: SiteContent; update: Update }) {
   )
 }
 
-function FaqsTab({ draft, update }: { draft: SiteContent; update: Update }) {
+export function FaqsTab({ draft, update }: { draft: SiteContent; update: Update }) {
   const patch = (id: string, change: Partial<SiteContent['faqs'][number]>) =>
     update((current) => ({
       ...current,
@@ -1189,7 +1198,7 @@ function FaqsTab({ draft, update }: { draft: SiteContent; update: Update }) {
 /*  SEO                                                                        */
 /* -------------------------------------------------------------------------- */
 
-function SeoTab({ draft, update }: { draft: SiteContent; update: Update }) {
+export function SeoTab({ draft, update }: { draft: SiteContent; update: Update }) {
   const seo = draft.seo
   const patchPage = (index: number, change: Partial<SiteContent['seo']['pages'][number]>) =>
     update((current) => ({

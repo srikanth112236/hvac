@@ -25,6 +25,8 @@ export interface BrandConfig {
     wordmark: string | null
     mark: string | null
   }
+  favicon?: string
+  socialImage?: string
   contact: {
     phone: string
     phoneDisplay: string
@@ -127,6 +129,9 @@ export type BrandOverrides = Partial<
     | 'tagline'
     | 'description'
     | 'monogram'
+    | 'logo'
+    | 'favicon'
+    | 'socialImage'
     | 'contact'
     | 'hours'
     | 'address'

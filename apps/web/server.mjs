@@ -247,6 +247,51 @@ function themeDocument(html, theme) {
   )
 }
 
+/**
+ * Server-rendered theme tokens and favicon from the published content.
+ * Values are schema-validated, but we still strip CSS/HTML delimiters before
+ * they reach the inline stylesheet.
+ */
+function contentThemeDocument(content) {
+  const theme = content?.theme
+  const favicon = typeof content?.brand?.favicon === 'string' ? content.brand.favicon : ''
+  const safe = (value) => String(value ?? '').replace(/[^-0-9a-fA-F\s.,%#()]/g, '')
+  const declarations = []
+  if (theme?.palette) {
+    const map = [
+      ['--base', 'base'],
+      ['--panel', 'panel'],
+      ['--panel-2', 'panel2'],
+      ['--fg', 'text'],
+      ['--fg-dim', 'muted'],
+      ['--fg-faint', 'faint'],
+      ['--line', 'line'],
+      ['--line-strong', 'lineStrong'],
+      ['--cold', 'cold'],
+      ['--cold-ink', 'coldInk'],
+      ['--heat', 'heat'],
+      ['--success', 'success'],
+      ['--warn', 'warn'],
+      ['--danger', 'danger'],
+      ['--focus', 'accent'],
+    ]
+    for (const [token, key] of map) {
+      if (theme.palette[key]) declarations.push(`${token}:${safe(theme.palette[key])}`)
+    }
+    if (theme.buttons?.primaryBg) declarations.push(`--cold:${safe(theme.buttons.primaryBg)}`)
+    if (theme.buttons?.primaryText)
+      declarations.push(`--cold-ink:${safe(theme.buttons.primaryText)}`)
+    if (theme.buttons?.secondaryBorder)
+      declarations.push(`--line-strong:${safe(theme.buttons.secondaryBorder)}`)
+    if (theme.buttons?.radius) declarations.push(`--radius-control:${safe(theme.buttons.radius)}`)
+  }
+  const style = declarations.length
+    ? `<style id="hvac-theme-tokens">:root{${declarations.join(';')}}</style>`
+    : ''
+  const icon = favicon ? `<link rel="icon" href="${escapeAttr(favicon)}" />` : ''
+  return `${style}${icon}`
+}
+
 function stripSeoTags(html) {
   return html
     .replace(/<title>[\s\S]*?<\/title>/i, '')
@@ -290,7 +335,10 @@ function inject(html, body, seo, content, theme) {
     '<div id="root"></div>',
     `<div id="root">${body}</div><script id="hvac-bootstrap" type="application/json">${safeBootstrap}</script>`,
   )
-  output = output.replace('</head>', `    ${seoTags(seo)}\n  </head>`)
+  output = output.replace(
+    '</head>',
+    `    ${seoTags(seo)}\n    ${contentThemeDocument(content)}\n  </head>`,
+  )
   return output
 }
 
@@ -332,6 +380,15 @@ app.get('*', async (req, res) => {
   }
 
   const content = await getContent()
+  const resolvedTheme =
+    req.query.theme === 'atelier'
+      ? 'atelier'
+      : req.query.theme === 'foundry'
+        ? 'foundry'
+        : content?.theme?.defaultVariant === 'atelier' ||
+            content?.theme?.defaultVariant === 'foundry'
+          ? content.theme.defaultVariant
+          : theme
   const known = isPublicPath(pathname, content)
   if (!known) res.setHeader('X-Robots-Tag', 'noindex, nofollow')
   if (!ssr) {
@@ -343,22 +400,22 @@ app.get('*', async (req, res) => {
     try {
       const html = await readFile(candidate, 'utf8')
       res.status(known ? 200 : 404).setHeader('x-render-mode', 'static')
-      res.send(themeDocument(html, theme))
+      res.send(themeDocument(html, resolvedTheme))
     } catch {
-      res.status(known ? 200 : 404).send(themeDocument(template, theme))
+      res.status(known ? 200 : 404).send(themeDocument(template, resolvedTheme))
     }
     return
   }
 
   try {
-    const result = ssr.render(pathname, content ?? undefined, theme)
+    const result = ssr.render(pathname, content ?? undefined, resolvedTheme)
     res.status(known ? 200 : 404)
     res.setHeader('x-render-mode', 'ssr')
-    res.send(inject(template, result.html, result.seo, content, theme))
+    res.send(inject(template, result.html, result.seo, content, resolvedTheme))
   } catch (error) {
     console.error('[hvac-web] SSR render failed', error)
     res.setHeader('x-render-mode', 'fallback')
-    res.send(themeDocument(template, theme))
+    res.send(themeDocument(template, resolvedTheme))
   }
 })
 
