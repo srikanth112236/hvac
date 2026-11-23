@@ -12,18 +12,22 @@ import {
   type CouponRecord,
   type CouponSummary,
   type CouponWithStats,
+  type NewsletterRecurrence,
   type NewsletterRecord,
   type NewsletterSummary,
+  type NewsletterSuppression,
 } from '@hvac/shared'
 import { requireAdmin, requireAdminMutation, requirePermission } from './auth.js'
 import { invoiceStore } from './business.js'
 import { leadStore } from './leads.js'
 import { customerStore } from './portalAuth.js'
+import { preferenceStore } from './customerPreferences.js'
 import { createStore } from './store.js'
-import { mailerConfigured } from './config.js'
+import { BUSINESS_TIMEZONE, mailerConfigured, PUBLIC_SITE_URL } from './config.js'
 import { sendMail } from './mailer.js'
-import { readSubscribedSignups } from './newsletterSignups.js'
+import { readNewsletterSignups, readSubscribedSignups } from './newsletterSignups.js'
 import { sanitizeNewsletterHtml } from './sanitize.js'
+import { zonedParts, zonedTimeToUtc } from './time.js'
 
 /* -------------------------------------------------------------------------- */
 /*  Demo seed                                                                 */
@@ -187,6 +191,164 @@ function normalizeEmails(values: string[]): string[] {
   return [...seen]
 }
 
+async function readSuppressionList(): Promise<NewsletterSuppression[]> {
+  const [signups, customers, preferences] = await Promise.all([
+    readNewsletterSignups(),
+    customerStore.read(),
+    preferenceStore.read(),
+  ])
+  const suppressed = new Map<string, NewsletterSuppression>()
+  for (const signup of signups) {
+    if (signup.status !== 'unsubscribed') continue
+    suppressed.set(signup.email, {
+      email: signup.email,
+      name: signup.email,
+      reason: 'Unsubscribed from the mailing list',
+      source: 'signup',
+    })
+  }
+  for (const customer of customers) {
+    if (preferences[customer.id]?.emailMarketing !== false) continue
+    const email = customer.email.trim().toLowerCase()
+    const existing = suppressed.get(email)
+    suppressed.set(email, {
+      email,
+      name: customer.name || email,
+      reason: existing
+        ? `${existing.reason}; marketing email disabled`
+        : 'Marketing email disabled',
+      source: existing?.source ?? 'preference',
+    })
+  }
+  return [...suppressed.values()].sort((a, b) => a.email.localeCompare(b.email))
+}
+
+export function applySuppression(
+  emails: string[],
+  suppression: NewsletterSuppression[],
+  override: boolean,
+): { recipients: string[]; suppressedCount: number } {
+  const blocked = new Set(suppression.map((entry) => entry.email))
+  const suppressedCount = emails.filter((email) => blocked.has(email)).length
+  return {
+    recipients: override ? emails : emails.filter((email) => !blocked.has(email)),
+    suppressedCount,
+  }
+}
+
+async function resolveRecipients(
+  audience: NewsletterRecord['audience'],
+  selected: string[],
+  override: boolean,
+): Promise<{
+  recipients: string[]
+  suppressedCount: number
+  suppression: NewsletterSuppression[]
+}> {
+  const suppression = await readSuppressionList()
+  const raw = audience === 'selected' ? normalizeEmails(selected) : await audienceEmails(audience)
+  const filtered = applySuppression(raw, suppression, override)
+  return { ...filtered, suppression }
+}
+
+const DAY_MS = 86_400_000
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0')
+}
+
+function nthWeekdayOfMonth(
+  year: number,
+  month: number,
+  weekday: number,
+  nth: number,
+): number | null {
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
+  if (nth === -1) {
+    const last = new Date(Date.UTC(year, month, lastDay))
+    return lastDay - ((last.getUTCDay() - weekday + 7) % 7)
+  }
+  const firstWeekday = new Date(Date.UTC(year, month, 1)).getUTCDay()
+  const day = 1 + ((weekday - firstWeekday + 7) % 7) + (nth - 1) * 7
+  return day <= lastDay ? day : null
+}
+
+/**
+ * Next occurrence after `afterMs`, anchored to the original scheduled time so
+ * a daily/monthly interval never drifts if the tick was delayed.
+ */
+export function nextRecurringOccurrence(
+  recurrence: NewsletterRecurrence,
+  anchorIso: string,
+  afterMs: number,
+): string | null {
+  const anchor = Date.parse(anchorIso)
+  if (!Number.isFinite(anchor)) return null
+  const anchorParts = zonedParts(anchor, BUSINESS_TIMEZONE)
+  const afterParts = zonedParts(afterMs, BUSINESS_TIMEZONE)
+  const anchorDay = Date.UTC(anchorParts.year, anchorParts.month - 1, anchorParts.day)
+  const anchorWeekday = new Date(anchorDay).getUTCDay()
+  const anchorWeekStart = anchorDay - anchorWeekday * DAY_MS
+  const afterDay = Date.UTC(afterParts.year, afterParts.month - 1, afterParts.day)
+  const endAt = recurrence.endAt ? Date.parse(recurrence.endAt) : null
+  const interval = Math.max(1, recurrence.interval || 1)
+  let cursor = Math.max(anchorDay, afterDay)
+
+  for (let index = 0; index < 7300; index += 1) {
+    cursor += DAY_MS
+    const date = new Date(cursor)
+    const year = date.getUTCFullYear()
+    const month = date.getUTCMonth()
+    const day = date.getUTCDate()
+    const weekday = date.getUTCDay()
+
+    if (recurrence.kind === 'daily') {
+      const dayDiff = Math.round((cursor - anchorDay) / DAY_MS)
+      if (dayDiff % interval !== 0) continue
+    } else if (recurrence.kind === 'weekly') {
+      if (!recurrence.weekdays.includes(weekday)) continue
+      const weekDiff = Math.floor((cursor - anchorWeekStart) / (7 * DAY_MS))
+      if (weekDiff % interval !== 0) continue
+    } else {
+      const monthDiff = (year - anchorParts.year) * 12 + (month - (anchorParts.month - 1))
+      if (monthDiff <= 0 || monthDiff % interval !== 0) continue
+      if (recurrence.monthlyMode === 'day-of-month') {
+        const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
+        const target = Math.min(lastDay, Math.max(1, recurrence.dayOfMonth ?? anchorParts.day))
+        if (day !== target) continue
+      } else {
+        if (recurrence.weekday === null || recurrence.weekday === undefined) continue
+        const target = nthWeekdayOfMonth(
+          year,
+          month,
+          recurrence.weekday,
+          recurrence.weekOfMonth ?? 1,
+        )
+        if (target === null || day !== target) continue
+      }
+    }
+
+    const iso = zonedTimeToUtc(
+      `${year}-${pad2(month + 1)}-${pad2(day)}`,
+      anchorParts.hour,
+      BUSINESS_TIMEZONE,
+      anchorParts.minute,
+    )?.toISOString()
+    if (!iso || Date.parse(iso) <= afterMs) continue
+    if (endAt !== null && Number.isFinite(endAt) && Date.parse(iso) > endAt) return null
+    return iso
+  }
+  return null
+}
+
+const SCHEDULE_LOCK_MS = 5 * 60_000
+
+function scheduleLocked(record: NewsletterRecord, now = Date.now()): boolean {
+  if (record.status !== 'scheduled' || !record.scheduledAt) return false
+  const at = Date.parse(record.scheduledAt)
+  return Number.isFinite(at) && at - now <= SCHEDULE_LOCK_MS
+}
+
 async function audienceEmails(audience: NewsletterRecord['audience']): Promise<string[]> {
   const [customers, invoices, leads, signups] = await Promise.all([
     customerStore.read(),
@@ -229,7 +391,18 @@ async function sendBatch(record: NewsletterRecord, now: number): Promise<Newslet
   }
   const anchor = Date.parse(record.lastTickAt ?? record.startedAt ?? '')
   const elapsed = Number.isFinite(anchor) ? Math.max(0, now - anchor) : 0
-  const due = Math.floor((elapsed / 60_000) * record.perMinute)
+  const minuteDue = Math.floor((elapsed / 60_000) * record.perMinute)
+  const hourAnchor = record.hourWindowAt ? Date.parse(record.hourWindowAt) : NaN
+  const dayAnchor = record.dayWindowAt ? Date.parse(record.dayWindowAt) : NaN
+  const resetHour = !Number.isFinite(hourAnchor) || now - hourAnchor >= 3_600_000
+  const resetDay = !Number.isFinite(dayAnchor) || now - dayAnchor >= DAY_MS
+  const hourSent = resetHour ? 0 : (record.hourSent ?? 0)
+  const daySent = resetDay ? 0 : (record.daySent ?? 0)
+  const hourCap =
+    record.perHour && record.perHour > 0 ? Math.max(0, record.perHour - hourSent) : Infinity
+  const dayCap =
+    record.perDay && record.perDay > 0 ? Math.max(0, record.perDay - daySent) : Infinity
+  const due = Math.max(0, Math.min(minuteDue, hourCap, dayCap))
   if (due <= 0) return record
   // sentCount counts deliveries; failedCount counts attempts that failed.
   // The cursor is the sum, so a failure never causes the next batch to skip
@@ -243,6 +416,7 @@ async function sendBatch(record: NewsletterRecord, now: number): Promise<Newslet
   const document = newsletterEmailDocument({
     ...record,
     html: sanitizeNewsletterHtml(record.html),
+    preferencesUrl: PUBLIC_SITE_URL ? `${PUBLIC_SITE_URL.replace(/\/+$/, '')}/portal` : undefined,
   })
   let sent = 0
   let failed = 0
@@ -265,6 +439,10 @@ async function sendBatch(record: NewsletterRecord, now: number): Promise<Newslet
     ...record,
     sentCount,
     failedCount,
+    hourSent: hourSent + sent + failed,
+    daySent: daySent + sent + failed,
+    hourWindowAt: resetHour ? iso : (record.hourWindowAt ?? iso),
+    dayWindowAt: resetDay ? iso : (record.dayWindowAt ?? iso),
     lastTickAt: iso,
     status: complete ? 'sent' : 'sending',
     completedAt: complete ? iso : null,
@@ -290,6 +468,41 @@ async function advanceQueue(
       }
       changed = true
       const iso = new Date(now).toISOString()
+      if (record.recurrence) {
+        const nextAt = nextRecurringOccurrence(record.recurrence, record.scheduledAt, now)
+        const runNumber = (record.runCount ?? 0) + 1
+        const template: NewsletterRecord = {
+          ...record,
+          status: nextAt ? 'scheduled' : 'sent',
+          scheduledAt: nextAt,
+          runCount: runNumber,
+          lastRunAt: iso,
+          completedAt: nextAt ? null : iso,
+          updatedAt: iso,
+        }
+        const run: NewsletterRecord = {
+          ...record,
+          id: randomUUID(),
+          parentId: record.id,
+          seriesId: record.seriesId ?? record.id,
+          runNumber,
+          recurrence: null,
+          status: 'sending',
+          scheduledAt: null,
+          startedAt: iso,
+          lastTickAt: iso,
+          completedAt: null,
+          sentCount: 0,
+          failedCount: 0,
+          hourSent: 0,
+          daySent: 0,
+          hourWindowAt: iso,
+          dayWindowAt: iso,
+          updatedAt: iso,
+        }
+        next.push(template, await sendBatch(run, now))
+        continue
+      }
       next.push(
         await sendBatch(
           {
@@ -299,6 +512,10 @@ async function advanceQueue(
             lastTickAt: iso,
             sentCount: 0,
             failedCount: 0,
+            hourSent: 0,
+            daySent: 0,
+            hourWindowAt: iso,
+            dayWindowAt: iso,
             completedAt: null,
             updatedAt: iso,
           },
@@ -350,7 +567,8 @@ function couponView(coupon: CouponRecord, now = Date.now()): CouponWithStats {
     status: couponStatus(coupon, now),
     usageCount,
     remaining: coupon.maxRedemptions > 0 ? Math.max(0, coupon.maxRedemptions - usageCount) : null,
-    savedTotal: Math.round(coupon.redemptions.reduce((sum, entry) => sum + entry.amount, 0) * 100) / 100,
+    savedTotal:
+      Math.round(coupon.redemptions.reduce((sum, entry) => sum + entry.amount, 0) * 100) / 100,
   }
 }
 
@@ -423,28 +641,53 @@ marketingRouter.get('/newsletters', async (_req, res) => {
 })
 
 marketingRouter.get('/newsletters/audiences', async (_req, res) => {
-  const [all, portal, openBalance, prospects, customers, leads] = await Promise.all([
-    audienceEmails('all'),
-    audienceEmails('portal'),
-    audienceEmails('open-balance'),
-    audienceEmails('prospects'),
-    customerStore.read(),
-    leadStore.read(),
-  ])
+  const [rawAll, rawPortal, rawOpenBalance, rawProspects, customers, leads, suppression] =
+    await Promise.all([
+      audienceEmails('all'),
+      audienceEmails('portal'),
+      audienceEmails('open-balance'),
+      audienceEmails('prospects'),
+      customerStore.read(),
+      leadStore.read(),
+      readSuppressionList(),
+    ])
+  const suppressionByEmail = new Map(suppression.map((entry) => [entry.email, entry]))
+  const eligible = (emails: string[]) =>
+    emails.filter((email) => !suppressionByEmail.has(email)).length
   res.json({
     data: {
       counts: {
-        all: all.length,
-        portal: portal.length,
-        'open-balance': openBalance.length,
-        prospects: prospects.length,
+        all: eligible(rawAll),
+        portal: eligible(rawPortal),
+        'open-balance': eligible(rawOpenBalance),
+        prospects: eligible(rawProspects),
       },
       customers: [
-        ...customers.map((customer) => ({ name: customer.name, email: customer.email })),
+        ...customers.map((customer) => {
+          const email = customer.email.trim().toLowerCase()
+          const blocked = suppressionByEmail.get(email)
+          return {
+            name: customer.name,
+            email,
+            suppressed: Boolean(blocked),
+            reason: blocked?.reason,
+          }
+        }),
         ...leads
           .filter((lead) => lead.email)
-          .map((lead) => ({ name: `${lead.name || 'Enquiry'} · prospect`, email: lead.email })),
+          .map((lead) => {
+            const email = lead.email.trim().toLowerCase()
+            const blocked = suppressionByEmail.get(email)
+            return {
+              name: `${lead.name || 'Enquiry'} - prospect`,
+              email,
+              suppressed: Boolean(blocked),
+              reason: blocked?.reason,
+            }
+          }),
       ].sort((a, b) => a.name.localeCompare(b.name)),
+      suppressed: suppression,
+      suppressedCount: suppression.length,
     },
   })
 })
@@ -455,10 +698,11 @@ marketingRouter.post('/newsletters', async (req, res) => {
     validationError(res, parsed.error.issues[0]?.message ?? 'Check the campaign details.')
     return
   }
-  const recipients =
-    parsed.data.audience === 'selected'
-      ? normalizeEmails(parsed.data.recipients)
-      : await audienceEmails(parsed.data.audience)
+  const resolved = await resolveRecipients(
+    parsed.data.audience,
+    parsed.data.recipients,
+    parsed.data.overrideSuppression,
+  )
   const now = nowIso()
   const record: NewsletterRecord = {
     id: randomUUID(),
@@ -468,8 +712,22 @@ marketingRouter.post('/newsletters', async (req, res) => {
     replyTo: parsed.data.replyTo,
     html: sanitizeNewsletterHtml(parsed.data.html),
     audience: parsed.data.audience,
-    recipients,
+    recipients: resolved.recipients,
     perMinute: parsed.data.perMinute,
+    perHour: parsed.data.perHour,
+    perDay: parsed.data.perDay,
+    overrideSuppression: parsed.data.overrideSuppression,
+    suppressedCount: resolved.suppressedCount,
+    recurrence: parsed.data.recurrence ?? null,
+    seriesId: null,
+    parentId: null,
+    runNumber: 0,
+    runCount: 0,
+    lastRunAt: null,
+    hourSent: 0,
+    daySent: 0,
+    hourWindowAt: null,
+    dayWindowAt: null,
     status: 'draft',
     scheduledAt: null,
     startedAt: null,
@@ -504,19 +762,38 @@ marketingRouter.patch('/newsletters/:id', async (req, res) => {
     })
     return
   }
+  if (scheduleLocked(current)) {
+    res.status(409).json({
+      error: {
+        code: 'schedule_locked',
+        message:
+          'This campaign is inside the five-minute send lock. Pause or delete it before the lock window.',
+      },
+    })
+    return
+  }
   const audience = parsed.data.audience ?? current.audience
-  const recipients =
-    audience === 'selected'
-      ? normalizeEmails(parsed.data.recipients ?? current.recipients)
-      : await audienceEmails(audience)
+  const override = parsed.data.overrideSuppression ?? current.overrideSuppression ?? false
+  const resolved = await resolveRecipients(
+    audience,
+    parsed.data.recipients ?? current.recipients,
+    override,
+  )
+  const preserveSchedule = current.status === 'scheduled' && Boolean(current.scheduledAt)
   const updated: NewsletterRecord = {
     ...current,
     ...parsed.data,
     html: parsed.data.html ? sanitizeNewsletterHtml(parsed.data.html) : current.html,
     audience,
-    recipients,
-    status: 'draft',
-    scheduledAt: null,
+    recipients: resolved.recipients,
+    overrideSuppression: override,
+    suppressedCount: resolved.suppressedCount,
+    recurrence:
+      parsed.data.recurrence !== undefined ? parsed.data.recurrence : (current.recurrence ?? null),
+    perHour: parsed.data.perHour ?? current.perHour,
+    perDay: parsed.data.perDay ?? current.perDay,
+    status: preserveSchedule ? 'scheduled' : 'draft',
+    scheduledAt: preserveSchedule ? current.scheduledAt : null,
     updatedAt: nowIso(),
   }
   const next = [...records]
@@ -530,7 +807,8 @@ marketingRouter.post('/newsletters/:id/send', async (req, res) => {
     res.status(503).json({
       error: {
         code: 'mail_unconfigured',
-        message: 'No email provider is configured. Set RESEND_API_KEY or MAIL_WEBHOOK_URL before sending.',
+        message:
+          'No email provider is configured. Set RESEND_API_KEY or MAIL_WEBHOOK_URL before sending.',
       },
     })
     return
@@ -543,30 +821,54 @@ marketingRouter.post('/newsletters/:id/send', async (req, res) => {
   }
   const current = records[index] as NewsletterRecord
   if (current.status === 'sending') {
-    res.status(409).json({ error: { code: 'already_sending', message: 'This campaign is already in the queue.' } })
+    res.status(409).json({
+      error: { code: 'already_sending', message: 'This campaign is already in the queue.' },
+    })
     return
   }
   if (current.status === 'sent') {
-    res.status(409).json({ error: { code: 'already_sent', message: 'This campaign was already delivered.' } })
+    res
+      .status(409)
+      .json({ error: { code: 'already_sent', message: 'This campaign was already delivered.' } })
     return
   }
-  const recipients = current.recipients.length
+  const rawRecipients = current.recipients.length
     ? current.recipients
     : current.audience === 'selected'
       ? []
       : await audienceEmails(current.audience)
+  const suppression = await readSuppressionList()
+  const resolved = applySuppression(
+    rawRecipients,
+    suppression,
+    current.overrideSuppression ?? false,
+  )
+  const recipients = resolved.recipients
   if (recipients.length === 0) {
-    validationError(res, 'This audience has no email addresses yet. Choose another audience.')
+    validationError(
+      res,
+      'This audience has no sendable email addresses. Choose another audience or review suppression.',
+    )
     return
   }
   const iso = nowIso()
   const updated: NewsletterRecord = {
     ...current,
     recipients,
+    suppressedCount: resolved.suppressedCount,
     status: 'sending',
     scheduledAt: null,
+    recurrence: null,
+    seriesId: null,
+    runNumber: 0,
+    runCount: 0,
+    lastRunAt: null,
     startedAt: iso,
     lastTickAt: iso,
+    hourSent: 0,
+    daySent: 0,
+    hourWindowAt: iso,
+    dayWindowAt: iso,
     completedAt: null,
     sentCount: 0,
     failedCount: 0,
@@ -583,7 +885,8 @@ marketingRouter.post('/newsletters/:id/schedule', async (req, res) => {
     res.status(503).json({
       error: {
         code: 'mail_unconfigured',
-        message: 'No email provider is configured. Set RESEND_API_KEY or MAIL_WEBHOOK_URL before scheduling.',
+        message:
+          'No email provider is configured. Set RESEND_API_KEY or MAIL_WEBHOOK_URL before scheduling.',
       },
     })
     return
@@ -613,24 +916,78 @@ marketingRouter.post('/newsletters/:id/schedule', async (req, res) => {
     res.status(409).json({ error: { code: 'locked', message: 'This campaign is already moving.' } })
     return
   }
-  const recipients = current.recipients.length
+  if (scheduleLocked(current)) {
+    res.status(409).json({
+      error: {
+        code: 'schedule_locked',
+        message: 'This campaign is inside the five-minute send lock and cannot be rescheduled.',
+      },
+    })
+    return
+  }
+  const recurrence = current.recurrence ?? null
+  if (recurrence) {
+    if (
+      (recurrence.kind === 'weekly' && recurrence.weekdays.length === 0) ||
+      (recurrence.kind === 'monthly' &&
+        recurrence.monthlyMode === 'day-of-month' &&
+        !recurrence.dayOfMonth) ||
+      (recurrence.kind === 'monthly' &&
+        recurrence.monthlyMode === 'nth-weekday' &&
+        (recurrence.weekday === null ||
+          recurrence.weekday === undefined ||
+          !recurrence.weekOfMonth))
+    ) {
+      validationError(res, 'Choose the repeat day for this schedule.')
+      return
+    }
+    if (recurrence.endAt) {
+      const end = Date.parse(recurrence.endAt)
+      if (!Number.isFinite(end) || end <= at) {
+        validationError(res, 'The schedule end date must be after the first send.')
+        return
+      }
+    }
+  }
+  const rawRecipients = current.recipients.length
     ? current.recipients
     : current.audience === 'selected'
       ? []
       : await audienceEmails(current.audience)
+  const suppression = await readSuppressionList()
+  const resolved = applySuppression(
+    rawRecipients,
+    suppression,
+    current.overrideSuppression ?? false,
+  )
+  const recipients = resolved.recipients
   if (recipients.length === 0) {
-    validationError(res, 'This audience has no email addresses yet. Choose another audience.')
+    validationError(
+      res,
+      'This audience has no sendable email addresses. Review suppression or choose another audience.',
+    )
     return
   }
   const updated: NewsletterRecord = {
     ...current,
     recipients,
+    suppressedCount: resolved.suppressedCount,
     status: 'scheduled',
     scheduledAt: new Date(at).toISOString(),
+    recurrence,
+    seriesId: current.seriesId ?? current.id,
+    runNumber: 0,
+    runCount: 0,
+    lastRunAt: null,
     startedAt: null,
     completedAt: null,
     lastTickAt: null,
+    hourSent: 0,
+    daySent: 0,
+    hourWindowAt: null,
+    dayWindowAt: null,
     sentCount: 0,
+    failedCount: 0,
     updatedAt: nowIso(),
   }
   const next = [...records]
@@ -648,7 +1005,18 @@ marketingRouter.post('/newsletters/:id/pause', async (req, res) => {
   }
   const current = records[index] as NewsletterRecord
   if (current.status !== 'sending' && current.status !== 'scheduled') {
-    res.status(409).json({ error: { code: 'not_running', message: 'Only a queued campaign can be paused.' } })
+    res
+      .status(409)
+      .json({ error: { code: 'not_running', message: 'Only a queued campaign can be paused.' } })
+    return
+  }
+  if (scheduleLocked(current)) {
+    res.status(409).json({
+      error: {
+        code: 'schedule_locked',
+        message: 'This campaign is inside the five-minute send lock and cannot be paused.',
+      },
+    })
     return
   }
   const updated: NewsletterRecord = {
@@ -709,6 +1077,15 @@ marketingRouter.post('/newsletters/:id/duplicate', async (req, res) => {
     lastTickAt: null,
     sentCount: 0,
     failedCount: 0,
+    hourSent: 0,
+    daySent: 0,
+    hourWindowAt: null,
+    dayWindowAt: null,
+    seriesId: null,
+    parentId: null,
+    runNumber: 0,
+    runCount: 0,
+    lastRunAt: null,
     createdAt: iso,
     updatedAt: iso,
   }
@@ -726,6 +1103,15 @@ marketingRouter.delete('/newsletters/:id', async (req, res) => {
   if (target.status === 'sending') {
     res.status(409).json({
       error: { code: 'sending', message: 'Pause the campaign before deleting it.' },
+    })
+    return
+  }
+  if (scheduleLocked(target)) {
+    res.status(409).json({
+      error: {
+        code: 'schedule_locked',
+        message: 'This campaign is inside the five-minute send lock and cannot be deleted.',
+      },
     })
     return
   }

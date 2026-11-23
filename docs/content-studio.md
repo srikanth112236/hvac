@@ -112,4 +112,4 @@ add it to the test’s page id list at the same time.
 
 Last promotion run: **19/19 registry editors opened**, 4/4 workspaces present,
 0 page errors, classic fallback reachable; the full Playwright suite was
-**9/9** and SSR hydration was **102/102** route checks.
+**11/11** and SSR hydration was **102/102** route checks.

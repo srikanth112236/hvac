@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLiveRefresh } from '@/admin/useLiveRefresh'
 import {
+  couponValueLabel,
   newsletterAudienceLabel,
   newsletterEmailDocument,
   newsletterStatusLabel,
+  type CouponWithStats,
   type NewsletterAudience,
+  type NewsletterAudienceFeed,
+  type NewsletterMonthlyMode,
   type NewsletterRecord,
+  type NewsletterRecurrence,
+  type NewsletterRecurrenceKind,
   type NewsletterStatus,
   type NewsletterSummary,
 } from '@hvac/shared'
@@ -18,6 +24,7 @@ import {
   Modal,
   Select,
   Textarea,
+  Toggle,
   useToast,
 } from '@/components/ui'
 import { Icon } from '@/components/icons'
@@ -28,11 +35,25 @@ import {
   InlineError,
   MetricCard,
   Panel,
+  formatDate,
   formatDateTime,
   fromLocalInput,
   toLocalInput,
 } from '@/admin/ui'
 import { RichTextEditor } from '@/admin/RichTextEditor'
+
+type RecurrenceChoice = 'none' | NewsletterRecurrenceKind
+
+interface RecurrenceDraft {
+  kind: RecurrenceChoice
+  interval: string
+  weekdays: number[]
+  monthlyMode: NewsletterMonthlyMode
+  dayOfMonth: string
+  weekday: string
+  weekOfMonth: string
+  endAt: string
+}
 
 interface Draft {
   subject: string
@@ -43,12 +64,20 @@ interface Draft {
   audience: NewsletterAudience
   recipients: string[]
   perMinute: number
+  perHour: number
+  perDay: number
+  overrideSuppression: boolean
+  recurrence: RecurrenceDraft
 }
 
-interface AudienceFeed {
-  counts: Record<string, number>
-  customers: { name: string; email: string }[]
-}
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const WEEK_OF_MONTH = [
+  { value: '1', label: 'First' },
+  { value: '2', label: 'Second' },
+  { value: '3', label: 'Third' },
+  { value: '4', label: 'Fourth' },
+  { value: '-1', label: 'Last' },
+]
 
 const STATUS_TONE: Record<NewsletterStatus, 'neutral' | 'cold' | 'warn' | 'heat' | 'success'> = {
   draft: 'neutral',
@@ -56,6 +85,28 @@ const STATUS_TONE: Record<NewsletterStatus, 'neutral' | 'cold' | 'warn' | 'heat'
   sending: 'warn',
   paused: 'heat',
   sent: 'success',
+}
+
+const STATUS_OPTIONS: { value: 'all' | NewsletterStatus; label: string }[] = [
+  { value: 'all', label: 'All statuses' },
+  { value: 'draft', label: 'Drafts' },
+  { value: 'scheduled', label: 'Scheduled' },
+  { value: 'sending', label: 'Sending' },
+  { value: 'paused', label: 'Paused' },
+  { value: 'sent', label: 'Sent' },
+]
+
+function blankRecurrence(): RecurrenceDraft {
+  return {
+    kind: 'none',
+    interval: '1',
+    weekdays: [1],
+    monthlyMode: 'day-of-month',
+    dayOfMonth: '1',
+    weekday: '1',
+    weekOfMonth: '1',
+    endAt: '',
+  }
 }
 
 function blankDraft(): Draft {
@@ -68,18 +119,135 @@ function blankDraft(): Draft {
     audience: 'all',
     recipients: [],
     perMinute: 60,
+    perHour: 1800,
+    perDay: 20_000,
+    overrideSuppression: false,
+    recurrence: blankRecurrence(),
   }
 }
 
 function bodyIsEmpty(html: string): boolean {
-  return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim().length === 0 && !html.includes('<img')
+  return (
+    html
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .trim().length === 0 && !html.includes('<img')
+  )
+}
+
+function scheduleLocked(campaign: NewsletterRecord): boolean {
+  if (campaign.status !== 'scheduled' || !campaign.scheduledAt) return false
+  const at = Date.parse(campaign.scheduledAt)
+  return Number.isFinite(at) && at - Date.now() <= 5 * 60_000
+}
+
+function lockLabel(campaign: NewsletterRecord): string | null {
+  if (!scheduleLocked(campaign) || !campaign.scheduledAt) return null
+  return `Locked ${Math.max(0, Math.ceil((Date.parse(campaign.scheduledAt) - Date.now()) / 60_000))}m before send`
+}
+
+function recurrenceFromRecord(
+  recurrence: NewsletterRecurrence | null | undefined,
+): RecurrenceDraft {
+  if (!recurrence) return blankRecurrence()
+  return {
+    kind: recurrence.kind,
+    interval: String(recurrence.interval ?? 1),
+    weekdays: recurrence.weekdays.length ? recurrence.weekdays : [1],
+    monthlyMode: recurrence.monthlyMode ?? 'day-of-month',
+    dayOfMonth: String(recurrence.dayOfMonth ?? 1),
+    weekday: String(recurrence.weekday ?? 1),
+    weekOfMonth: String(recurrence.weekOfMonth ?? 1),
+    endAt: recurrence.endAt ? toLocalInput(recurrence.endAt).slice(0, 10) : '',
+  }
+}
+
+function recurrenceFromDraft(draft: RecurrenceDraft): NewsletterRecurrence | null {
+  if (draft.kind === 'none') return null
+  return {
+    kind: draft.kind,
+    interval: Math.max(1, Math.min(12, Number(draft.interval) || 1)),
+    weekdays: draft.weekdays.length ? draft.weekdays : [1],
+    monthlyMode: draft.monthlyMode,
+    dayOfMonth: Math.max(1, Math.min(31, Number(draft.dayOfMonth) || 1)),
+    weekday: Math.max(0, Math.min(6, Number(draft.weekday) || 0)),
+    weekOfMonth: Number(draft.weekOfMonth) || 1,
+    endAt: draft.endAt ? new Date(`${draft.endAt}T23:59:59`).toISOString() : null,
+  }
+}
+
+function recurrenceSummary(recurrence: NewsletterRecurrence | null | undefined): string | null {
+  if (!recurrence) return null
+  const interval = Math.max(1, recurrence.interval || 1)
+  let summary = ''
+  if (recurrence.kind === 'daily') {
+    summary = interval === 1 ? 'Every day' : `Every ${interval} days`
+  } else if (recurrence.kind === 'weekly') {
+    const days = (recurrence.weekdays ?? [])
+      .map((day) => WEEKDAYS[day] ?? '')
+      .filter(Boolean)
+      .join(', ')
+    summary =
+      interval === 1
+        ? `Every week on ${days || 'a weekday'}`
+        : `Every ${interval} weeks on ${days || 'a weekday'}`
+  } else if (recurrence.monthlyMode === 'nth-weekday') {
+    const week =
+      WEEK_OF_MONTH.find((entry) => entry.value === String(recurrence.weekOfMonth))?.label ??
+      'First'
+    summary = `Every ${interval === 1 ? 'month' : `${interval} months`} on the ${week.toLowerCase()} ${
+      WEEKDAYS[recurrence.weekday ?? 1]
+    }`
+  } else {
+    summary = `Every ${interval === 1 ? 'month' : `${interval} months`} on day ${
+      recurrence.dayOfMonth ?? 1
+    }`
+  }
+  if (recurrence.endAt) summary += ` · until ${formatDate(recurrence.endAt)}`
+  return summary
+}
+
+function draftSummary(draft: RecurrenceDraft): string | null {
+  return recurrenceSummary(recurrenceFromDraft(draft))
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function couponBlock(coupon: CouponWithStats): string {
+  const expires = coupon.expiresAt ? `Ends ${formatDate(coupon.expiresAt)}` : 'No expiry'
+  return `<div style="margin:24px 0;border:1px solid #d8d1c4;background:#f7f3ea;padding:20px;text-align:center">
+<p style="margin:0 0 6px;font:600 10px/1.2 Arial,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#6b7480">Client promotion</p>
+<p style="margin:0 0 8px;font:700 26px/1.1 Arial,sans-serif;letter-spacing:.12em;color:#12161a">${escapeHtml(coupon.code)}</p>
+<p style="margin:0 0 6px;font:600 15px/1.4 Arial,sans-serif;color:#12161a">${escapeHtml(couponValueLabel(coupon))}</p>
+<p style="margin:0 0 8px;font:400 13px/1.5 Arial,sans-serif;color:#4d5862">${escapeHtml(coupon.description || 'Use this code on your next service.')}</p>
+<p style="margin:0;font:400 11px/1.4 Arial,sans-serif;color:#6b7480">${escapeHtml(expires)}${coupon.minSubtotal > 0 ? ` · Minimum spend ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(coupon.minSubtotal)}` : ''}</p>
+</div>`
+}
+
+function audienceEstimate(draft: Draft, audiences: NewsletterAudienceFeed | null): number {
+  if (!audiences) return 0
+  if (draft.audience === 'selected') {
+    if (draft.overrideSuppression) return draft.recipients.length
+    const blocked = new Set(audiences.suppressed.map((entry) => entry.email))
+    return draft.recipients.filter((email) => !blocked.has(email)).length
+  }
+  const eligible = audiences.counts[draft.audience] ?? 0
+  return draft.overrideSuppression ? eligible + audiences.suppressedCount : eligible
 }
 
 export function AdminNewsletters() {
   const { toast } = useToast()
   const [campaigns, setCampaigns] = useState<NewsletterRecord[]>([])
   const [summary, setSummary] = useState<NewsletterSummary | null>(null)
-  const [audiences, setAudiences] = useState<AudienceFeed | null>(null)
+  const [audiences, setAudiences] = useState<NewsletterAudienceFeed | null>(null)
+  const [coupons, setCoupons] = useState<CouponWithStats[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [view, setView] = useState<'list' | 'compose'>('list')
@@ -90,16 +258,19 @@ export function AdminNewsletters() {
   const [busyId, setBusyId] = useState('')
   const [audienceOpen, setAudienceOpen] = useState(false)
   const [audienceQuery, setAudienceQuery] = useState('')
+  const [suppressionOpen, setSuppressionOpen] = useState(false)
 
   const load = useCallback(async () => {
     try {
-      const [feed, audience] = await Promise.all([
+      const [feed, audience, couponFeed] = await Promise.all([
         adminApi.newsletters(),
         adminApi.newsletterAudiences(),
+        adminApi.coupons(),
       ])
       setCampaigns(feed.data)
       setSummary(feed.summary)
       setAudiences(audience)
+      setCoupons(couponFeed.data)
       setError('')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not load campaigns.')
@@ -141,6 +312,22 @@ export function AdminNewsletters() {
   }
 
   const openCampaign = (campaign: NewsletterRecord) => {
+    if (campaign.status === 'sending' || campaign.status === 'sent') {
+      toast({
+        title: 'Campaign is locked',
+        description: 'Copy it to make an editable draft.',
+        tone: 'info',
+      })
+      return
+    }
+    if (scheduleLocked(campaign)) {
+      toast({
+        title: 'Five-minute send lock',
+        description: 'This campaign is about to send and can no longer be edited.',
+        tone: 'warn',
+      })
+      return
+    }
     setDraft({
       subject: campaign.subject,
       preheader: campaign.preheader,
@@ -150,6 +337,10 @@ export function AdminNewsletters() {
       audience: campaign.audience,
       recipients: campaign.recipients,
       perMinute: campaign.perMinute,
+      perHour: campaign.perHour ?? 1800,
+      perDay: campaign.perDay ?? 20_000,
+      overrideSuppression: campaign.overrideSuppression ?? false,
+      recurrence: recurrenceFromRecord(campaign.recurrence),
     })
     setEditingId(campaign.id)
     setScheduledAt(campaign.scheduledAt ? toLocalInput(campaign.scheduledAt) : '')
@@ -158,7 +349,11 @@ export function AdminNewsletters() {
 
   const persist = async (): Promise<string | null> => {
     if (draft.subject.trim().length < 3) {
-      toast({ title: 'Add a subject', description: 'The subject line is the campaign name.', tone: 'danger' })
+      toast({
+        title: 'Add a subject',
+        description: 'The subject line is the campaign name.',
+        tone: 'danger',
+      })
       return null
     }
     if (bodyIsEmpty(draft.html)) {
@@ -166,24 +361,61 @@ export function AdminNewsletters() {
       return null
     }
     if (draft.audience === 'selected' && draft.recipients.length === 0) {
-      toast({ title: 'Choose recipients', description: 'Pick at least one customer, or change the audience.', tone: 'danger' })
+      toast({
+        title: 'Choose recipients',
+        description: 'Pick at least one customer, or change the audience.',
+        tone: 'danger',
+      })
+      return null
+    }
+    const recurrence = recurrenceFromDraft(draft.recurrence)
+    if (recurrence?.kind === 'weekly' && recurrence.weekdays.length === 0) {
+      toast({
+        title: 'Choose a weekday',
+        description: 'Weekly schedules need at least one day.',
+        tone: 'danger',
+      })
       return null
     }
     setSaving(true)
     try {
+      const payload = {
+        subject: draft.subject,
+        preheader: draft.preheader,
+        fromName: draft.fromName,
+        replyTo: draft.replyTo,
+        html: draft.html,
+        audience: draft.audience,
+        recipients: draft.recipients,
+        perMinute: draft.perMinute,
+        perHour: draft.perHour,
+        perDay: draft.perDay,
+        overrideSuppression: draft.overrideSuppression,
+        recurrence,
+      }
       if (editingId === 'new' || !editingId) {
-        const created = await adminApi.createNewsletter(draft)
+        const created = await adminApi.createNewsletter(payload)
         applyFeed(created)
         setEditingId(created.data.id)
         toast({ title: 'Draft saved', description: created.data.subject, tone: 'success' })
         return created.data.id
       }
-      const updated = await adminApi.patchNewsletter(editingId, draft)
+      const updated = await adminApi.patchNewsletter(editingId, payload)
       applyFeed(updated)
-      toast({ title: 'Draft saved', description: 'Recipients refreshed from the live customer list.', tone: 'success' })
+      toast({
+        title: 'Campaign saved',
+        description: updated.data.scheduledAt
+          ? `Schedule kept for ${formatDateTime(updated.data.scheduledAt)}.`
+          : 'Recipients refreshed from the live customer list.',
+        tone: 'success',
+      })
       return updated.data.id
     } catch (caught) {
-      toast({ title: 'Not saved', description: caught instanceof Error ? caught.message : 'Try again.', tone: 'danger' })
+      toast({
+        title: 'Not saved',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
       return null
     } finally {
       setSaving(false)
@@ -192,7 +424,18 @@ export function AdminNewsletters() {
 
   const sendNow = async () => {
     const estimate = audienceEstimate(draft, audiences)
-    if (!window.confirm(`Send “${draft.subject}” to ${estimate} recipient${estimate === 1 ? '' : 's'} now?`)) return
+    const recurring = draft.recurrence.kind !== 'none'
+    if (
+      !window.confirm(
+        `Send “${draft.subject}” to ${estimate} recipient${estimate === 1 ? '' : 's'} now?${
+          recurring
+            ? ' This sends one run only; the recurring schedule is created by Schedule.'
+            : ''
+        }`,
+      )
+    ) {
+      return
+    }
     const id = await persist()
     if (!id) return
     setBusyId(id)
@@ -206,7 +449,11 @@ export function AdminNewsletters() {
       })
       setView('list')
     } catch (caught) {
-      toast({ title: 'Could not queue', description: caught instanceof Error ? caught.message : 'Try again.', tone: 'danger' })
+      toast({
+        title: 'Could not queue',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
     } finally {
       setBusyId('')
     }
@@ -215,11 +462,32 @@ export function AdminNewsletters() {
   const scheduleSend = async () => {
     const iso = fromLocalInput(scheduledAt)
     if (!iso) {
-      toast({ title: 'Pick a send time', description: 'Choose the date and time first.', tone: 'danger' })
+      toast({
+        title: 'Pick a send time',
+        description: 'Choose the date and time first.',
+        tone: 'danger',
+      })
       return
     }
     if (Date.parse(iso) <= Date.now()) {
       toast({ title: 'Time has passed', description: 'Pick a slot in the future.', tone: 'danger' })
+      return
+    }
+    const recurrence = recurrenceFromDraft(draft.recurrence)
+    if (recurrence?.kind === 'weekly' && recurrence.weekdays.length === 0) {
+      toast({
+        title: 'Choose a weekday',
+        description: 'Weekly schedules need at least one day.',
+        tone: 'danger',
+      })
+      return
+    }
+    if (recurrence?.endAt && Date.parse(recurrence.endAt) <= Date.parse(iso)) {
+      toast({
+        title: 'End date must be later',
+        description: 'Choose an end date after the first send.',
+        tone: 'danger',
+      })
       return
     }
     const id = await persist()
@@ -229,13 +497,19 @@ export function AdminNewsletters() {
       const result = await adminApi.scheduleNewsletter(id, iso)
       applyFeed(result)
       toast({
-        title: 'Scheduled',
-        description: `${result.data.recipients.length} recipients · ${formatDateTime(result.data.scheduledAt)}`,
+        title: 'Campaign scheduled',
+        description: `${result.data.recipients.length} recipients · ${formatDateTime(result.data.scheduledAt ?? iso)}${
+          result.data.recurrence ? ` · ${recurrenceSummary(result.data.recurrence)}` : ''
+        }`,
         tone: 'success',
       })
       setView('list')
     } catch (caught) {
-      toast({ title: 'Could not schedule', description: caught instanceof Error ? caught.message : 'Try again.', tone: 'danger' })
+      toast({
+        title: 'Could not schedule',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
     } finally {
       setBusyId('')
     }
@@ -245,17 +519,37 @@ export function AdminNewsletters() {
     campaign: NewsletterRecord,
     action: 'pause' | 'resume' | 'duplicate' | 'delete',
   ) => {
-    if (action === 'delete' && !window.confirm(`Delete “${campaign.subject}”? This cannot be undone.`)) return
+    if ((action === 'delete' || action === 'pause') && scheduleLocked(campaign)) {
+      toast({
+        title: 'Five-minute send lock',
+        description: 'This campaign is about to send and can no longer be changed.',
+        tone: 'warn',
+      })
+      return
+    }
+    if (
+      action === 'delete' &&
+      !window.confirm(`Delete “${campaign.subject}”? This cannot be undone.`)
+    )
+      return
     setBusyId(campaign.id)
     try {
       if (action === 'pause') {
         const result = await adminApi.pauseNewsletter(campaign.id)
         applyFeed(result)
-        toast({ title: 'Campaign paused', description: `${result.data.sentCount} of ${result.data.recipients.length} delivered.`, tone: 'success' })
+        toast({
+          title: campaign.status === 'scheduled' ? 'Schedule cancelled' : 'Campaign paused',
+          description: `${result.data.sentCount} of ${result.data.recipients.length} delivered.`,
+          tone: 'success',
+        })
       } else if (action === 'resume') {
         const result = await adminApi.resumeNewsletter(campaign.id)
         applyFeed(result)
-        toast({ title: 'Back in the queue', description: `${result.data.perMinute} recipients per minute.`, tone: 'success' })
+        toast({
+          title: 'Back in the queue',
+          description: `${result.data.perMinute} recipients per minute.`,
+          tone: 'success',
+        })
       } else if (action === 'duplicate') {
         const result = await adminApi.duplicateNewsletter(campaign.id)
         applyFeed(result)
@@ -267,7 +561,11 @@ export function AdminNewsletters() {
         toast({ title: 'Campaign deleted', tone: 'success' })
       }
     } catch (caught) {
-      toast({ title: 'Action failed', description: caught instanceof Error ? caught.message : 'Try again.', tone: 'danger' })
+      toast({
+        title: 'Action failed',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
     } finally {
       setBusyId('')
     }
@@ -289,14 +587,27 @@ export function AdminNewsletters() {
       <AdminPageHeader
         eyebrow="Marketing · CV-SEND"
         title="Newsletters"
-        description="Write, preview and deliver campaigns to your customer list. Every send is throttled through a queue, so a large list never trips a provider rate limit."
+        description="Create, schedule and deliver campaigns with suppression guards, recurring schedules, rate caps and coupon promotions. Every send is queued on the server."
         actions={
           view === 'compose' ? (
-            <Button variant="secondary" size="sm" icon="chevron-down" onClick={() => setView('list')}>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon="chevron-down"
+              onClick={() => setView('list')}
+            >
               All campaigns
             </Button>
           ) : (
             <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                icon="shield"
+                onClick={() => setSuppressionOpen(true)}
+              >
+                Suppression list ({audiences?.suppressedCount ?? 0})
+              </Button>
               <Button variant="secondary" size="sm" icon="refresh" onClick={() => void load()}>
                 Refresh
               </Button>
@@ -319,6 +630,7 @@ export function AdminNewsletters() {
           setScheduledAt={setScheduledAt}
           audiences={audiences}
           campaigns={campaigns}
+          coupons={coupons}
           saving={saving}
           busy={Boolean(busyId)}
           onSave={() => void persist()}
@@ -329,7 +641,7 @@ export function AdminNewsletters() {
           onResume={(campaign) => void runAction(campaign, 'resume')}
         />
       ) : (
-        <CampaignList
+        <CampaignTable
           campaigns={campaigns}
           summary={summary}
           busyId={busyId}
@@ -342,21 +654,29 @@ export function AdminNewsletters() {
         open={audienceOpen}
         onClose={() => setAudienceOpen(false)}
         title="Choose recipients"
-        description="Selected customers receive this campaign only. The list is saved with the draft."
+        description="Suppressed addresses are excluded unless you explicitly override the guard for this campaign."
         size="lg"
         footer={
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-fg-faint">
-              {draft.recipients.length} selected
+              {draft.recipients.length} selected · {audiences?.suppressedCount ?? 0} suppressed
             </span>
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => setAudienceOpen(false)}>
-                Done
-              </Button>
-            </div>
+            <Button variant="secondary" onClick={() => setAudienceOpen(false)}>
+              Done
+            </Button>
           </div>
         }
       >
+        <div className="mb-3">
+          <Toggle
+            checked={draft.overrideSuppression}
+            onChange={(value) =>
+              setDraft((current) => ({ ...current, overrideSuppression: value }))
+            }
+            label="Include suppressed addresses"
+            description="Manual override. Unsubscribed or marketing-disabled addresses will receive this campaign."
+          />
+        </div>
         <div className="flex flex-wrap items-center gap-2 pb-3">
           <Input
             aria-label="Search customers"
@@ -371,11 +691,13 @@ export function AdminNewsletters() {
             onClick={() =>
               setDraft((current) => ({
                 ...current,
-                recipients: (audiences?.customers ?? []).map((customer) => customer.email),
+                recipients: (audiences?.customers ?? [])
+                  .filter((customer) => current.overrideSuppression || !customer.suppressed)
+                  .map((customer) => customer.email),
               }))
             }
           >
-            Select all
+            Select all eligible
           </Button>
           <Button
             variant="quiet"
@@ -394,12 +716,23 @@ export function AdminNewsletters() {
           <ul className="max-h-[46vh] divide-y divide-line overflow-y-auto border border-line">
             {filteredCustomers.map((customer) => {
               const checked = draft.recipients.includes(customer.email)
+              const blocked = Boolean(customer.suppressed) && !draft.overrideSuppression
               return (
                 <li key={customer.email} className="px-4 py-3">
                   <Checkbox
                     checked={checked}
-                    label={customer.name}
-                    description={customer.email}
+                    disabled={blocked}
+                    label={
+                      <span className="flex flex-wrap items-center gap-2">
+                        {customer.name}
+                        {customer.suppressed ? <Badge tone="warn">Suppressed</Badge> : null}
+                      </span>
+                    }
+                    description={
+                      customer.suppressed
+                        ? `${customer.email} · ${customer.reason ?? 'Suppressed'}${blocked ? ' · Enable override to include' : ''}`
+                        : customer.email
+                    }
                     onChange={() =>
                       setDraft((current) => ({
                         ...current,
@@ -415,13 +748,322 @@ export function AdminNewsletters() {
           </ul>
         )}
       </Modal>
+
+      <Modal
+        open={suppressionOpen}
+        onClose={() => setSuppressionOpen(false)}
+        title="Suppression list"
+        description="These addresses are tracked as unsubscribed or marketing-disabled. Campaigns exclude them unless an admin turns on the manual override."
+        size="lg"
+        footer={
+          <Button variant="secondary" onClick={() => setSuppressionOpen(false)}>
+            Close
+          </Button>
+        }
+      >
+        {(audiences?.suppressed ?? []).length === 0 ? (
+          <EmptyState
+            icon="shield"
+            title="No suppressions"
+            description="Unsubscribed signups and customers with marketing email turned off will appear here."
+          />
+        ) : (
+          <div className="overflow-x-auto border border-line">
+            <table className="w-full min-w-[640px] text-left">
+              <thead>
+                <tr className="border-b border-line bg-base/40 font-mono text-[8px] uppercase tracking-[0.1em] text-fg-faint">
+                  <th className="px-3 py-2 font-normal">Email</th>
+                  <th className="px-3 py-2 font-normal">Name / source</th>
+                  <th className="px-3 py-2 font-normal">Reason</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line/70">
+                {(audiences?.suppressed ?? []).map((entry) => (
+                  <tr key={`${entry.source}:${entry.email}`}>
+                    <td className="px-3 py-2 font-mono text-[10px] text-fg">{entry.email}</td>
+                    <td className="px-3 py-2 text-[11px] text-fg-dim">
+                      {entry.name}
+                      <span className="ml-2 font-mono text-[8px] uppercase tracking-[0.06em] text-fg-faint">
+                        {entry.source}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-[11px] text-fg-dim">{entry.reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Modal>
     </>
   )
 }
 
-function audienceEstimate(draft: Draft, audiences: AudienceFeed | null): number {
-  if (draft.audience === 'selected') return draft.recipients.length
-  return audiences?.counts[draft.audience] ?? 0
+/* -------------------------------------------------------------------------- */
+/*  Campaign table                                                             */
+/* -------------------------------------------------------------------------- */
+
+function CampaignTable({
+  campaigns,
+  summary,
+  busyId,
+  onOpen,
+  onAction,
+}: {
+  campaigns: NewsletterRecord[]
+  summary: NewsletterSummary | null
+  busyId: string
+  onOpen: (campaign: NewsletterRecord) => void
+  onAction: (
+    campaign: NewsletterRecord,
+    action: 'pause' | 'resume' | 'duplicate' | 'delete',
+  ) => void
+}) {
+  const [query, setQuery] = useState('')
+  const [status, setStatus] = useState<'all' | NewsletterStatus>('all')
+  const [audience, setAudience] = useState<'all' | NewsletterAudience>('all')
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    return campaigns.filter((campaign) => {
+      if (status !== 'all' && campaign.status !== status) return false
+      if (audience !== 'all' && campaign.audience !== audience) return false
+      if (!needle) return true
+      return [campaign.subject, campaign.preheader, campaign.fromName, ...campaign.recipients]
+        .join(' ')
+        .toLowerCase()
+        .includes(needle)
+    })
+  }, [campaigns, query, status, audience])
+
+  const paused = campaigns.filter((campaign) => campaign.status === 'paused').length
+
+  return (
+    <div className="mt-6 flex flex-col gap-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <MetricCard label="Drafts" value={summary?.draft ?? 0} note="Ready to schedule or send" />
+        <MetricCard
+          label="Scheduled & sending"
+          value={(summary?.scheduled ?? 0) + (summary?.sending ?? 0)}
+          note={summary ? `${summary.reach} recipients queued` : '-'}
+          accent="warn"
+        />
+        <MetricCard label="Paused" value={paused} note="Held mid-flight" accent="heat" />
+        <MetricCard
+          label="Sent campaigns"
+          value={summary?.sent ?? 0}
+          note="Completed sends"
+          accent="success"
+        />
+        <MetricCard
+          label="Emails delivered"
+          value={summary?.delivered ?? 0}
+          note="Across completed campaigns"
+        />
+      </div>
+
+      <div className="flex flex-col gap-3 border border-line bg-panel/25 p-3">
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_170px_190px]">
+          <Input
+            label="Search campaigns"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Subject, preheader, sender or recipient"
+          />
+          <Select
+            label="Status"
+            value={status}
+            onChange={(event) => setStatus(event.target.value as 'all' | NewsletterStatus)}
+            options={STATUS_OPTIONS}
+          />
+          <Select
+            label="Audience"
+            value={audience}
+            onChange={(event) => setAudience(event.target.value as 'all' | NewsletterAudience)}
+            options={[
+              { value: 'all', label: 'All audiences' },
+              ...(['all', 'portal', 'open-balance', 'prospects', 'selected'] as const).map(
+                (entry) => ({ value: entry, label: newsletterAudienceLabel[entry] }),
+              ),
+            ]}
+          />
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Badge tone="neutral">{filtered.length} matching</Badge>
+          <span className="font-mono text-[8px] uppercase tracking-[0.08em] text-fg-faint">
+            Drafts, scheduled, sending, paused and sent campaigns
+          </span>
+        </div>
+      </div>
+
+      <section className="overflow-x-auto border border-line bg-panel/20">
+        {filtered.length === 0 ? (
+          <div className="p-4">
+            <EmptyState
+              icon="filter"
+              title="No campaigns in this view."
+              description="Clear the filters or create a new newsletter."
+            />
+          </div>
+        ) : (
+          <table className="w-full min-w-[920px] border-collapse text-left">
+            <thead>
+              <tr className="border-b border-line bg-base/40 font-mono text-[8px] uppercase tracking-[0.1em] text-fg-faint">
+                <th className="px-3 py-2.5 font-normal">Campaign</th>
+                <th className="px-3 py-2.5 font-normal">Status</th>
+                <th className="px-3 py-2.5 font-normal">Audience</th>
+                <th className="px-3 py-2.5 font-normal">Reach</th>
+                <th className="px-3 py-2.5 font-normal">Delivery</th>
+                <th className="px-3 py-2.5 font-normal">Schedule</th>
+                <th className="px-3 py-2.5 text-right font-normal">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line/70">
+              {filtered.map((campaign) => {
+                const total = campaign.recipients.length
+                const percent =
+                  total > 0 ? Math.min(100, Math.round((campaign.sentCount / total) * 100)) : 0
+                const locked = scheduleLocked(campaign)
+                const lock = lockLabel(campaign)
+                const working = busyId === campaign.id
+                const canOpen =
+                  campaign.status === 'draft' ||
+                  campaign.status === 'scheduled' ||
+                  campaign.status === 'paused'
+                return (
+                  <tr key={campaign.id} className="align-top hover:bg-cold/[0.02]">
+                    <td className="max-w-[270px] px-3 py-3">
+                      <p className="truncate text-[12px] text-fg">{campaign.subject}</p>
+                      <p className="mt-0.5 truncate text-[10px] text-fg-dim">
+                        {campaign.preheader || 'No preheader'}
+                      </p>
+                      <p className="mt-1 font-mono text-[8px] text-fg-faint">
+                        Updated {formatDateTime(campaign.updatedAt)}
+                      </p>
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {campaign.parentId ? (
+                          <span className="font-mono text-[8px] uppercase tracking-[0.06em] text-cold">
+                            Series run {campaign.runNumber ?? 1}
+                          </span>
+                        ) : null}
+                        {campaign.recurrence ? (
+                          <span className="font-mono text-[8px] uppercase tracking-[0.06em] text-fg-faint">
+                            {recurrenceSummary(campaign.recurrence)}
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex flex-col items-start gap-1">
+                        <Badge tone={STATUS_TONE[campaign.status]} dot>
+                          {newsletterStatusLabel[campaign.status]}
+                        </Badge>
+                        {lock ? <Badge tone="warn">{lock}</Badge> : null}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-[10px] text-fg-dim">
+                      {newsletterAudienceLabel[campaign.audience]}
+                    </td>
+                    <td className="px-3 py-3">
+                      <span className="font-mono text-[10px] text-fg">{total}</span>
+                      {campaign.suppressedCount ? (
+                        <span className="mt-0.5 block text-[9px] text-warn">
+                          {campaign.suppressedCount} suppressed
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="h-1 w-24 bg-line/60">
+                          <div className="h-full bg-cold" style={{ width: `${percent}%` }} />
+                        </div>
+                        <span className="font-mono text-[9px] text-fg-faint">
+                          {campaign.sentCount}/{total}
+                        </span>
+                      </div>
+                      {campaign.failedCount ? (
+                        <span className="mt-1 block text-[9px] text-danger">
+                          {campaign.failedCount} failed
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-3 text-[10px] text-fg-dim">
+                      {campaign.scheduledAt ? (
+                        <>
+                          <span className="block">{formatDateTime(campaign.scheduledAt)}</span>
+                          {campaign.recurrence ? (
+                            <span className="mt-1 block text-[9px] text-fg-faint">
+                              {recurrenceSummary(campaign.recurrence)}
+                            </span>
+                          ) : null}
+                        </>
+                      ) : campaign.completedAt ? (
+                        <span>Delivered {formatDateTime(campaign.completedAt)}</span>
+                      ) : (
+                        <span>Not scheduled</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex flex-wrap justify-end gap-1.5">
+                        {canOpen ? (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={locked}
+                            onClick={() => onOpen(campaign)}
+                          >
+                            Open
+                          </Button>
+                        ) : null}
+                        {(campaign.status === 'sending' || campaign.status === 'scheduled') &&
+                        !locked ? (
+                          <Button
+                            variant="quiet"
+                            size="sm"
+                            loading={working}
+                            onClick={() => onAction(campaign, 'pause')}
+                          >
+                            {campaign.status === 'scheduled' ? 'Cancel schedule' : 'Pause'}
+                          </Button>
+                        ) : null}
+                        {campaign.status === 'paused' ? (
+                          <Button
+                            variant="quiet"
+                            size="sm"
+                            loading={working}
+                            onClick={() => onAction(campaign, 'resume')}
+                          >
+                            Resume
+                          </Button>
+                        ) : null}
+                        <Button
+                          variant="quiet"
+                          size="sm"
+                          loading={working}
+                          onClick={() => onAction(campaign, 'duplicate')}
+                        >
+                          Copy
+                        </Button>
+                        <button
+                          type="button"
+                          aria-label={`Delete ${campaign.subject}`}
+                          disabled={working || campaign.status === 'sending' || locked}
+                          onClick={() => onAction(campaign, 'delete')}
+                          className="flex h-8 w-8 items-center justify-center border border-line text-fg-faint transition-colors duration-2 hover:border-danger/50 hover:text-danger disabled:opacity-40"
+                        >
+                          <Icon name="close" size={12} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </section>
+    </div>
+  )
 }
 
 /* -------------------------------------------------------------------------- */
@@ -436,6 +1078,7 @@ function Composer({
   setScheduledAt,
   audiences,
   campaigns,
+  coupons,
   saving,
   busy,
   onSave,
@@ -450,8 +1093,9 @@ function Composer({
   editingId: string | null
   scheduledAt: string
   setScheduledAt: (value: string) => void
-  audiences: AudienceFeed | null
+  audiences: NewsletterAudienceFeed | null
   campaigns: NewsletterRecord[]
+  coupons: CouponWithStats[]
   saving: boolean
   busy: boolean
   onSave: () => void
@@ -462,14 +1106,33 @@ function Composer({
   onResume: (campaign: NewsletterRecord) => void
 }) {
   const record = campaigns.find((campaign) => campaign.id === editingId) ?? null
+  const lock = record ? lockLabel(record) : null
   const estimate = audienceEstimate(draft, audiences)
-  const previewHtml = draft.html || '<p style="color:#6b7480">The live preview appears here as you type.</p>'
+  const previewHtml =
+    draft.html || '<p style="color:#6b7480">The live preview appears here as you type.</p>'
   const previewDocument = newsletterEmailDocument({
     subject: draft.subject || 'Campaign preview',
     preheader: draft.preheader,
     fromName: draft.fromName,
     html: previewHtml,
   })
+  const activeCoupons = useMemo(
+    () => coupons.filter((coupon) => coupon.status === 'active' || coupon.status === 'scheduled'),
+    [coupons],
+  )
+  const [couponCode, setCouponCode] = useState(activeCoupons[0]?.code ?? '')
+
+  useEffect(() => {
+    if (!activeCoupons.some((coupon) => coupon.code === couponCode)) {
+      setCouponCode(activeCoupons[0]?.code ?? '')
+    }
+  }, [activeCoupons, couponCode])
+
+  const insertCoupon = () => {
+    const coupon = activeCoupons.find((entry) => entry.code === couponCode)
+    if (!coupon) return
+    setDraft((current) => ({ ...current, html: `${current.html}${couponBlock(coupon)}` }))
+  }
 
   return (
     <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
@@ -482,7 +1145,9 @@ function Composer({
               value={draft.subject}
               maxLength={160}
               placeholder="Cold snap readiness: the 15-minute pre-check"
-              onChange={(event) => setDraft((current) => ({ ...current, subject: event.target.value }))}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, subject: event.target.value }))
+              }
               hint={`${draft.subject.length}/160 · this is what appears in the inbox`}
             />
             <Textarea
@@ -491,19 +1156,25 @@ function Composer({
               maxLength={220}
               value={draft.preheader}
               placeholder="The one line that shows beside the subject on phones."
-              onChange={(event) => setDraft((current) => ({ ...current, preheader: event.target.value }))}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, preheader: event.target.value }))
+              }
             />
             <div className="grid gap-4 sm:grid-cols-2">
               <Input
                 label="From name"
                 value={draft.fromName}
-                onChange={(event) => setDraft((current) => ({ ...current, fromName: event.target.value }))}
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, fromName: event.target.value }))
+                }
               />
               <Input
                 label="Reply-to"
                 type="email"
                 value={draft.replyTo}
-                onChange={(event) => setDraft((current) => ({ ...current, replyTo: event.target.value }))}
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, replyTo: event.target.value }))
+                }
                 hint="Replies land in this inbox."
               />
             </div>
@@ -528,6 +1199,18 @@ function Composer({
             />
           </div>
         </Panel>
+
+        {lock ? (
+          <div className="border border-warn/40 bg-warn/[0.06] px-4 py-3">
+            <p className="font-mono text-[9px] uppercase tracking-[0.1em] text-warn">
+              Schedule locked
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-fg-dim">
+              This campaign sends within five minutes. Editing, pausing and deleting are disabled
+              until the send completes.
+            </p>
+          </div>
+        ) : null}
 
         {record && record.status !== 'draft' ? (
           <Panel title="This campaign">
@@ -586,7 +1269,10 @@ function Composer({
                   html: draft.html,
                 }),
               )}`}
-              download={`${(draft.subject || 'campaign').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 60)}.html`}
+              download={`${(draft.subject || 'campaign')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .slice(0, 60)}.html`}
               className="font-mono text-[9px] uppercase tracking-[0.08em] text-fg-dim hover:text-cold"
             >
               Download HTML
@@ -599,23 +1285,46 @@ function Composer({
             <Select
               label="Audience"
               value={draft.audience}
-              onChange={(event) => {
-                const audience = event.target.value as NewsletterAudience
-                setDraft((current) => ({ ...current, audience }))
-              }}
-              options={(['all', 'portal', 'open-balance', 'prospects', 'selected'] as const).map((entry) => ({
-                value: entry,
-                label: `${newsletterAudienceLabel[entry]}${
-                  entry === 'selected' ? '' : ` · ${audiences?.counts[entry] ?? 0}`
-                }`,
-              }))}
-              hint="Audiences are resolved from portal accounts and invoice addresses."
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  audience: event.target.value as NewsletterAudience,
+                }))
+              }
+              options={(['all', 'portal', 'open-balance', 'prospects', 'selected'] as const).map(
+                (entry) => ({
+                  value: entry,
+                  label: `${newsletterAudienceLabel[entry]}${
+                    entry === 'selected' ? '' : ` · ${audiences?.counts[entry] ?? 0}`
+                  }`,
+                }),
+              )}
+              hint="Audience counts exclude suppressed addresses unless override is on."
+            />
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border border-line bg-panel-2 px-3 py-2">
+              <span className="text-[11px] text-fg-dim">
+                {audiences?.suppressedCount ?? 0} suppressed email
+                {(audiences?.suppressedCount ?? 0) === 1 ? '' : 's'}
+              </span>
+              <Badge tone={draft.overrideSuppression ? 'warn' : 'success'}>
+                {draft.overrideSuppression ? 'Override on' : 'Suppression guard on'}
+              </Badge>
+            </div>
+
+            <Toggle
+              checked={draft.overrideSuppression}
+              onChange={(value) =>
+                setDraft((current) => ({ ...current, overrideSuppression: value }))
+              }
+              label="Override suppression"
+              description="Allow this campaign to send to unsubscribed or marketing-disabled addresses."
             />
 
             {draft.audience === 'selected' ? (
               <div className="flex items-center justify-between gap-3 border border-line bg-panel-2 px-3 py-2">
                 <span className="text-[11px] text-fg-dim">
-                  {draft.recipients.length} customer{draft.recipients.length === 1 ? '' : 's'} selected
+                  {draft.recipients.length} selected · {estimate} sendable
                 </span>
                 <Button variant="secondary" size="sm" onClick={onOpenAudience}>
                   Choose
@@ -623,54 +1332,114 @@ function Composer({
               </div>
             ) : null}
 
-            <Input
-              label="Send rate · recipients per minute"
-              type="number"
-              min={1}
-              max={600}
-              value={draft.perMinute}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  perMinute: Math.max(1, Math.min(600, Number(event.target.value) || 1)),
-                }))
-              }
-              hint={
-                estimate > 0
-                  ? `${Math.max(1, Math.ceil(estimate / Math.max(1, draft.perMinute)))} min at this rate`
-                  : 'Batch size per minute — 30–60 is a safe provider default.'
-              }
-            />
+            <div className="grid grid-cols-3 gap-2">
+              <Input
+                label="Per minute"
+                type="number"
+                min={1}
+                max={600}
+                value={draft.perMinute}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    perMinute: Math.max(1, Math.min(600, Number(event.target.value) || 1)),
+                  }))
+                }
+              />
+              <Input
+                label="Per hour"
+                type="number"
+                min={1}
+                max={50_000}
+                value={draft.perHour}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    perHour: Math.max(1, Math.min(50_000, Number(event.target.value) || 1)),
+                  }))
+                }
+              />
+              <Input
+                label="Per day"
+                type="number"
+                min={1}
+                max={200_000}
+                value={draft.perDay}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    perDay: Math.max(1, Math.min(200_000, Number(event.target.value) || 1)),
+                  }))
+                }
+              />
+            </div>
 
-            <Input
-              label="Schedule"
-              type="datetime-local"
-              value={scheduledAt}
-              onChange={(event) => setScheduledAt(event.target.value)}
-              hint="Leave blank to send manually."
+            <SchedulePlanner
+              scheduledAt={scheduledAt}
+              setScheduledAt={setScheduledAt}
+              recurrence={draft.recurrence}
+              setRecurrence={(recurrence) => setDraft((current) => ({ ...current, recurrence }))}
             />
 
             <div className="flex flex-col gap-2">
-              <Button icon="send" loading={busy} onClick={onSend} full>
+              <Button icon="send" loading={busy} disabled={Boolean(lock)} onClick={onSend} full>
                 Send now
               </Button>
-              <Button variant="secondary" icon="calendar" loading={saving} onClick={onSchedule} full>
-                Schedule send
+              <Button
+                variant="secondary"
+                icon="calendar"
+                loading={saving}
+                disabled={Boolean(lock)}
+                onClick={onSchedule}
+                full
+              >
+                {draft.recurrence.kind === 'none' ? 'Schedule send' : 'Start schedule'}
               </Button>
-              <Button variant="quiet" loading={saving} onClick={onSave} full>
-                Save draft
+              <Button
+                variant="quiet"
+                loading={saving}
+                disabled={Boolean(lock)}
+                onClick={onSave}
+                full
+              >
+                {record && record.status !== 'draft' ? 'Save changes' : 'Save draft'}
               </Button>
             </div>
 
             <p className="text-[10px] leading-relaxed text-fg-faint">
-              The queue lives on the server: closing this tab does not stop delivery. Pause from the
-              campaign list to hold a send mid-flight.
-            </p>
-            <p className="border-t border-line pt-3 text-[10px] leading-relaxed text-fg-faint">
-              Delivery runs in simulator mode until an email provider is connected, so counts advance
-              without mail leaving the building. Point the sender at your ESP to go live.
+              The queue lives on the server: closing this tab does not stop delivery. Editing and
+              deleting close five minutes before a scheduled send; pause is also locked inside that
+              window.
             </p>
           </div>
+        </Panel>
+
+        <Panel title="Coupon promotion">
+          {activeCoupons.length === 0 ? (
+            <p className="text-[11px] leading-relaxed text-fg-faint">
+              Create an active coupon first, then insert its code into this campaign for individual
+              or all-customer sends.
+            </p>
+          ) : (
+            <div className="grid gap-3">
+              <Select
+                label="Coupon"
+                value={couponCode}
+                onChange={(event) => setCouponCode(event.target.value)}
+                options={activeCoupons.map((coupon) => ({
+                  value: coupon.code,
+                  label: `${coupon.code} · ${couponValueLabel(coupon)}`,
+                }))}
+              />
+              <Button variant="secondary" size="sm" onClick={insertCoupon}>
+                Insert coupon block into body
+              </Button>
+              <p className="text-[10px] leading-relaxed text-fg-faint">
+                Appends a styled promotion card with the code, value, minimum spend and expiry.
+                Choose a selected audience to send it to specific customers.
+              </p>
+            </div>
+          )}
         </Panel>
       </div>
     </div>
@@ -678,7 +1447,200 @@ function Composer({
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Queue + list                                                              */
+/*  Schedule planner                                                          */
+/* -------------------------------------------------------------------------- */
+
+function SchedulePlanner({
+  scheduledAt,
+  setScheduledAt,
+  recurrence,
+  setRecurrence,
+}: {
+  scheduledAt: string
+  setScheduledAt: (value: string) => void
+  recurrence: RecurrenceDraft
+  setRecurrence: (value: RecurrenceDraft) => void
+}) {
+  const update = (patch: Partial<RecurrenceDraft>) => setRecurrence({ ...recurrence, ...patch })
+  const unit =
+    recurrence.kind === 'daily' ? 'day(s)' : recurrence.kind === 'weekly' ? 'week(s)' : 'month(s)'
+  const summary = draftSummary(recurrence)
+
+  const tomorrow = () => {
+    const date = new Date()
+    date.setDate(date.getDate() + 1)
+    date.setHours(9, 0, 0, 0)
+    setScheduledAt(toLocalInput(date.toISOString()))
+  }
+
+  return (
+    <div className="flex flex-col gap-3 border border-line bg-panel-2/40 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">
+          Send schedule
+        </span>
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={tomorrow}
+            className="border border-line px-2 py-1 font-mono text-[8px] uppercase tracking-[0.08em] text-fg-faint hover:border-cold/50 hover:text-cold"
+          >
+            Tomorrow 9am
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const date = new Date()
+              date.setDate(date.getDate() + 7)
+              date.setHours(9, 0, 0, 0)
+              setScheduledAt(toLocalInput(date.toISOString()))
+            }}
+            className="border border-line px-2 py-1 font-mono text-[8px] uppercase tracking-[0.08em] text-fg-faint hover:border-cold/50 hover:text-cold"
+          >
+            Next week
+          </button>
+        </div>
+      </div>
+
+      <Input
+        label="First send"
+        type="datetime-local"
+        value={scheduledAt}
+        onChange={(event) => setScheduledAt(event.target.value)}
+        hint="Required for scheduled and recurring campaigns."
+      />
+
+      <Select
+        label="Repeat"
+        value={recurrence.kind}
+        onChange={(event) => update({ kind: event.target.value as RecurrenceChoice })}
+        options={[
+          { value: 'none', label: 'Once only' },
+          { value: 'daily', label: 'Daily' },
+          { value: 'weekly', label: 'Weekly' },
+          { value: 'monthly', label: 'Monthly' },
+        ]}
+      />
+
+      {recurrence.kind !== 'none' ? (
+        <div className="flex flex-col gap-3 border border-line bg-base/20 p-3">
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Every"
+              type="number"
+              min={1}
+              max={12}
+              value={recurrence.interval}
+              onChange={(event) => update({ interval: event.target.value })}
+            />
+            <div className="flex flex-col gap-1">
+              <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint">
+                Unit
+              </span>
+              <div className="flex h-[var(--btn-h-md)] items-center border border-line bg-panel px-3 text-[12px] text-fg-dim">
+                {unit}
+              </div>
+            </div>
+          </div>
+
+          {recurrence.kind === 'weekly' ? (
+            <div>
+              <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint">
+                Days
+              </span>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {WEEKDAYS.map((day, index) => {
+                  const selected = recurrence.weekdays.includes(index)
+                  return (
+                    <button
+                      key={day}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() =>
+                        update({
+                          weekdays: selected
+                            ? recurrence.weekdays.filter((entry) => entry !== index)
+                            : [...recurrence.weekdays, index],
+                        })
+                      }
+                      className={`border px-2.5 py-1.5 font-mono text-[8px] uppercase tracking-[0.06em] ${
+                        selected
+                          ? 'border-cold bg-cold/10 text-cold'
+                          : 'border-line text-fg-faint hover:border-cold/40 hover:text-cold'
+                      }`}
+                    >
+                      {day}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {recurrence.kind === 'monthly' ? (
+            <div className="grid gap-3">
+              <Select
+                label="Monthly pattern"
+                value={recurrence.monthlyMode}
+                onChange={(event) =>
+                  update({ monthlyMode: event.target.value as NewsletterMonthlyMode })
+                }
+                options={[
+                  { value: 'day-of-month', label: 'Day of month' },
+                  { value: 'nth-weekday', label: 'Nth weekday' },
+                ]}
+              />
+              {recurrence.monthlyMode === 'day-of-month' ? (
+                <Input
+                  label="Day of month"
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={recurrence.dayOfMonth}
+                  onChange={(event) => update({ dayOfMonth: event.target.value })}
+                  hint="Months without that day use their last day."
+                />
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <Select
+                    label="Week"
+                    value={recurrence.weekOfMonth}
+                    onChange={(event) => update({ weekOfMonth: event.target.value })}
+                    options={WEEK_OF_MONTH}
+                  />
+                  <Select
+                    label="Weekday"
+                    value={recurrence.weekday}
+                    onChange={(event) => update({ weekday: event.target.value })}
+                    options={WEEKDAYS.map((day, index) => ({ value: String(index), label: day }))}
+                  />
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          <Input
+            label="End date"
+            type="date"
+            value={recurrence.endAt}
+            min={scheduledAt ? scheduledAt.slice(0, 10) : undefined}
+            onChange={(event) => update({ endAt: event.target.value })}
+            hint="Optional. Leave blank to keep the series running."
+          />
+
+          {summary ? (
+            <p className="border-t border-line/60 pt-2 text-[10px] leading-relaxed text-cold">
+              {summary}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Queue status                                                              */
 /* -------------------------------------------------------------------------- */
 
 function QueueStatus({
@@ -700,153 +1662,36 @@ function QueueStatus({
         </Badge>
         <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-fg-faint">
           {record.sentCount}/{total} delivered · {record.perMinute}/min
+          {record.perHour ? ` · ${record.perHour}/hr` : ''}
+          {record.perDay ? ` · ${record.perDay}/day` : ''}
         </span>
       </div>
       <div className="h-1.5 w-full bg-line/60">
-        <div className="h-full bg-cold transition-[width] duration-3" style={{ width: `${percent}%` }} />
+        <div
+          className="h-full bg-cold transition-[width] duration-3"
+          style={{ width: `${percent}%` }}
+        />
       </div>
-      {record.status === 'sending' || record.status === 'scheduled' || record.status === 'paused' ? (
+      {record.status === 'sending' ||
+      record.status === 'scheduled' ||
+      record.status === 'paused' ? (
         <div className="flex gap-2">
           {record.status === 'paused' ? (
             <Button size="sm" onClick={() => onResume(record)}>
               Resume queue
             </Button>
           ) : (
-            <Button size="sm" variant="secondary" onClick={() => onPause(record)}>
-              Pause queue
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={scheduleLocked(record)}
+              onClick={() => onPause(record)}
+            >
+              {record.status === 'scheduled' ? 'Cancel schedule' : 'Pause queue'}
             </Button>
           )}
         </div>
       ) : null}
     </div>
-  )
-}
-
-function CampaignList({
-  campaigns,
-  summary,
-  busyId,
-  onOpen,
-  onAction,
-}: {
-  campaigns: NewsletterRecord[]
-  summary: NewsletterSummary | null
-  busyId: string
-  onOpen: (campaign: NewsletterRecord) => void
-  onAction: (
-    campaign: NewsletterRecord,
-    action: 'pause' | 'resume' | 'duplicate' | 'delete',
-  ) => void
-}) {
-  return (
-    <>
-      <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Drafts" value={summary?.draft ?? 0} note="Waiting on copy or a send window" />
-        <MetricCard
-          label="In the queue"
-          value={(summary?.scheduled ?? 0) + (summary?.sending ?? 0)}
-          note={summary ? `${summary.reach} recipients queued` : '—'}
-          accent="warn"
-        />
-        <MetricCard label="Delivered" value={summary?.sent ?? 0} note="Campaigns sent to date" accent="success" />
-        <MetricCard
-          label="Emails delivered"
-          value={summary?.delivered ?? 0}
-          note="Across every completed campaign"
-        />
-      </div>
-
-      <section className="mt-6 border border-line bg-panel/20">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
-          <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-            Campaign ledger
-          </h2>
-          <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint">
-            {campaigns.length} campaign{campaigns.length === 1 ? '' : 's'}
-          </span>
-        </div>
-
-        {campaigns.length === 0 ? (
-          <div className="p-4">
-            <EmptyState
-              title="No campaigns yet"
-              description="Start with a service reminder or a seasonal maintenance note. The composer keeps a live preview beside your copy."
-            />
-          </div>
-        ) : (
-          <div className="divide-y divide-line">
-            {campaigns.map((campaign) => {
-              const total = campaign.recipients.length
-              const percent = total > 0 ? Math.min(100, Math.round((campaign.sentCount / total) * 100)) : 0
-              const working = busyId === campaign.id
-              return (
-                <article key={campaign.id} className="grid gap-4 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-center">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone={STATUS_TONE[campaign.status]} dot>
-                        {newsletterStatusLabel[campaign.status]}
-                      </Badge>
-                      <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-fg-faint">
-                        {newsletterAudienceLabel[campaign.audience]}
-                        {total > 0 ? ` · ${total}` : ''} · {campaign.perMinute}/min
-                      </span>
-                    </div>
-                    <p className="mt-2 truncate text-sm text-fg">{campaign.subject}</p>
-                    <p className="truncate text-[11px] text-fg-dim">
-                      {campaign.preheader || 'No preheader'}
-                    </p>
-                    <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.08em] text-fg-faint">
-                      {campaign.scheduledAt
-                        ? `Scheduled ${formatDateTime(campaign.scheduledAt)}`
-                        : campaign.completedAt
-                          ? `Delivered ${formatDateTime(campaign.completedAt)}`
-                          : `Updated ${formatDateTime(campaign.updatedAt)}`}
-                    </p>
-                    {total > 0 ? (
-                      <div className="mt-2 flex items-center gap-2">
-                        <div className="h-1 w-full max-w-[220px] bg-line/60">
-                          <div className="h-full bg-cold" style={{ width: `${percent}%` }} />
-                        </div>
-                        <span className="font-mono text-[9px] text-fg-faint">
-                          {campaign.sentCount}/{total}
-                        </span>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-1.5 lg:justify-end">
-                    <Button variant="secondary" size="sm" onClick={() => onOpen(campaign)}>
-                      Open
-                    </Button>
-                    {campaign.status === 'sending' || campaign.status === 'scheduled' ? (
-                      <Button variant="quiet" size="sm" loading={working} onClick={() => onAction(campaign, 'pause')}>
-                        Pause
-                      </Button>
-                    ) : null}
-                    {campaign.status === 'paused' ? (
-                      <Button variant="quiet" size="sm" loading={working} onClick={() => onAction(campaign, 'resume')}>
-                        Resume
-                      </Button>
-                    ) : null}
-                    <Button variant="quiet" size="sm" loading={working} onClick={() => onAction(campaign, 'duplicate')}>
-                      Copy
-                    </Button>
-                    <button
-                      type="button"
-                      aria-label={`Delete ${campaign.subject}`}
-                      disabled={working || campaign.status === 'sending'}
-                      onClick={() => onAction(campaign, 'delete')}
-                      className="flex h-8 w-8 items-center justify-center border border-line text-fg-faint transition-colors duration-2 hover:border-danger/50 hover:text-danger disabled:opacity-40"
-                    >
-                      <Icon name="close" size={12} />
-                    </button>
-                  </div>
-                </article>
-              )
-            })}
-          </div>
-        )}
-      </section>
-    </>
   )
 }

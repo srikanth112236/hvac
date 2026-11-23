@@ -51,7 +51,9 @@ development the floating switcher also flips it live; the choice is stored in
   **jobs with checklists, parts, photos and signatures**, **quotations linked to
   customers, leads and services**, invoices, expenses,
   team/payroll, **priority reminders with overdue/urgent queues, filters and
-  snooze**, newsletters, coupons, content studio, revisions,
+  snooze**, **newsletter campaign ledger with recurring schedules, per-minute/
+  hour/day throttles, suppression overrides and coupon blocks**, coupons,
+  content studio, revisions,
   journal, media, settings, **global search (Ctrl K), CSV exports**, **RBAC users,
   permissions matrix**, **email two-factor authentication**, audit log, data
   health, GDPR erasure, backup export. Expenses include period/category/method
@@ -66,6 +68,9 @@ development the floating switcher also flips it live; the choice is stored in
 - Revision control: complete version table with content-aware search and
   filters, page-by-page timeline, complete/page/selected-field restores, and
   immutable snapshots. See `docs/revisions.md`.
+- Newsletter control: all-status campaign ledger, recurring schedules,
+  five-minute send lock, per-minute/hour/day caps, suppression list and coupon
+  blocks. See `docs/newsletters.md`.
 - Customer portal: overview, bookings (book, reschedule, cancel), invoices and
   **server-generated PDFs**, quotations (accept / request changes / edit /
   **PDF**), equipment + service history, AMC cover + renewal request +

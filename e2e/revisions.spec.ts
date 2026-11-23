@@ -1,15 +1,8 @@
 import { expect, test } from '@playwright/test'
-
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? 'admin@coolvane.example'
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'Coolvane!2026'
+import { loginAdmin } from './helpers'
 
 test('revision ledger has version and page-by-page workspaces', async ({ page }) => {
-  await page.goto('/admin')
-  await page.getByLabel('Email').fill(ADMIN_EMAIL)
-  await page.getByLabel('Password').fill(ADMIN_PASSWORD)
-  await page.getByRole('button', { name: /Open control room/i }).click()
-  await expect(page).toHaveURL(/\/admin$/)
-  await expect(page.getByText('Signed in as')).toBeVisible()
+  await loginAdmin(page)
 
   await page.goto('/admin/content/revisions')
   await expect(page.getByRole('heading', { name: 'Every change, reversible.' })).toBeVisible()

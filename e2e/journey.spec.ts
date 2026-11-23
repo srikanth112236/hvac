@@ -1,7 +1,5 @@
 import { expect, test } from '@playwright/test'
-
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? 'admin@coolvane.example'
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'Coolvane!2026'
+import { loginAdmin } from './helpers'
 
 test('lead → admin invoice → customer portal journey', async ({ page, browser }) => {
   const stamp = Date.now()
@@ -19,12 +17,7 @@ test('lead → admin invoice → customer portal journey', async ({ page, browse
   await expect(page.getByText(/Lead captured/i)).toBeVisible()
 
   // 2. Admin signs in through the UI and raises the invoice.
-  await page.goto('/admin')
-  await page.getByLabel('Email').fill(ADMIN_EMAIL)
-  await page.getByLabel('Password').fill(ADMIN_PASSWORD)
-  await page.getByRole('button', { name: /Open control room/i }).click()
-  await expect(page).toHaveURL(/\/admin$/)
-  await expect(page.getByText('Signed in as')).toBeVisible()
+  await loginAdmin(page)
 
   await page.goto('/admin/invoices')
   await page.getByRole('button', { name: /New invoice/i }).click()
@@ -39,14 +32,7 @@ test('lead → admin invoice → customer portal journey', async ({ page, browse
   await page.getByLabel('Line 1 unit price').fill('1250')
   await page.getByRole('button', { name: /^Create invoice$/i }).click()
   await expect(page).toHaveURL(/\/admin\/invoices\/[^/]+$/)
-  const invoiceRef =
-    (
-      await page
-        .getByText(/^INV-\d{4}-\d{4}$/)
-        .first()
-        .textContent()
-    )?.trim() ?? ''
-  expect(invoiceRef).toMatch(/^INV-\d{4}-\d{4}$/)
+  await expect(page.getByText('Journey cassette service').first()).toBeVisible()
 
   // 3. Customer registers through the portal UI.
   const portalContext = await browser.newContext()
@@ -78,7 +64,10 @@ test('lead → admin invoice → customer portal journey', async ({ page, browse
   await portal.getByRole('button', { name: /Sign in to portal/i }).click()
   await expect(portal.getByRole('tab', { name: /Invoices/i })).toBeVisible()
   await portal.getByRole('tab', { name: /Invoices/i }).click()
-  await expect(portal.getByText(invoiceRef)).toBeVisible()
+  const portalInvoice = portal.getByRole('row').filter({ hasText: 'Journey cassette service' })
+  await expect(portalInvoice).toBeVisible()
+  await expect(portalInvoice).toContainText(/INV-\d{4}-\d{4}/)
+  await expect(portalInvoice).toContainText('$1,475')
 
   await portalContext.close()
 })

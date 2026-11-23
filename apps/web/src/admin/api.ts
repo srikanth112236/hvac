@@ -47,6 +47,7 @@ import type {
   NewsletterPatch,
   NewsletterRecord,
   NewsletterSummary,
+  NewsletterAudienceFeed,
   SupportTicket,
   TeamMember,
   TeamMemberInput,
@@ -744,10 +745,7 @@ export const adminApi = {
     request<{ data: NewsletterRecord[]; summary: NewsletterSummary }>('/admin/newsletters'),
   newsletterAudiences: () =>
     request<{
-      data: {
-        counts: Record<string, number>
-        customers: { name: string; email: string }[]
-      }
+      data: NewsletterAudienceFeed
     }>('/admin/newsletters/audiences').then((payload) => payload.data),
   createNewsletter: (input: NewsletterInput) =>
     request<{ data: NewsletterRecord; summary: NewsletterSummary }>('/admin/newsletters', {

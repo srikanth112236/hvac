@@ -34,6 +34,7 @@ export function zonedTimeToUtc(
   dateOnly: string,
   hour: number,
   timeZone: string,
+  minute = 0,
 ): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateOnly.trim())
   if (!match) return null
@@ -41,7 +42,7 @@ export function zonedTimeToUtc(
   const month = Number(match[2])
   const day = Number(match[3])
   if (!Number.isFinite(year) || month < 1 || month > 12 || day < 1 || day > 31) return null
-  const guess = Date.UTC(year, month - 1, day, hour, 0, 0)
+  const guess = Date.UTC(year, month - 1, day, hour, minute, 0)
   const firstOffset = zoneOffsetMs(guess, timeZone)
   let result = guess - firstOffset
   const secondOffset = zoneOffsetMs(result, timeZone)
@@ -51,7 +52,10 @@ export function zonedTimeToUtc(
   return new Date(result)
 }
 
-export function zonedParts(utcMs: number, timeZone: string): {
+export function zonedParts(
+  utcMs: number,
+  timeZone: string,
+): {
   year: number
   month: number
   day: number

@@ -1,7 +1,5 @@
 import { expect, test } from '@playwright/test'
-
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? 'admin@coolvane.example'
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'Coolvane!2026'
+import { loginAdmin } from './helpers'
 
 function localDueTomorrow(): string {
   const date = new Date()
@@ -15,12 +13,7 @@ test('reminders queue segments, filters, prioritises and completes', async ({ pa
   const title = `E2E urgent reminder ${Date.now()}`
   page.on('dialog', (dialog) => void dialog.accept())
 
-  await page.goto('/admin')
-  await page.getByLabel('Email').fill(ADMIN_EMAIL)
-  await page.getByLabel('Password').fill(ADMIN_PASSWORD)
-  await page.getByRole('button', { name: /Open control room/i }).click()
-  await expect(page).toHaveURL(/\/admin$/)
-  await expect(page.getByText('Signed in as')).toBeVisible()
+  await loginAdmin(page)
 
   await page.goto('/admin/reminders')
   await expect(page.getByRole('heading', { name: 'Nothing falls between calls.' })).toBeVisible()

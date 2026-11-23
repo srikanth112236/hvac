@@ -4,17 +4,44 @@ import { z } from 'zod'
 /*  Newsletters                                                               */
 /* -------------------------------------------------------------------------- */
 
-export const NEWSLETTER_STATUSES = [
-  'draft',
-  'scheduled',
-  'sending',
-  'paused',
-  'sent',
-] as const
+export const NEWSLETTER_STATUSES = ['draft', 'scheduled', 'sending', 'paused', 'sent'] as const
 export type NewsletterStatus = (typeof NEWSLETTER_STATUSES)[number]
 
-export const NEWSLETTER_AUDIENCES = ['all', 'portal', 'open-balance', 'prospects', 'selected'] as const
+export const NEWSLETTER_AUDIENCES = [
+  'all',
+  'portal',
+  'open-balance',
+  'prospects',
+  'selected',
+] as const
 export type NewsletterAudience = (typeof NEWSLETTER_AUDIENCES)[number]
+
+export const NEWSLETTER_RECURRENCE_KINDS = ['daily', 'weekly', 'monthly'] as const
+export type NewsletterRecurrenceKind = (typeof NEWSLETTER_RECURRENCE_KINDS)[number]
+export const NEWSLETTER_MONTHLY_MODES = ['day-of-month', 'nth-weekday'] as const
+export type NewsletterMonthlyMode = (typeof NEWSLETTER_MONTHLY_MODES)[number]
+
+export interface NewsletterRecurrence {
+  kind: NewsletterRecurrenceKind
+  /** Every N days, weeks or months. */
+  interval: number
+  /** 0 Sunday through 6 Saturday, used by weekly schedules. */
+  weekdays: number[]
+  monthlyMode: NewsletterMonthlyMode
+  dayOfMonth?: number | null
+  /** 0 Sunday through 6 Saturday, used by nth-weekday monthly schedules. */
+  weekday?: number | null
+  /** 1-4, or -1 for the last occurrence in the month. */
+  weekOfMonth?: number | null
+  endAt?: string | null
+}
+
+export interface NewsletterSuppression {
+  email: string
+  name: string
+  reason: string
+  source: 'signup' | 'preference'
+}
 
 export const newsletterAudienceLabel: Record<NewsletterAudience, string> = {
   all: 'Everyone reachable',
@@ -37,6 +64,23 @@ export interface NewsletterRecord {
   recipients: string[]
   /** Delivery throttle: recipients per minute. */
   perMinute: number
+  /** Optional rolling caps. Missing values are treated as unlimited. */
+  perHour?: number
+  perDay?: number
+  hourSent?: number
+  daySent?: number
+  hourWindowAt?: string | null
+  dayWindowAt?: string | null
+  /** Manual override for unsubscribed addresses. */
+  overrideSuppression?: boolean
+  suppressedCount?: number
+  /** Recurring series metadata. One-shot campaigns omit this. */
+  recurrence?: NewsletterRecurrence | null
+  seriesId?: string | null
+  parentId?: string | null
+  runNumber?: number
+  runCount?: number
+  lastRunAt?: string | null
   status: NewsletterStatus
   scheduledAt: string | null
   startedAt: string | null
@@ -58,6 +102,13 @@ export interface NewsletterSummary {
   count: number
 }
 
+export interface NewsletterAudienceFeed {
+  counts: Record<string, number>
+  customers: { name: string; email: string; suppressed?: boolean; reason?: string }[]
+  suppressed: NewsletterSuppression[]
+  suppressedCount: number
+}
+
 export const newsletterStatusLabel: Record<NewsletterStatus, string> = {
   draft: 'Draft',
   scheduled: 'Scheduled',
@@ -65,6 +116,22 @@ export const newsletterStatusLabel: Record<NewsletterStatus, string> = {
   paused: 'Paused',
   sent: 'Sent',
 }
+
+export const newsletterRecurrenceSchema = z.object({
+  kind: z.enum(NEWSLETTER_RECURRENCE_KINDS),
+  interval: z.number().int().min(1).max(12).default(1),
+  weekdays: z.array(z.number().int().min(0).max(6)).max(7).default([]),
+  monthlyMode: z.enum(NEWSLETTER_MONTHLY_MODES).default('day-of-month'),
+  dayOfMonth: z.number().int().min(1).max(31).nullable().optional(),
+  weekday: z.number().int().min(0).max(6).nullable().optional(),
+  weekOfMonth: z
+    .number()
+    .int()
+    .refine((value) => value === -1 || (value >= 1 && value <= 4), 'Choose week 1-4 or last')
+    .nullable()
+    .optional(),
+  endAt: z.string().trim().max(40).nullable().optional(),
+})
 
 export const newsletterInputSchema = z.object({
   subject: z.string().trim().min(3, 'Give the campaign a subject').max(160),
@@ -78,6 +145,10 @@ export const newsletterInputSchema = z.object({
   audience: z.enum(NEWSLETTER_AUDIENCES).default('all'),
   recipients: z.array(z.string().trim().email()).max(5000).default([]),
   perMinute: z.number().int().min(1).max(600).default(60),
+  perHour: z.number().int().min(1).max(50_000).default(1800),
+  perDay: z.number().int().min(1).max(200_000).default(20_000),
+  overrideSuppression: z.boolean().default(false),
+  recurrence: newsletterRecurrenceSchema.nullable().optional(),
   scheduledAt: z.string().trim().max(40).nullable().optional(),
 })
 export const newsletterPatchSchema = newsletterInputSchema.partial()
@@ -95,6 +166,7 @@ export function newsletterEmailDocument(record: {
   preheader: string
   fromName: string
   html: string
+  preferencesUrl?: string
 }): string {
   const preheader = record.preheader
     ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0">${escapeHtml(record.preheader)}</div>`
@@ -117,7 +189,11 @@ ${preheader}
 </td></tr>
 <tr><td style="padding:32px 30px;font-size:16px;line-height:1.65">${record.html}</td></tr>
 <tr><td style="padding:20px 30px;border-top:1px solid #e2dccf;font:400 11px/1.7 Arial,sans-serif;color:#6b7480">
-You are receiving this because you are a Coolvane customer. Reply to this email to update your preferences.
+You are receiving this because you are a Coolvane customer. ${
+    record.preferencesUrl
+      ? `<a href="${escapeHtml(record.preferencesUrl)}" style="color:#12161a">Update email preferences or unsubscribe</a>.`
+      : 'Reply to this email to update your preferences.'
+  }
 </td></tr>
 </table>
 </td></tr>

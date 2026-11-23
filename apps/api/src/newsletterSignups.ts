@@ -16,6 +16,10 @@ export async function readSubscribedSignups(): Promise<NewsletterSignup[]> {
   return signups.filter((signup) => signup.status === 'subscribed')
 }
 
+export async function readNewsletterSignups(): Promise<NewsletterSignup[]> {
+  return signupStore.read()
+}
+
 export async function removeNewsletterSignup(email: string): Promise<void> {
   const normalized = email.trim().toLowerCase()
   await signupStore.mutate((signups) => signups.filter((signup) => signup.email !== normalized))

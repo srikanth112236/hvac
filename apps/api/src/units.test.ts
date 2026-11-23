@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { invoiceTotals, summarizeContentChanges, type ContentRevision } from '@hvac/shared'
+import {
+  invoiceTotals,
+  summarizeContentChanges,
+  type ContentRevision,
+  type NewsletterRecurrence,
+} from '@hvac/shared'
 import { defaultContent } from './content.js'
 import { restoreSelectedChanges } from './contentHistory.js'
+import { nextRecurringOccurrence, applySuppression } from './marketing.js'
 import { sanitizeNewsletterHtml } from './sanitize.js'
 import { zonedTimeToUtc } from './time.js'
 
@@ -166,5 +172,92 @@ describe('content revision field restore', () => {
     expect(() => restoreSelectedChanges(current, revision, ['faqs.new-faq.question'])).toThrow(
       /whole page or complete version/i,
     )
+  })
+})
+
+describe('newsletter recurrence', () => {
+  const base = '2026-11-23T15:00:00.000Z'
+  const after = Date.parse(base)
+  const recurrence = (overrides: Partial<NewsletterRecurrence>): NewsletterRecurrence => ({
+    kind: 'daily',
+    interval: 1,
+    weekdays: [1],
+    monthlyMode: 'day-of-month',
+    dayOfMonth: 1,
+    weekday: 1,
+    weekOfMonth: 1,
+    endAt: null,
+    ...overrides,
+  })
+
+  it('advances a daily schedule by the interval', () => {
+    expect(nextRecurringOccurrence(recurrence({ kind: 'daily', interval: 2 }), base, after)).toBe(
+      '2026-11-25T15:00:00.000Z',
+    )
+  })
+
+  it('advances a weekly schedule by the interval and selected weekday', () => {
+    expect(
+      nextRecurringOccurrence(
+        recurrence({ kind: 'weekly', interval: 2, weekdays: [1] }),
+        base,
+        after,
+      ),
+    ).toBe('2026-12-07T15:00:00.000Z')
+  })
+
+  it('supports monthly nth weekday schedules', () => {
+    expect(
+      nextRecurringOccurrence(
+        recurrence({
+          kind: 'monthly',
+          interval: 1,
+          monthlyMode: 'nth-weekday',
+          weekday: 2,
+          weekOfMonth: 2,
+        }),
+        '2026-11-10T15:00:00.000Z',
+        Date.parse('2026-11-10T15:00:00.000Z'),
+      ),
+    ).toBe('2026-12-08T15:00:00.000Z')
+  })
+
+  it('stops when the next occurrence is beyond the end date', () => {
+    expect(
+      nextRecurringOccurrence(
+        recurrence({ kind: 'daily', interval: 1, endAt: '2026-11-23T23:59:59.000Z' }),
+        base,
+        after,
+      ),
+    ).toBeNull()
+  })
+})
+
+describe('newsletter suppression guard', () => {
+  const blocked = [
+    {
+      email: 'unsubscribed@example.com',
+      name: 'Unsubscribed',
+      reason: 'Unsubscribed from the mailing list',
+      source: 'signup' as const,
+    },
+  ]
+
+  it('excludes suppressed addresses by default', () => {
+    expect(
+      applySuppression(['unsubscribed@example.com', 'customer@example.com'], blocked, false),
+    ).toEqual({
+      recipients: ['customer@example.com'],
+      suppressedCount: 1,
+    })
+  })
+
+  it('includes suppressed addresses when the admin overrides', () => {
+    expect(
+      applySuppression(['unsubscribed@example.com', 'customer@example.com'], blocked, true),
+    ).toEqual({
+      recipients: ['unsubscribed@example.com', 'customer@example.com'],
+      suppressedCount: 1,
+    })
   })
 })
