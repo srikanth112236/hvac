@@ -70,7 +70,7 @@ npm run typecheck
 npm run lint
 npm run test
 npm run build          # build:client + build:server (SSR entry)
-npm run test:ssr       # 45 public routes × foundry/atelier hydration audit
+npm run test:ssr       # 51 public routes × foundry/atelier hydration audit
 ```
 
 `npm run build:client` writes the browser bundle; `npm run build:server` writes

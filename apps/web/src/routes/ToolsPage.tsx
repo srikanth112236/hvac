@@ -1,63 +1,20 @@
-import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useSeo } from '@/lib/seo'
-import { EnquiryForm } from '@/routes/contact/EnquiryForm'
-import { ServiceCalculator } from '@/routes/services/ServiceCalculator'
-import type { CalculatorKind } from '@/content/serviceDetails'
-
-const tools: { id: CalculatorKind; label: string; service: string; note: string }[] = [
-  {
-    id: 'tonnage',
-    label: 'Room tonnage',
-    service: 'Split / cassette sizing',
-    note: 'Indicative load from area, glazing exposure and occupancy.',
-  },
-  {
-    id: 'vrf',
-    label: 'VRF zones',
-    service: 'VRF / VRV planning',
-    note: 'Room count, diversity and block load for a multi-room brief.',
-  },
-  {
-    id: 'duct',
-    label: 'Duct sizing',
-    service: 'Duct design',
-    note: 'Airflow and velocity check for a trunk or branch.',
-  },
-  {
-    id: 'cold-room',
-    label: 'Cold room',
-    service: 'Cold room load',
-    note: 'Volume, temperature class and door traffic.',
-  },
-  {
-    id: 'chiller',
-    label: 'Chiller capacity',
-    service: 'Chilled water plant',
-    note: 'Area and load density for a central plant conversation.',
-  },
-  {
-    id: 'amc',
-    label: 'AMC plan',
-    service: 'Maintenance plan',
-    note: 'Unit count and plan level for an annual cover estimate.',
-  },
-]
+import { tools } from '@/content/tools'
+import { Icon } from '@/components/icons'
 
 export function ToolsPage() {
   useSeo({
     path: '/tools',
     title: 'HVAC calculators',
     description:
-      'Indicative HVAC sizing tools: room tonnage, VRF zones, duct sizing, cold room load, chiller capacity and AMC plan comparison. Send the result to the works desk.',
+      'Standalone HVAC sizing tools: room tonnage, VRF zones, duct sizing, cold room load, chiller capacity and AMC plan comparison. Each tool has its own page and enquiry hand-off.',
+    itemList: tools.map((tool) => ({
+      name: tool.label,
+      path: `/tools/${tool.slug}`,
+      description: tool.note,
+    })),
   })
-  const [active, setActive] = useState<CalculatorKind>('tonnage')
-  const [prefill, setPrefill] = useState('')
-  const selected = tools.find((tool) => tool.id === active) ?? tools[0]!
-
-  const sendToDesk = (message: string) => {
-    setPrefill(message)
-    document.getElementById('tools-enquire')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
 
   return (
     <section className="border-b border-line">
@@ -65,60 +22,50 @@ export function ToolsPage() {
         <span className="annot">Tools · CV-TOOLS</span>
         <h1 className="t-display mt-6 max-w-[15ch] text-fg">A first number, not a quote.</h1>
         <p className="mt-6 max-w-prose text-sm leading-relaxed text-fg-dim">
-          These calculators start the conversation. They state their inputs and are labelled
-          indicative: a measured survey and a room-by-room load calculation still decide the
-          equipment. Send the result and the works desk will check the assumptions.
+          Six standalone calculators. Each one states its inputs, gives an indicative result and
+          hands the assumptions to the works desk. A measured survey and a room-by-room load
+          calculation still decide the equipment.
         </p>
 
-        <div className="mt-8 flex flex-wrap gap-1 border-b border-line">
-          {tools.map((tool) => (
-            <button
-              key={tool.id}
-              type="button"
-              onClick={() => setActive(tool.id)}
-              className={`border-b-2 px-3 py-2.5 font-mono text-[9px] uppercase tracking-[0.1em] ${
-                active === tool.id
-                  ? 'border-cold text-cold'
-                  : 'border-transparent text-fg-faint hover:text-fg'
-              }`}
+        <div className="mt-10 grid gap-px border border-line bg-line sm:grid-cols-2 xl:grid-cols-3">
+          {tools.map((tool, index) => (
+            <Link
+              key={tool.slug}
+              to={`/tools/${tool.slug}`}
+              className="group flex min-h-56 flex-col bg-base p-6 transition-colors duration-2 hover:bg-panel/60"
             >
-              {tool.label}
-            </button>
+              <div className="flex items-start justify-between gap-4">
+                <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-cold">
+                  {String(index + 1).padStart(2, '0')} · {tool.label}
+                </span>
+                <Icon
+                  name="arrow-up-right"
+                  size={15}
+                  className="text-fg-faint transition-colors duration-2 group-hover:text-cold"
+                />
+              </div>
+              <h2 className="t-h3 mt-8 max-w-[14ch] text-fg">{tool.service}</h2>
+              <p className="mt-3 text-[12px] leading-relaxed text-fg-dim">{tool.note}</p>
+              <span className="mt-auto flex items-center gap-2 border-t border-line pt-4 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint group-hover:text-cold">
+                Open calculator
+                <Icon name="arrow-right" size={11} />
+              </span>
+            </Link>
           ))}
         </div>
 
-        <div className="mt-6 grid gap-8 lg:grid-cols-12">
-          <div className="lg:col-span-7">
-            <div className="border border-line bg-panel/30 p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-cold">
-                    {selected.label}
-                  </p>
-                  <h2 className="mt-1 text-lg text-fg">{selected.service}</h2>
-                  <p className="mt-1 text-[11px] text-fg-faint">{selected.note}</p>
-                </div>
-                <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-fg-faint">
-                  Indicative
-                </span>
-              </div>
-              <div className="mt-5">
-                <ServiceCalculator
-                  key={active}
-                  kind={active}
-                  serviceName={selected.service}
-                  onSend={sendToDesk}
-                />
-              </div>
-            </div>
-          </div>
-          <div id="tools-enquire" className="scroll-mt-[calc(var(--header-h)+24px)] lg:col-span-5">
-            <EnquiryForm
-              prefillMessage={prefill}
-              context={`Tools · ${selected.label}`}
-              source="calculator"
-            />
-          </div>
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-4 border border-line bg-panel/30 p-4">
+          <p className="max-w-prose text-[11px] leading-relaxed text-fg-dim">
+            The calculators are indicative. They do not replace a measured load, a site survey or a
+            fixed quotation. Every result can be attached to an enquiry.
+          </p>
+          <Link
+            to="/contact"
+            className="inline-flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.1em] text-cold hover:text-fg"
+          >
+            Ask an engineer
+            <Icon name="arrow-right" size={11} />
+          </Link>
         </div>
       </div>
     </section>

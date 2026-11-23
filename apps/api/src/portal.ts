@@ -26,8 +26,9 @@ import {
   requireCustomerMutation,
   revokeCustomerSessions,
 } from './portalAuth.js'
-import { requireAdmin, requireAdminMutation, requireWriteRole } from './auth.js'
+import { requireAdmin, requireAdminMutation, requirePermission } from './auth.js'
 import { BUSINESS_TIMEZONE } from './config.js'
+import { customerWantsEmail } from './customerPreferences.js'
 import { createStore } from './store.js'
 import { appointmentConfirmation, sendMail } from './mailer.js'
 import { hourInZone, startOfTodayInZone, zonedTimeToUtc } from './time.js'
@@ -89,6 +90,10 @@ async function resolveServiceName(slug: string | null | undefined): Promise<stri
 async function notifyBooking(appointment: AppointmentRecord): Promise<void> {
   if (!appointment.customerEmail) return
   try {
+    const customer = appointment.customerId
+      ? { id: appointment.customerId }
+      : await findCustomerByEmail(appointment.customerEmail)
+    if (customer && !(await customerWantsEmail(customer.id, 'emailService'))) return
     const content = await readSiteContent()
     const when = new Intl.DateTimeFormat('en-US', {
       dateStyle: 'full',
@@ -395,7 +400,7 @@ portalRouter.patch(
 /* -------------------------------------------------------------------------- */export const customersRouter = Router()
 customersRouter.use(
   requireAdmin,
-  requireWriteRole('owner', 'admin', 'manager'),
+  requirePermission('customers.write'),
   requireAdminMutation,
 )
 

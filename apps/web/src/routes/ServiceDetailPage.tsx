@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Icon, type IconName } from '@/components/icons'
 import { Accordion, Badge, ButtonAnchor, ButtonLink, SectionHeader } from '@/components/ui'
@@ -7,11 +7,11 @@ import { useBrand } from '@/brand/BrandProvider'
 import type { SiteServiceOverride, SiteWorkCase } from '@hvac/shared'
 import { categoryLabels, type CatalogueService } from '@/content/services'
 import { getServiceDetail, type Pair, type ServiceDetail } from '@/content/serviceDetails'
+import { toolForKind } from '@/content/tools'
 import { useSiteContent, useSiteServices } from '@/content/SiteContentProvider'
 import { useSeo } from '@/lib/seo'
 import { NotFound } from '@/routes/NotFound'
 import { EnquiryForm } from '@/routes/contact/EnquiryForm'
-import { ServiceCalculator } from '@/routes/services/ServiceCalculator'
 import { ServiceDiagram } from '@/routes/services/ServiceDiagram'
 
 type FullService = ServiceDetail & { catalogue: CatalogueService }
@@ -107,7 +107,6 @@ export function ServiceDetailPage() {
   const brand = useBrand()
   const { content } = useSiteContent()
   const liveServices = useSiteServices()
-  const [prefill, setPrefill] = useState('')
 
   // Overrides win over the compiled file; an unpublished or removed service
   // leaves the index immediately instead of rendering a stale page.
@@ -200,33 +199,39 @@ export function ServiceDetailPage() {
   const project = projectCategory
     ? content.workCases.find((entry) => entry.category === projectCategory)
     : undefined
+  const calculatorTool = service.calculator ? toolForKind(service.calculator) : null
 
   const blockMap: Record<string, ReactNode> = {
     scope: <ScopeBlock service={service} />,
     technical: <TechnicalBlock service={service} equipmentBrands={content.equipmentBrands} />,
     specs: <SpecsBlock service={service} />,
-    calculator: service.calculator ? (
+    calculator: calculatorTool ? (
       <section className="section border-b border-line bg-panel/20">
         <div className="shell grid gap-10 md:grid-cols-12">
-          <div className="md:col-span-4">
-            <span className="annot">Sizing helper</span>
+          <div className="md:col-span-5">
+            <span className="annot">Standalone sizing helper</span>
             <h2 className="t-h2 mt-5 max-w-[12ch] text-fg">Start with the load.</h2>
-            <p className="mt-5 max-w-[34ch] text-sm leading-relaxed text-fg-dim">
-              An indicative figure to frame the survey. Change the inputs, then send the numbers
-              with your brief — the lead arrives with the service and the calculation attached.
+            <p className="mt-5 max-w-[40ch] text-sm leading-relaxed text-fg-dim">
+              The {calculatorTool.label.toLowerCase()} calculator now lives on its own page. It
+              states its assumptions, gives an indicative figure and hands the result to the works
+              desk with your brief.
             </p>
-            <ul className="mt-6 flex flex-col gap-2 border-t border-line pt-4 font-mono text-[9px] uppercase leading-relaxed tracking-[0.1em] text-fg-faint">
-              <li>· Not a substitute for a measured load</li>
-              <li>· Output attached to the enquiry</li>
-              <li>· Assumptions stated in the brief</li>
-            </ul>
           </div>
-          <div className="md:col-span-7 md:col-start-6">
-            <ServiceCalculator
-              kind={service.calculator}
-              serviceName={catalogue.name}
-              onSend={setPrefill}
-            />
+          <div className="md:col-span-6 md:col-start-7">
+            <div className="marks border border-line bg-base p-6">
+              <span className="t-label">{calculatorTool.service}</span>
+              <p className="mt-3 text-[12px] leading-relaxed text-fg-dim">{calculatorTool.note}</p>
+              <Link
+                to={`/tools/${calculatorTool.slug}`}
+                className="mt-5 inline-flex items-center gap-2 border border-line px-4 py-3 font-mono text-[9px] uppercase tracking-[0.1em] text-cold transition-colors duration-2 hover:border-cold/60 hover:text-fg"
+              >
+                Open the {calculatorTool.label.toLowerCase()} calculator
+                <Icon name="arrow-right" size={11} />
+              </Link>
+              <p className="mt-4 text-[10px] leading-relaxed text-fg-faint">
+                Indicative only · verified against a measured load before quotation.
+              </p>
+            </div>
           </div>
         </div>
       </section>
@@ -242,7 +247,6 @@ export function ServiceDetailPage() {
             <EnquiryForm
               lockedServiceId={service.id}
               source="service-page"
-              prefillMessage={prefill}
               context={`Service page · ${catalogue.name} · ${catalogue.index}`}
             />
           </div>
@@ -361,7 +365,7 @@ export function ServiceDetailPage() {
               'related',
               'enquire',
             ]
-          : ['scope', 'process', 'specs', 'pricing', 'faq', 'related', 'enquire']
+          : ['scope', 'calculator', 'process', 'specs', 'pricing', 'faq', 'related', 'enquire']
 
   return (
     <>

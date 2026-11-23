@@ -77,6 +77,19 @@ export interface TwoFactorStatus {
   maskedEmail: string
 }
 
+export interface PermissionDefinition {
+  key: string
+  label: string
+  description: string
+}
+
+export interface PermissionMatrix {
+  roles: AdminRole[]
+  permissions: PermissionDefinition[]
+  matrix: Record<AdminRole, string[]>
+  readOnly: boolean
+}
+
 export type AdminLoginResult = AdminUser | TwoFactorChallenge
 
 export function isTwoFactorChallenge(value: AdminLoginResult): value is TwoFactorChallenge {
@@ -301,6 +314,8 @@ export const adminApi = {
       `/admin/search?q=${encodeURIComponent(query)}`,
     ).then((payload) => payload.data.results),
   users: () => request<{ data: PublicAdminUser[] }>('/admin/users').then((payload) => payload.data),
+  permissions: () =>
+    request<{ data: PermissionMatrix }>('/admin/permissions').then((payload) => payload.data),
   createAdminUser: (input: { name: string; email: string; password: string; role: AdminRole }) =>
     request<{ data: PublicAdminUser }>('/admin/users', {
       method: 'POST',

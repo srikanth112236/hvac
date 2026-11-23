@@ -170,6 +170,15 @@ const STATIC_PATHS = new Set([
   '/tools',
 ])
 
+const TOOL_PATHS = new Set([
+  '/tools/room-tonnage',
+  '/tools/vrf-zones',
+  '/tools/duct-sizing',
+  '/tools/cold-room',
+  '/tools/chiller-capacity',
+  '/tools/amc-plan',
+])
+
 const LEGACY_REDIRECTS = new Map([
   ['/privacy', '/legal/privacy'],
   ['/terms', '/legal/terms'],
@@ -185,6 +194,7 @@ const LEGACY_REDIRECTS = new Map([
 
 function isPublicPath(pathname, content) {
   if (STATIC_PATHS.has(pathname)) return true
+  if (TOOL_PATHS.has(pathname)) return true
   const service = /^\/services\/([^/]+)\/?$/.exec(pathname)
   if (service) {
     return (

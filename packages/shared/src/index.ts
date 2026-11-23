@@ -27,6 +27,85 @@ export const adminRoleLabel: Record<AdminRole, string> = {
   viewer: 'Viewer',
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Admin permissions                                                          */
+/* -------------------------------------------------------------------------- */
+
+export const ADMIN_PERMISSIONS = [
+  {
+    key: 'data.read',
+    label: 'Read operational data',
+    description: 'Leads, customers, invoices, content and portal records.',
+  },
+  {
+    key: 'leads.write',
+    label: 'Leads & reminders',
+    description: 'Create and update leads, follow-ups and reminders.',
+  },
+  {
+    key: 'content.write',
+    label: 'Content & media',
+    description: 'Edit site copy, journal posts, products and uploads.',
+  },
+  {
+    key: 'customers.write',
+    label: 'Customers & portal access',
+    description: 'Edit customer files, approve or suspend portal accounts.',
+  },
+  {
+    key: 'portal.write',
+    label: 'Quotes, AMC & support',
+    description: 'Issue quotations and AMC contracts, file job reports, reply to tickets.',
+  },
+  {
+    key: 'billing.write',
+    label: 'Invoices, payroll & expenses',
+    description: 'Issue invoices, record payments, manage payroll and expenses.',
+  },
+  {
+    key: 'marketing.write',
+    label: 'Newsletters & coupons',
+    description: 'Send campaigns and manage discount codes.',
+  },
+  {
+    key: 'data.export',
+    label: 'Audit, export & data health',
+    description: 'Read the audit log, export backups and run data-health checks.',
+  },
+  {
+    key: 'users.manage',
+    label: 'Users & roles',
+    description: 'Create staff accounts, change roles and reset passwords.',
+  },
+] as const
+
+export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number]['key']
+
+export const ROLE_PERMISSIONS: Record<AdminRole, AdminPermission[]> = {
+  owner: ADMIN_PERMISSIONS.map((permission) => permission.key),
+  admin: [
+    'data.read',
+    'leads.write',
+    'content.write',
+    'customers.write',
+    'portal.write',
+    'billing.write',
+    'marketing.write',
+    'data.export',
+  ],
+  manager: ['data.read', 'leads.write', 'content.write', 'customers.write', 'portal.write'],
+  accountant: ['data.read', 'billing.write'],
+  viewer: ['data.read'],
+}
+
+export function roleCan(role: AdminRole, permission: AdminPermission): boolean {
+  return ROLE_PERMISSIONS[role].includes(permission)
+}
+
+export function rolesForPermission(permission: AdminPermission): AdminRole[] {
+  return ADMIN_ROLES.filter((role) => roleCan(role, permission))
+}
+
 export const adminUserInputSchema = z.object({
   name: z.string().trim().min(2, 'Enter a name').max(120),
   email: z.string().trim().email('Enter a valid email').max(160),
@@ -43,17 +122,15 @@ export const adminUserPatchSchema = z.object({
 })
 export type AdminUserPatch = z.infer<typeof adminUserPatchSchema>
 
-export const SERVICE_CATEGORIES = ['residential', 'commercial', 'industrial', 'maintenance'] as const
+export const SERVICE_CATEGORIES = [
+  'residential',
+  'commercial',
+  'industrial',
+  'maintenance',
+] as const
 export type ServiceCategory = (typeof SERVICE_CATEGORIES)[number]
 
-export const LEAD_STATUSES = [
-  'new',
-  'contacted',
-  'site-visit',
-  'quoted',
-  'won',
-  'lost',
-] as const
+export const LEAD_STATUSES = ['new', 'contacted', 'site-visit', 'quoted', 'won', 'lost'] as const
 export type LeadStatus = (typeof LEAD_STATUSES)[number]
 
 export const JOB_STATUSES = [
@@ -167,7 +244,11 @@ export function leadReference(year: number, sequence: number): string {
 /* -------------------------------------------------------------------------- */
 
 /** QT-2026-0001 / INV-2026-0001 / AMC-2026-0001, numbered per financial year. */
-export function documentNumber(prefix: 'QT' | 'INV' | 'AMC', year: number, sequence: number): string {
+export function documentNumber(
+  prefix: 'QT' | 'INV' | 'AMC',
+  year: number,
+  sequence: number,
+): string {
   return `${prefix}-${year}-${String(sequence).padStart(4, '0')}`
 }
 

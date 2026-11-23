@@ -27,8 +27,11 @@ test('customer portal login screen is reachable', async ({ page }) => {
   await expect(page.getByRole('button', { name: /Sign in to portal/i })).toBeVisible()
 })
 
-test('tools page exposes calculators', async ({ page }) => {
+test('tools page exposes standalone calculators', async ({ page }) => {
   await page.goto('/tools')
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
-  await expect(page.getByRole('button', { name: /Room tonnage/i })).toBeVisible()
+  await page.getByRole('link', { name: /Room tonnage/i }).click()
+  await expect(page).toHaveURL(/\/tools\/room-tonnage$/)
+  await expect(page.getByRole('heading', { name: /Split \/ cassette sizing/i })).toBeVisible()
+  await expect(page.getByRole('link', { name: /Send these figures/i })).toBeVisible()
 })

@@ -42,18 +42,20 @@ development the floating switcher also flips it live; the choice is stored in
 ## What is implemented
 
 - Public site: home, services + 22 detail pages, products, about, process, work,
-  AMC, journal, contact, quote, book, legal, 404, both themes.
+  AMC, journal, contact, quote, book, legal, 404, both themes, **/tools + six
+  standalone calculator pages**.
 - Admin: overview, leads, customers + full customer file, **dispatch**, invoices,
   expenses, team/payroll, reminders, newsletters, coupons, content studio,
   revisions, journal, media, settings, **global search (Ctrl K), CSV exports**,
-  **RBAC users**, **email two-factor authentication**, audit log, data health,
-  GDPR erasure, backup export.
+  **RBAC users, permissions matrix**, **email two-factor authentication**, audit
+  log, data health, GDPR erasure, backup export.
 - Customer portal: overview, bookings (book, reschedule, cancel), invoices and
   print, quotations (accept / request changes / print), equipment + service
   history, AMC cover + renewal request, job reports (checklist/photos), support
-  tickets, profile, multiple sites, notification preferences, password reset,
-  email verification. Quotation, AMC renewal and support events notify the
-  customer by email only.
+  tickets, profile, multiple sites, notification preferences (service, billing,
+  AMC and marketing email), password reset, email verification. Quotation, AMC
+  renewal, support, invoice and booking events respect those preferences and use
+  email only.
 - Operations: live admin refresh, cross-tab content sync, 10 s content polling with
   ETag/304, **server-rendered public HTML with per-route meta/JSON-LD and
   hydration**, optional prerendered fallback, same-origin sitemap/robots/feed,

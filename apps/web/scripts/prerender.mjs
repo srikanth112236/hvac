@@ -31,6 +31,12 @@ const staticRoutes = [
   '/book',
   '/quote',
   '/tools',
+  '/tools/room-tonnage',
+  '/tools/vrf-zones',
+  '/tools/duct-sizing',
+  '/tools/cold-room',
+  '/tools/chiller-capacity',
+  '/tools/amc-plan',
 ]
 
 async function waitForServer(url, attempts = 60) {

@@ -10,7 +10,7 @@ import {
   mediaPatchSchema,
   type SiteMediaAsset,
 } from '@hvac/shared'
-import { requireAdmin, requireAdminMutation, requireWriteRole } from './auth.js'
+import { requireAdmin, requireAdminMutation, requirePermission } from './auth.js'
 import { createStore } from './store.js'
 
 /** One project-level media library shared by the site, CMS and admin tools. */
@@ -87,7 +87,7 @@ mediaRouter.get('/admin/media', requireAdmin, async (req, res) => {
 mediaRouter.post(
   '/admin/media',
   requireAdmin,
-  requireWriteRole('owner', 'admin', 'manager'),
+  requirePermission('content.write'),
   requireAdminMutation,
   upload.array('files', MEDIA_MAX_FILES),
   async (req, res) => {
@@ -150,7 +150,7 @@ mediaRouter.post(
   },
 )
 
-mediaRouter.patch('/admin/media/:id', requireAdmin, requireWriteRole('owner', 'admin', 'manager'), requireAdminMutation, async (req, res) => {
+mediaRouter.patch('/admin/media/:id', requireAdmin, requirePermission('content.write'), requireAdminMutation, async (req, res) => {
   const parsed = mediaPatchSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({ error: { code: 'validation_error', message: 'Invalid media details.' } })
@@ -176,7 +176,7 @@ mediaRouter.patch('/admin/media/:id', requireAdmin, requireWriteRole('owner', 'a
   res.json({ data: updated })
 })
 
-mediaRouter.delete('/admin/media/:id', requireAdmin, requireWriteRole('owner', 'admin', 'manager'), requireAdminMutation, async (req, res) => {
+mediaRouter.delete('/admin/media/:id', requireAdmin, requirePermission('content.write'), requireAdminMutation, async (req, res) => {
   const assets = await mediaStore.read()
   const asset = assets.find((entry) => entry.id === req.params.id)
   if (!asset) {

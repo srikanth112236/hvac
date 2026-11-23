@@ -24,14 +24,18 @@ import {
   type CustomerSite,
   type EquipmentRecord,
   type JobReport,
-  type NotificationPreferences,
   type QuotationRecord,
   type SupportTicket,
 } from '@hvac/shared'
-import { requireAdmin, requireAdminMutation, requireWriteRole } from './auth.js'
+import { requireAdmin, requireAdminMutation, requirePermission } from './auth.js'
 import { ADMIN_NOTIFY_EMAIL, PUBLIC_SITE_URL } from './config.js'
 import { invoiceStore, toInvoiceView } from './business.js'
 import { readSiteContent } from './content.js'
+import {
+  customerWantsEmail,
+  preferenceStore,
+  preferencesFor,
+} from './customerPreferences.js'
 import { leadStore, readLeads } from './leads.js'
 import {
   amcRenewalAcknowledgementEmail,
@@ -85,18 +89,6 @@ export const quotationStore = createStore<QuotationRecord[]>('quotations.json', 
 export const amcStore = createStore<AmcContract[]>('amc-contracts.json', () => [])
 export const reportStore = createStore<JobReport[]>('job-reports.json', () => [])
 export const ticketStore = createStore<SupportTicket[]>('support-tickets.json', () => [])
-export const preferenceStore = createStore<Record<string, NotificationPreferences>>(
-  'customer-preferences.json',
-  () => ({}),
-)
-
-async function customerWantsEmail(
-  customerId: string,
-  field: 'emailService' | 'emailBilling' | 'emailAmc',
-): Promise<boolean> {
-  const preferences = await preferenceStore.read()
-  return preferences[customerId]?.[field] ?? true
-}
 
 function portalUrl(path: string): string {
   const base = PUBLIC_SITE_URL.replace(/\/+$/, '')
@@ -132,14 +124,6 @@ function nextReference(prefix: string, records: { ref: string }[]): string {
     return Number.isFinite(value) ? Math.max(max, value) : max
   }, 0)
   return `${head}${String(highest + 1).padStart(4, '0')}`
-}
-
-async function preferencesFor(customerId: string): Promise<NotificationPreferences> {
-  const current = await preferenceStore.read()
-  if (current[customerId]) return { ...defaultPreferences(customerId), ...current[customerId] }
-  const record = defaultPreferences(customerId)
-  await preferenceStore.mutate((all) => ({ ...all, [customerId]: record }))
-  return record
 }
 
 async function findCustomer(customerId: string) {
@@ -757,11 +741,7 @@ portalFileRouter.patch(
 /* -------------------------------------------------------------------------- */
 
 export const portalAdminRouter = Router()
-portalAdminRouter.use(
-  requireAdmin,
-  requireWriteRole('owner', 'admin', 'manager'),
-  requireAdminMutation,
-)
+portalAdminRouter.use(requireAdmin, requirePermission('portal.write'), requireAdminMutation)
 
 portalAdminRouter.get('/customers/:id/file', async (req, res) => {
   const customer = await findCustomer(req.params.id)

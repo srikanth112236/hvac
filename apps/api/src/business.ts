@@ -20,8 +20,10 @@ import {
   type ReminderRecord,
   type TeamMember,
 } from '@hvac/shared'
-import { requireAdmin, requireAdminMutation, requireWriteRole } from './auth.js'
+import { requireAdmin, requireAdminMutation, requirePermission } from './auth.js'
+import { customerWantsEmail } from './customerPreferences.js'
 import { readSiteContent } from './content.js'
+import { findCustomerByEmail } from './portalAuth.js'
 import { reminderStore } from './reminders.js'
 import { createStore } from './store.js'
 import { invoiceIssuedEmail, invoiceReminderEmail, sendMail } from './mailer.js'
@@ -197,12 +199,14 @@ export function summarizePayroll(payroll: PayrollRecord[], team: TeamMember[]) {
 const money = (value: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value)
 
-function notifyInvoiceIssued(
+async function notifyInvoiceIssued(
   invoice: InvoiceRecord,
   brand: string,
   canonicalBase: string,
-): void {
+): Promise<void> {
   if (!invoice.customerEmail) return
+  const customer = await findCustomerByEmail(invoice.customerEmail)
+  if (customer && !(await customerWantsEmail(customer.id, 'emailBilling'))) return
   const totals = invoiceTotals(invoice)
   const message = invoiceIssuedEmail({
     name: invoice.customerName,
@@ -219,11 +223,7 @@ function notifyInvoiceIssued(
 }
 
 export const businessRouter = Router()
-businessRouter.use(
-  requireAdmin,
-  requireWriteRole('owner', 'admin', 'accountant'),
-  requireAdminMutation,
-)
+businessRouter.use(requireAdmin, requirePermission('billing.write'), requireAdminMutation)
 
 /* -------------------------------------------------------------------------- */
 /*  Invoices                                                                   */
@@ -273,7 +273,11 @@ businessRouter.post('/invoices', async (req, res) => {
     return
   }
   if (saved.status === 'issued') {
-    notifyInvoiceIssued(saved, content.brand.shortName || content.brand.name, content.seo.canonicalBase)
+    void notifyInvoiceIssued(
+      saved,
+      content.brand.shortName || content.brand.name,
+      content.seo.canonicalBase,
+    ).catch((error) => console.error('[hvac-api] invoice issue email failed', error))
   }
   res.status(201).json({ data: toInvoiceView(saved), summary: summarizeInvoices(next) })
 })
@@ -312,7 +316,11 @@ businessRouter.patch('/invoices/:id', async (req, res) => {
     return
   }
   if (becameIssued) {
-    notifyInvoiceIssued(saved, content.brand.shortName || content.brand.name, content.seo.canonicalBase)
+    void notifyInvoiceIssued(
+      saved,
+      content.brand.shortName || content.brand.name,
+      content.seo.canonicalBase,
+    ).catch((error) => console.error('[hvac-api] invoice issue email failed', error))
   }
   res.json({ data: toInvoiceView(saved), summary: summarizeInvoices(next) })
 })
@@ -453,6 +461,8 @@ businessRouter.post('/invoices/:id/remind', async (req, res) => {
   if (invoice.customerEmail) {
     void (async () => {
       try {
+        const customer = await findCustomerByEmail(invoice.customerEmail)
+        if (customer && !(await customerWantsEmail(customer.id, 'emailBilling'))) return
         const content = await readSiteContent()
         const message = invoiceReminderEmail({
           name: invoice.customerName,

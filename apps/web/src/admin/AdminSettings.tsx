@@ -10,6 +10,7 @@ import {
   type AdminUser,
   type AuditEntry,
   type DataHealth,
+  type PermissionMatrix,
   type PublicAdminUser,
   type TwoFactorSetupChallenge,
   type TwoFactorStatus,
@@ -29,6 +30,7 @@ export function AdminSettings() {
   const [twoFactorChallenge, setTwoFactorChallenge] = useState<TwoFactorSetupChallenge | null>(null)
   const [twoFactorCode, setTwoFactorCode] = useState('')
   const [twoFactorBusy, setTwoFactorBusy] = useState(false)
+  const [permissions, setPermissions] = useState<PermissionMatrix | null>(null)
   const [users, setUsers] = useState<PublicAdminUser[]>([])
   const [userForm, setUserForm] = useState({
     name: '',
@@ -59,6 +61,10 @@ export function AdminSettings() {
       .twoFactorStatus()
       .then(setTwoFactor)
       .catch(() => setTwoFactor(null))
+    adminApi
+      .permissions()
+      .then(setPermissions)
+      .catch(() => setPermissions(null))
     adminApi
       .users()
       .then(setUsers)
@@ -158,6 +164,8 @@ export function AdminSettings() {
       })
     }
   }
+
+  const canAdministerData = user?.role === 'owner' || user?.role === 'admin'
 
   return (
     <div className="flex flex-col gap-6">
@@ -383,6 +391,90 @@ export function AdminSettings() {
         ) : null}
 
         <Panel
+          title="Permissions matrix"
+          action={
+            <Badge tone={permissions ? 'neutral' : 'warn'}>
+              {permissions ? `${permissions.roles.length} roles` : 'Unavailable'}
+            </Badge>
+          }
+        >
+          {permissions ? (
+            <>
+              <p className="text-[12px] leading-relaxed text-fg-dim">
+                Every admin route enforces this matrix. Reads stay available to all signed-in staff;
+                writes are limited to the roles marked below. The owner account is the recovery
+                account and cannot be removed from the matrix.
+              </p>
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full min-w-[680px] border-collapse text-left">
+                  <thead>
+                    <tr className="border-b border-line">
+                      <th className="py-2 pr-4 font-mono text-[9px] font-normal uppercase tracking-[0.1em] text-fg-faint">
+                        Capability
+                      </th>
+                      {permissions.roles.map((role) => (
+                        <th
+                          key={role}
+                          className={`px-2 py-2 text-center font-mono text-[9px] font-normal uppercase tracking-[0.08em] ${
+                            user?.role === role ? 'text-cold' : 'text-fg-faint'
+                          }`}
+                        >
+                          {adminRoleLabel[role]}
+                          {user?.role === role ? ' · you' : ''}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {permissions.permissions.map((permission) => (
+                      <tr key={permission.key} className="border-b border-line/60 last:border-0">
+                        <td className="py-3 pr-4">
+                          <span className="block text-[12px] text-fg">{permission.label}</span>
+                          <span className="mt-0.5 block text-[10px] leading-snug text-fg-faint">
+                            {permission.description}
+                          </span>
+                        </td>
+                        {permissions.roles.map((role) => {
+                          const allowed = permissions.matrix[role].includes(permission.key)
+                          return (
+                            <td
+                              key={role}
+                              className={`px-2 py-3 text-center ${
+                                user?.role === role ? 'bg-cold/[0.04]' : ''
+                              }`}
+                            >
+                              {allowed ? (
+                                <Icon name="check" size={13} className="mx-auto text-success" />
+                              ) : (
+                                <span className="text-fg-faint">—</span>
+                              )}
+                              <span className="sr-only">{allowed ? 'allowed' : 'not allowed'}</span>
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-3 font-mono text-[9px] uppercase leading-relaxed tracking-[0.08em] text-fg-faint">
+                Read-only role:{' '}
+                {permissions.roles
+                  .filter((role) => permissions.matrix[role].length === 1)
+                  .map((role) => adminRoleLabel[role])
+                  .join(', ') || 'none'}
+                .
+              </p>
+            </>
+          ) : (
+            <p className="text-[11px] text-fg-faint">
+              The permissions matrix could not be read. Confirm the API is reachable and the session
+              is active.
+            </p>
+          )}
+        </Panel>
+
+        <Panel
           title="Public content feed"
           action={
             <Badge tone={stale ? 'warn' : 'success'} dot>
@@ -504,99 +596,105 @@ export function AdminSettings() {
           ) : null}
         </Panel>
 
-        <Panel
-          title="Data health & backup"
-          action={
-            <Badge tone={health && health.issues.length ? 'warn' : 'success'} dot>
-              {health
-                ? health.issues.length
-                  ? `${health.issues.length} issues`
-                  : 'Consistent'
-                : 'Checking'}
-            </Badge>
-          }
-        >
-          {health ? (
-            <>
-              <p className="text-[11px] leading-relaxed text-fg-dim">
-                Schema version {health.dataVersion ?? '—'} · checked{' '}
-                {formatDateTime(health.generatedAt)}
-              </p>
-              <div className="mt-3 grid grid-cols-3 gap-2 font-mono text-[9px] uppercase tracking-[0.06em] text-fg-faint">
-                {Object.entries(health.counts).map(([key, value]) => (
-                  <div key={key} className="border border-line px-2 py-1.5">
-                    <span className="block truncate">{key}</span>
-                    <span className="mt-1 block font-sans text-[13px] normal-case tracking-normal text-fg">
-                      {value}
-                    </span>
+        {canAdministerData ? (
+          <>
+            <Panel
+              title="Data health & backup"
+              action={
+                <Badge tone={health && health.issues.length ? 'warn' : 'success'} dot>
+                  {health
+                    ? health.issues.length
+                      ? `${health.issues.length} issues`
+                      : 'Consistent'
+                    : 'Checking'}
+                </Badge>
+              }
+            >
+              {health ? (
+                <>
+                  <p className="text-[11px] leading-relaxed text-fg-dim">
+                    Schema version {health.dataVersion ?? '—'} · checked{' '}
+                    {formatDateTime(health.generatedAt)}
+                  </p>
+                  <div className="mt-3 grid grid-cols-3 gap-2 font-mono text-[9px] uppercase tracking-[0.06em] text-fg-faint">
+                    {Object.entries(health.counts).map(([key, value]) => (
+                      <div key={key} className="border border-line px-2 py-1.5">
+                        <span className="block truncate">{key}</span>
+                        <span className="mt-1 block font-sans text-[13px] normal-case tracking-normal text-fg">
+                          {value}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-              {health.issues.length ? (
-                <ul className="mt-3 max-h-32 overflow-auto border border-warn/30 bg-warn/[0.06] p-2 text-[10px] leading-relaxed text-fg-dim">
-                  {health.issues.slice(0, 20).map((issue) => (
-                    <li key={issue}>{issue}</li>
+                  {health.issues.length ? (
+                    <ul className="mt-3 max-h-32 overflow-auto border border-warn/30 bg-warn/[0.06] p-2 text-[10px] leading-relaxed text-fg-dim">
+                      {health.issues.slice(0, 20).map((issue) => (
+                        <li key={issue}>{issue}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-[11px] text-fg-faint">
+                      No orphaned payroll, report, AMC or customer references found.
+                    </p>
+                  )}
+                  <a
+                    href="/api/v1/admin/export"
+                    className="mt-4 inline-flex h-8 items-center border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-cold hover:border-cold/50 hover:text-fg"
+                  >
+                    Download JSON backup
+                  </a>
+                  <p className="mt-2 text-[10px] leading-relaxed text-fg-faint">
+                    A daily copy is kept under <code className="font-mono">data/backups</code> for
+                    seven days. Session and password-reset files are excluded.
+                  </p>
+                </>
+              ) : (
+                <p className="text-[11px] text-fg-faint">Data health could not be read.</p>
+              )}
+            </Panel>
+
+            <Panel title="Audit log" action={<Badge tone="neutral">{audit.length} recent</Badge>}>
+              {audit.length === 0 ? (
+                <p className="text-[12px] leading-relaxed text-fg-faint">
+                  No admin mutations recorded yet. Creates, edits and deletes are logged with the
+                  actor, route, status and time; request bodies are not stored.
+                </p>
+              ) : (
+                <ul className="flex flex-col divide-y divide-line/70">
+                  {audit.slice(0, 12).map((entry) => (
+                    <li
+                      key={entry.id}
+                      className="flex items-start justify-between gap-4 py-2 first:pt-0 last:pb-0"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-mono text-[10px] uppercase tracking-[0.06em] text-fg-dim">
+                          {entry.method} {entry.path}
+                        </p>
+                        <p className="mt-0.5 text-[10px] text-fg-faint">
+                          {entry.actor ?? 'unauthenticated'} · {entry.ip}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <span
+                          className={
+                            entry.status >= 400
+                              ? 'font-mono text-[10px] text-danger'
+                              : 'font-mono text-[10px] text-success'
+                          }
+                        >
+                          {entry.status}
+                        </span>
+                        <p className="mt-0.5 text-[10px] text-fg-faint">
+                          {formatDateTime(entry.at)}
+                        </p>
+                      </div>
+                    </li>
                   ))}
                 </ul>
-              ) : (
-                <p className="mt-3 text-[11px] text-fg-faint">
-                  No orphaned payroll, report, AMC or customer references found.
-                </p>
               )}
-              <a
-                href="/api/v1/admin/export"
-                className="mt-4 inline-flex h-8 items-center border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-cold hover:border-cold/50 hover:text-fg"
-              >
-                Download JSON backup
-              </a>
-              <p className="mt-2 text-[10px] leading-relaxed text-fg-faint">
-                A daily copy is kept under <code className="font-mono">data/backups</code> for seven
-                days. Session and password-reset files are excluded.
-              </p>
-            </>
-          ) : (
-            <p className="text-[11px] text-fg-faint">Data health could not be read.</p>
-          )}
-        </Panel>
-
-        <Panel title="Audit log" action={<Badge tone="neutral">{audit.length} recent</Badge>}>
-          {audit.length === 0 ? (
-            <p className="text-[12px] leading-relaxed text-fg-faint">
-              No admin mutations recorded yet. Creates, edits and deletes are logged with the actor,
-              route, status and time; request bodies are not stored.
-            </p>
-          ) : (
-            <ul className="flex flex-col divide-y divide-line/70">
-              {audit.slice(0, 12).map((entry) => (
-                <li
-                  key={entry.id}
-                  className="flex items-start justify-between gap-4 py-2 first:pt-0 last:pb-0"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-mono text-[10px] uppercase tracking-[0.06em] text-fg-dim">
-                      {entry.method} {entry.path}
-                    </p>
-                    <p className="mt-0.5 text-[10px] text-fg-faint">
-                      {entry.actor ?? 'unauthenticated'} · {entry.ip}
-                    </p>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <span
-                      className={
-                        entry.status >= 400
-                          ? 'font-mono text-[10px] text-danger'
-                          : 'font-mono text-[10px] text-success'
-                      }
-                    >
-                      {entry.status}
-                    </span>
-                    <p className="mt-0.5 text-[10px] text-fg-faint">{formatDateTime(entry.at)}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Panel>
+            </Panel>
+          </>
+        ) : null}
       </div>
 
       <div className="border border-line bg-panel/30 p-4">

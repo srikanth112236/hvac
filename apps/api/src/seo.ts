@@ -64,6 +64,16 @@ seoRouter.get('/sitemap.xml', async (_req, res) => {
   for (const [path, changefreq, priority] of staticPaths) {
     paths.set(path, { changefreq, priority })
   }
+  for (const tool of [
+    'room-tonnage',
+    'vrf-zones',
+    'duct-sizing',
+    'cold-room',
+    'chiller-capacity',
+    'amc-plan',
+  ]) {
+    paths.set(`/tools/${tool}`, { changefreq: 'monthly', priority: '0.6' })
+  }
   for (const page of content.seo.pages) {
     if (!page.path.startsWith('/') || page.path.startsWith('/admin')) continue
     if (!paths.has(page.path)) paths.set(page.path, { changefreq: 'monthly', priority: '0.6' })

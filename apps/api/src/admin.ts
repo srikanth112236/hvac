@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { Router } from 'express'
 import {
+  ADMIN_PERMISSIONS,
+  ADMIN_ROLES,
+  ROLE_PERMISSIONS,
   adminLeadCreateSchema,
   leadPatchSchema,
   reminderInputSchema,
@@ -9,7 +12,7 @@ import {
   type AdminLead,
   type ReminderRecord,
 } from '@hvac/shared'
-import { requireAdmin, requireAdminMutation, requireWriteRole } from './auth.js'
+import { requireAdmin, requireAdminMutation, requirePermissions, requireRole } from './auth.js'
 import {
   expenseStore,
   invoiceStore,
@@ -38,10 +41,10 @@ import { couponStore, newsletterStore } from './marketing.js'
 import { signupStore } from './newsletterSignups.js'
 import { appointmentStore } from './portal.js'
 import { customerStore } from './portalAuth.js'
+import { preferenceStore } from './customerPreferences.js'
 import {
   amcStore,
   equipmentStore,
-  preferenceStore,
   quotationStore,
   reportStore,
   siteStore,
@@ -51,9 +54,20 @@ import {
 export const adminRouter = Router()
 adminRouter.use(
   requireAdmin,
-  requireWriteRole('owner', 'admin', 'manager'),
+  requirePermissions('leads.write', 'content.write'),
   requireAdminMutation,
 )
+
+adminRouter.get('/permissions', (_req, res) => {
+  res.json({
+    data: {
+      roles: ADMIN_ROLES,
+      permissions: ADMIN_PERMISSIONS,
+      matrix: ROLE_PERMISSIONS,
+      readOnly: true,
+    },
+  })
+})
 
 const LEAD_STATUS_VALUES = ['new', 'contacted', 'site-visit', 'quoted', 'won', 'lost'] as const
 
@@ -79,13 +93,13 @@ adminRouter.get('/billing', async (_req, res) => {
   res.json({ data: content.brand.billing })
 })
 
-adminRouter.get('/audit', async (req, res) => {
+adminRouter.get('/audit', requireRole('owner', 'admin'), async (req, res) => {
   const requested = Number.parseInt(String(req.query.limit ?? '50'), 10)
   const limit = Number.isFinite(requested) ? requested : 50
   res.json({ data: await readAuditLog(limit) })
 })
 
-adminRouter.get('/export', async (_req, res) => {
+adminRouter.get('/export', requireRole('owner', 'admin'), async (_req, res) => {
   const [
     content,
     leads,
@@ -271,7 +285,19 @@ adminRouter.get('/csv/:type', async (req, res) => {
   if (type === 'leads') {
     const leads = await leadStore.read()
     rows = [
-      ['ref', 'createdAt', 'status', 'source', 'name', 'email', 'phone', 'city', 'service', 'value', 'owner'],
+      [
+        'ref',
+        'createdAt',
+        'status',
+        'source',
+        'name',
+        'email',
+        'phone',
+        'city',
+        'service',
+        'value',
+        'owner',
+      ],
       ...leads.map((lead) => [
         lead.ref,
         lead.createdAt,
@@ -323,24 +349,37 @@ adminRouter.get('/csv/:type', async (req, res) => {
     return
   }
   res.set('Content-Type', 'text/csv; charset=utf-8')
-  res.set('Content-Disposition', `attachment; filename="${type}-${new Date().toISOString().slice(0, 10)}.csv"`)
+  res.set(
+    'Content-Disposition',
+    `attachment; filename="${type}-${new Date().toISOString().slice(0, 10)}.csv"`,
+  )
   res.send(toCsv(rows))
 })
 
-adminRouter.get('/data-health', async (_req, res) => {
-  const [customers, appointments, team, payroll, sites, equipment, quotations, amc, reports, tickets] =
-    await Promise.all([
-      customerStore.read(),
-      appointmentStore.read(),
-      teamStore.read(),
-      payrollStore.read(),
-      siteStore.read(),
-      equipmentStore.read(),
-      quotationStore.read(),
-      amcStore.read(),
-      reportStore.read(),
-      ticketStore.read(),
-    ])
+adminRouter.get('/data-health', requireRole('owner', 'admin'), async (_req, res) => {
+  const [
+    customers,
+    appointments,
+    team,
+    payroll,
+    sites,
+    equipment,
+    quotations,
+    amc,
+    reports,
+    tickets,
+  ] = await Promise.all([
+    customerStore.read(),
+    appointmentStore.read(),
+    teamStore.read(),
+    payrollStore.read(),
+    siteStore.read(),
+    equipmentStore.read(),
+    quotationStore.read(),
+    amcStore.read(),
+    reportStore.read(),
+    ticketStore.read(),
+  ])
 
   const customerIds = new Set(customers.map((entry) => entry.id))
   const teamIds = new Set(team.map((entry) => entry.id))
@@ -348,10 +387,12 @@ adminRouter.get('/data-health', async (_req, res) => {
   const issues: string[] = []
 
   for (const entry of payroll) {
-    if (!teamIds.has(entry.memberId)) issues.push(`Payroll ${entry.id} references a missing team member.`)
+    if (!teamIds.has(entry.memberId))
+      issues.push(`Payroll ${entry.id} references a missing team member.`)
   }
   for (const entry of reports) {
-    if (!customerIds.has(entry.customerId)) issues.push(`Report ${entry.id} references a missing customer.`)
+    if (!customerIds.has(entry.customerId))
+      issues.push(`Report ${entry.id} references a missing customer.`)
     if (entry.equipmentId && !equipmentIds.has(entry.equipmentId)) {
       issues.push(`Report ${entry.id} references missing equipment.`)
     }
@@ -433,12 +474,24 @@ adminRouter.get('/metrics', async (_req, res) => {
     .reduce((sum, lead) => sum + (lead.value ?? 0), 0)
 
   const revenue: { month: string; amount: number }[] = []
-  const financeTrend: { month: string; collected: number; expenses: number; payroll: number; net: number }[] = []
+  const financeTrend: {
+    month: string
+    collected: number
+    expenses: number
+    payroll: number
+    net: number
+  }[] = []
   for (let index = 5; index >= 0; index -= 1) {
     const date = new Date()
     date.setMonth(date.getMonth() - index)
     revenue.push({ month: monthKey(date.toISOString()), amount: 0 })
-    financeTrend.push({ month: monthKey(date.toISOString()), collected: 0, expenses: 0, payroll: 0, net: 0 })
+    financeTrend.push({
+      month: monthKey(date.toISOString()),
+      collected: 0,
+      expenses: 0,
+      payroll: 0,
+      net: 0,
+    })
   }
 
   const invoiceViews = business.invoices.map((invoice) => toInvoiceView(invoice))
@@ -461,7 +514,9 @@ adminRouter.get('/metrics', async (_req, res) => {
   }
   for (const entry of business.payroll) {
     if (entry.status !== 'paid') continue
-    const flow = financeTrend.find((month) => month.month === monthKey(entry.paidAt ?? entry.period))
+    const flow = financeTrend.find(
+      (month) => month.month === monthKey(entry.paidAt ?? entry.period),
+    )
     if (flow) flow.payroll += entry.amount
   }
   for (const flow of financeTrend) {
@@ -511,7 +566,9 @@ adminRouter.get('/metrics', async (_req, res) => {
         payrollPaidThisMonth: payrollSummary.thisMonthPaid,
         payrollCommitment: payrollSummary.monthlyPayrollCommitment,
         netThisMonth:
-          invoiceSummary.collectedThisMonth - expenseSummary.thisMonth - payrollSummary.thisMonthPaid,
+          invoiceSummary.collectedThisMonth -
+          expenseSummary.thisMonth -
+          payrollSummary.thisMonthPaid,
         netLifetime: invoiceSummary.collected - expenseSummary.total - payrollSummary.totalPaid,
         activeTeam: payrollSummary.activeTeam,
       },
@@ -519,7 +576,8 @@ adminRouter.get('/metrics', async (_req, res) => {
       recentInvoices: invoiceViews.slice(0, 5),
       reminders: {
         open: openReminders.length,
-        overdue: openReminders.filter((reminder) => new Date(reminder.dueAt).getTime() < now).length,
+        overdue: openReminders.filter((reminder) => new Date(reminder.dueAt).getTime() < now)
+          .length,
         dueToday: openReminders.filter((reminder) => {
           const due = new Date(reminder.dueAt).getTime()
           return due >= startOfDay(new Date()) && due < todayEnd
@@ -553,7 +611,8 @@ adminRouter.get('/leads', async (req, res) => {
     if (status && lead.status !== status) return false
     if (service && lead.serviceSlug !== service) return false
     if (query) {
-      const haystack = `${lead.ref} ${lead.name} ${lead.phone} ${lead.email} ${lead.city ?? ''} ${lead.serviceName ?? ''}`.toLowerCase()
+      const haystack =
+        `${lead.ref} ${lead.name} ${lead.phone} ${lead.email} ${lead.city ?? ''} ${lead.serviceName ?? ''}`.toLowerCase()
       if (!haystack.includes(query)) return false
     }
     return true
@@ -579,7 +638,10 @@ adminRouter.post('/leads', async (req, res) => {
   const parsed = adminLeadCreateSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({
-      error: { code: 'validation_error', message: parsed.error.issues[0]?.message ?? 'Invalid lead.' },
+      error: {
+        code: 'validation_error',
+        message: parsed.error.issues[0]?.message ?? 'Invalid lead.',
+      },
     })
     return
   }
@@ -617,7 +679,10 @@ adminRouter.patch('/leads/:ref', async (req, res) => {
   const parsed = leadPatchSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({
-      error: { code: 'validation_error', message: parsed.error.issues[0]?.message ?? 'Invalid patch.' },
+      error: {
+        code: 'validation_error',
+        message: parsed.error.issues[0]?.message ?? 'Invalid patch.',
+      },
     })
     return
   }
@@ -708,7 +773,10 @@ adminRouter.post('/reminders', async (req, res) => {
   const parsed = reminderInputSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({
-      error: { code: 'validation_error', message: parsed.error.issues[0]?.message ?? 'Invalid reminder.' },
+      error: {
+        code: 'validation_error',
+        message: parsed.error.issues[0]?.message ?? 'Invalid reminder.',
+      },
     })
     return
   }
@@ -730,7 +798,10 @@ adminRouter.patch('/reminders/:id', async (req, res) => {
   const parsed = reminderPatchSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({
-      error: { code: 'validation_error', message: parsed.error.issues[0]?.message ?? 'Invalid reminder.' },
+      error: {
+        code: 'validation_error',
+        message: parsed.error.issues[0]?.message ?? 'Invalid reminder.',
+      },
     })
     return
   }
@@ -743,7 +814,7 @@ adminRouter.patch('/reminders/:id', async (req, res) => {
         ...current,
         ...parsed.data,
         status,
-        completedAt: status === 'done' ? current.completedAt ?? nowIso() : null,
+        completedAt: status === 'done' ? (current.completedAt ?? nowIso()) : null,
       }
       updated = record
       return record
@@ -786,11 +857,7 @@ adminRouter.post('/content/revisions/:version/restore', async (req, res) => {
   const pageId = typeof rawPage === 'string' && rawPage.trim() ? rawPage.trim() : undefined
 
   try {
-    const result = await restoreContentRevision(
-      version,
-      String(res.locals.admin.email),
-      pageId,
-    )
+    const result = await restoreContentRevision(version, String(res.locals.admin.email), pageId)
     res.json({
       data: result.content,
       meta: { changed: result.changed, revision: result.revision },

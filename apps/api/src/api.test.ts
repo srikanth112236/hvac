@@ -184,6 +184,66 @@ describe('lead → invoice → customer portal', () => {
       .send({ status: 'active' })
       .expect(200)
 
+    const equipment = await adminHeaders(
+      admin.post(`/api/v1/admin/customers/${customer.id}/equipment`),
+    )
+      .send({
+        name: 'Test cassette',
+        brand: 'Coolvane',
+        model: 'CV-18',
+        serial: 'T-1',
+        capacity: '1.5 TR',
+        installedAt: '2025-01-01',
+        warrantyUntil: '2028-01-01',
+        notes: '',
+      })
+      .expect(201)
+    const equipmentId = equipment.body.data.id
+
+    const quote = await adminHeaders(
+      admin.post(`/api/v1/admin/customers/${customer.id}/quotations`),
+    )
+      .send({
+        title: 'Two-room cassette package',
+        service: 'Cassette service',
+        lines: [{ description: 'Cassette service', quantity: 1, unitPrice: 1200, taxPercent: 0 }],
+        discount: 0,
+        notes: '',
+        terms: '',
+        status: 'sent',
+        validUntil: '2026-12-31',
+      })
+      .expect(201)
+    const quoteId = quote.body.data.id
+
+    const amc = await adminHeaders(admin.post(`/api/v1/admin/customers/${customer.id}/amc`))
+      .send({
+        plan: 'Comprehensive',
+        equipmentIds: [equipmentId],
+        startDate: '2026-01-01',
+        endDate: '2027-01-01',
+        visitsPerYear: 4,
+        price: 1200,
+        status: 'active',
+        notes: '',
+      })
+      .expect(201)
+    const amcId = amc.body.data.id
+
+    await adminHeaders(admin.post(`/api/v1/admin/customers/${customer.id}/reports`))
+      .send({
+        equipmentId,
+        title: 'Test service visit',
+        summary: 'Filters cleaned and refrigerant pressures checked.',
+        checklist: [{ label: 'Filter cleaned', done: true, note: '' }],
+        photos: [],
+        findings: 'No leak.',
+        recommendations: 'Recheck in six months.',
+        technician: 'Test Engineer',
+        completedAt: '2026-01-10',
+      })
+      .expect(201)
+
     const portal = request.agent(app)
     await portal
       .post('/api/v1/portal/auth/login')
@@ -196,8 +256,73 @@ describe('lead → invoice → customer portal', () => {
       true,
     )
     expect(file.body.data.customer.email).toBe('portal-test@example.com')
+    expect(file.body.data.quotations.some((entry: { id: string }) => entry.id === quoteId)).toBe(
+      true,
+    )
+    expect(file.body.data.amc.some((entry: { id: string }) => entry.id === amcId)).toBe(true)
+    expect(file.body.data.equipment.some((entry: { id: string }) => entry.id === equipmentId)).toBe(
+      true,
+    )
+    expect(
+      file.body.data.reports.some(
+        (entry: { equipmentId: string }) => entry.equipmentId === equipmentId,
+      ),
+    ).toBe(true)
 
     await portal
+      .post(`/api/v1/portal/quotations/${quoteId}/accept`)
+      .set('Origin', ORIGIN)
+      .set('X-Customer-Request', '1')
+      .expect(200)
+
+    await portal
+      .post(`/api/v1/portal/amc/${amcId}/renew`)
+      .set('Origin', ORIGIN)
+      .set('X-Customer-Request', '1')
+      .expect(201)
+
+    await portal
+      .patch('/api/v1/portal/preferences')
+      .set('Origin', ORIGIN)
+      .set('X-Customer-Request', '1')
+      .send({ emailAmc: false, emailBilling: false, emailMarketing: true })
+      .expect(200)
+    const preferences = await portal.get('/api/v1/portal/preferences').expect(200)
+    expect(preferences.body.data.emailAmc).toBe(false)
+    expect(preferences.body.data.emailBilling).toBe(false)
+    expect(preferences.body.data.emailMarketing).toBe(true)
+
+    const billingEmailsBefore = outbound.filter(
+      (message) =>
+        message.kind === 'invoice-issued' && message.to === 'portal-test@example.com',
+    ).length
+    await adminHeaders(admin.post('/api/v1/admin/invoices'))
+      .send({
+        customerName: 'Portal Test',
+        customerPhone: '2145550100',
+        customerEmail: 'portal-test@example.com',
+        customerAddress: '1 Test Way, Dallas',
+        customerGstin: '',
+        service: 'Preference test',
+        issueDate: '2026-02-01',
+        dueDate: '2026-02-28',
+        status: 'issued',
+        lines: [{ description: 'Preference test', quantity: 1, unitPrice: 100, taxPercent: 0 }],
+        discount: 0,
+        taxMode: 'intra',
+        notes: '',
+        terms: '',
+      })
+      .expect(201)
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(
+      outbound.filter(
+        (message) =>
+          message.kind === 'invoice-issued' && message.to === 'portal-test@example.com',
+      ).length,
+    ).toBe(billingEmailsBefore)
+
+    const ticket = await portal
       .post('/api/v1/portal/tickets')
       .set('Origin', ORIGIN)
       .set('X-Customer-Request', '1')
@@ -207,6 +332,19 @@ describe('lead → invoice → customer portal', () => {
         body: 'Please confirm this support request arrives by email only.',
       })
       .expect(201)
+
+    await adminHeaders(admin.post(`/api/v1/admin/support-tickets/${ticket.body.data.id}/messages`))
+      .send({ body: 'The desk has the request and will call before noon.' })
+      .expect(200)
+
+    const tickets = await portal.get('/api/v1/portal/tickets').expect(200)
+    const savedTicket = tickets.body.data.find(
+      (entry: { id: string }) => entry.id === ticket.body.data.id,
+    )
+    expect(
+      savedTicket.messages.some((entry: { authorRole: string }) => entry.authorRole === 'admin'),
+    ).toBe(true)
+
     await new Promise((resolve) => setTimeout(resolve, 150))
     expect(
       outbound.some(
@@ -332,6 +470,58 @@ describe('email two-factor authentication', () => {
 
     const me = await verified.get('/api/v1/auth/me').expect(200)
     expect(me.body.data.email).toBe('twofactor@test.local')
+  })
+})
+
+describe('permissions matrix', () => {
+  it('exposes the matrix and enforces role-specific writes', async () => {
+    const matrix = await admin.get('/api/v1/admin/permissions').expect(200)
+    expect(matrix.body.data.roles).toEqual(['owner', 'admin', 'manager', 'accountant', 'viewer'])
+    expect(matrix.body.data.permissions.length).toBeGreaterThanOrEqual(8)
+    expect(matrix.body.data.matrix.owner.length).toBe(matrix.body.data.permissions.length)
+    expect(matrix.body.data.matrix.viewer).toEqual(['data.read'])
+
+    await adminHeaders(admin.post('/api/v1/admin/users'))
+      .send({
+        name: 'Manager User',
+        email: 'manager@test.local',
+        password: 'ManagerPass123!',
+        role: 'manager',
+      })
+      .expect(201)
+    await adminHeaders(admin.post('/api/v1/admin/users'))
+      .send({
+        name: 'Accountant User',
+        email: 'accountant@test.local',
+        password: 'AccountantPass123!',
+        role: 'accountant',
+      })
+      .expect(201)
+
+    const manager = request.agent(app)
+    await manager
+      .post('/api/v1/auth/login')
+      .set('Origin', ORIGIN)
+      .send({ email: 'manager@test.local', password: 'ManagerPass123!' })
+      .expect(200)
+    await manager.get('/api/v1/admin/permissions').expect(200)
+    await adminHeaders(manager.post('/api/v1/admin/reminders'))
+      .send({ title: 'Manager reminder', body: 'Follow up', dueAt: '2026-12-01T09:00:00.000Z' })
+      .expect(201)
+    await manager.get('/api/v1/admin/export').expect(403)
+    await manager.get('/api/v1/admin/audit').expect(403)
+
+    const accountant = request.agent(app)
+    await accountant
+      .post('/api/v1/auth/login')
+      .set('Origin', ORIGIN)
+      .send({ email: 'accountant@test.local', password: 'AccountantPass123!' })
+      .expect(200)
+    await adminHeaders(accountant.post('/api/v1/admin/reminders'))
+      .send({ title: 'Blocked reminder', body: 'Nope', dueAt: '2026-12-01T09:00:00.000Z' })
+      .expect(403)
+    await accountant.get('/api/v1/admin/export').expect(403)
+    await accountant.get('/api/v1/admin/users').expect(403)
   })
 })
 

@@ -19,6 +19,7 @@ import { QuotePage } from '@/routes/QuotePage'
 import { ServiceDetailPage } from '@/routes/ServiceDetailPage'
 import { Services } from '@/routes/Services'
 import { ToolsPage } from '@/routes/ToolsPage'
+import { ToolDetailPage } from '@/routes/ToolDetailPage'
 import { WorkPage } from '@/routes/WorkPage'
 import { Styleguide } from '@/routes/Styleguide'
 import { PortalPage } from '@/portal/PortalPage'
@@ -92,6 +93,7 @@ export function App() {
           <Route path="/book" element={<BookPage />} />
           <Route path="/quote" element={<QuotePage />} />
           <Route path="/tools" element={<ToolsPage />} />
+          <Route path="/tools/:slug" element={<ToolDetailPage />} />
           <Route path="/portal" element={<PortalPage />} />
           <Route path="/legal/:slug" element={<LegalPage />} />
           <Route path="/privacy" element={<Navigate to="/legal/privacy" replace />} />

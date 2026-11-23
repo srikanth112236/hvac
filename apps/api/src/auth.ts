@@ -2,6 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { Router, type NextFunction, type Request, type Response } from 'express'
 import { z } from 'zod'
 import type { AdminRole } from '@hvac/shared'
+import { ADMIN_ROLES, roleCan, rolesForPermission, type AdminPermission } from '@hvac/shared'
 import { ADMIN_EMAIL, ADMIN_PASSWORD, IS_PROD, originAllowed } from './config.js'
 import { adminPasswordMatches, findAdminUserByEmail, findAdminUserById } from './adminUsers.js'
 import {
@@ -205,6 +206,22 @@ export function requireWriteRole(...roles: AdminRole[]) {
     }
     next()
   }
+}
+
+/**
+ * Permission-based write guard. Reads stay available to every authenticated
+ * role; the matrix in @hvac/shared is the single source of truth for writes.
+ */
+export function requirePermission(permission: AdminPermission) {
+  return requireWriteRole(...rolesForPermission(permission))
+}
+
+/** Require every listed permission for a write (reads remain open). */
+export function requirePermissions(...permissions: AdminPermission[]) {
+  const allowed = ADMIN_ROLES.filter((role) =>
+    permissions.every((permission) => roleCan(role, permission)),
+  )
+  return requireWriteRole(...allowed)
 }
 
 async function issueSession(
