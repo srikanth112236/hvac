@@ -162,6 +162,12 @@ describe('lead → invoice → customer portal', () => {
     expect(adminPdf.headers['content-type']).toContain('application/pdf')
     expect(adminPdf.body.subarray(0, 4).toString()).toBe('%PDF')
 
+    const expensePdf = await admin
+      .get(`/api/v1/admin/expenses/report.pdf?month=${new Date().toISOString().slice(0, 7)}`)
+      .expect(200)
+    expect(expensePdf.headers['content-type']).toContain('application/pdf')
+    expect(expensePdf.body.subarray(0, 4).toString()).toBe('%PDF')
+
     const register = await request(app)
       .post('/api/v1/portal/auth/register')
       .set('Origin', ORIGIN)

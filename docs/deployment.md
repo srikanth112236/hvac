@@ -40,6 +40,7 @@ cookies `SameSite=Strict`. If they must be separate origins, set
 | `MAIL_FROM`                            | recommended | e.g. `Client HVAC <no-reply@client.com>`                                                                                                                    |
 | `PUBLIC_BRAND_NAME`                    | recommended | Brand name used in the 2FA email shell                                                                                                                      |
 | `ADMIN_NOTIFY_EMAIL`                   | recommended | Desk inbox for leads, reminders, digests                                                                                                                    |
+| `EXPENSE_REPORT_EMAIL`                 | recommended | Finance inbox for the monthly expense PDF; defaults to the desk inbox                                                                                       |
 | `UPLOAD_ROOT`                          | no          | Defaults to the repo `uploads/` directory                                                                                                                   |
 | `DATABASE_URL`                         | multi       | PostgreSQL connection string; enables shared sessions, rate counters, jobs state and records                                                                |
 | `DATABASE_POOL_SIZE`                   | no          | PostgreSQL pool size, default 10                                                                                                                            |

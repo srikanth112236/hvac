@@ -10,12 +10,18 @@ import { createStore } from './store.js'
  */
 export type MailStatus = 'sent' | 'skipped' | 'failed'
 
+export interface MailAttachment {
+  filename: string
+  content: Buffer | string
+}
+
 export interface MailInput {
   to: string
   subject: string
   html: string
   kind: string
   replyTo?: string
+  attachments?: MailAttachment[]
 }
 
 export interface MailResult {
@@ -89,6 +95,14 @@ export async function sendMail(input: MailInput): Promise<MailResult> {
           subject: input.subject,
           html: input.html,
           ...(input.replyTo ? { reply_to: input.replyTo } : {}),
+          ...(input.attachments?.length
+            ? {
+                attachments: input.attachments.map((attachment) => ({
+                  filename: attachment.filename,
+                  content: Buffer.from(attachment.content).toString('base64'),
+                })),
+              }
+            : {}),
         }),
       })
       if (!response.ok) {
@@ -111,6 +125,14 @@ export async function sendMail(input: MailInput): Promise<MailResult> {
           html: input.html,
           kind: input.kind,
           replyTo: input.replyTo ?? null,
+          ...(input.attachments?.length
+            ? {
+                attachments: input.attachments.map((attachment) => ({
+                  filename: attachment.filename,
+                  content: Buffer.from(attachment.content).toString('base64'),
+                })),
+              }
+            : {}),
         }),
       })
       if (!response.ok) {
@@ -400,6 +422,24 @@ export function amcRenewalAcknowledgementEmail(input: {
       `<p style="margin:0 0 14px">Hello ${escapeHtml(input.name)},</p>
 <p style="margin:0 0 14px">The renewal request for <strong>${escapeHtml(input.contractRef)}</strong> is logged as <strong>${escapeHtml(input.ticketRef)}</strong>. The works desk will send the renewal quotation to the portal.</p>
 <p style="margin:0"><a href="${escapeHtml(input.portalUrl)}" style="color:#0b5f82">Open the portal</a></p>`,
+      input.brand,
+    ),
+  }
+}
+
+export function expenseReportEmail(input: {
+  month: string
+  total: string
+  count: number
+  brand: string
+}): { subject: string; html: string } {
+  return {
+    subject: `Monthly expense report · ${input.month} · ${input.brand}`,
+    html: SHELL(
+      `Expenses · ${input.month}`,
+      `<p style="margin:0 0 14px">The attached PDF is the complete expense ledger for <strong>${escapeHtml(input.month)}</strong>.</p>
+<p style="margin:0 0 14px">Total recorded: <strong>${escapeHtml(input.total)}</strong> across ${input.count} entries. The PDF includes dates, vendors, descriptions, categories, payment methods and amounts.</p>
+<p style="margin:0;font-size:12px;color:#6b7480">Generated automatically on the 2nd of the month.</p>`,
       input.brand,
     ),
   }

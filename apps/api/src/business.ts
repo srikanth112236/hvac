@@ -28,6 +28,7 @@ import { reminderStore } from './reminders.js'
 import { createStore } from './store.js'
 import { invoiceIssuedEmail, invoiceReminderEmail, sendMail } from './mailer.js'
 import { streamInvoicePdf } from './pdf.js'
+import { streamExpenseReportPdf } from './expensePdf.js'
 import { PUBLIC_SITE_URL } from './config.js'
 
 export const invoiceStore = createStore<InvoiceRecord[]>('invoices.json', () => [])
@@ -198,7 +199,11 @@ export function summarizePayroll(payroll: PayrollRecord[], team: TeamMember[]) {
 }
 
 const money = (value: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value)
+  new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(value)
 
 async function notifyInvoiceIssued(
   invoice: InvoiceRecord,
@@ -241,7 +246,9 @@ businessRouter.get('/invoices', async (_req, res) => {
 
 businessRouter.get('/invoices/:id', async (req, res) => {
   const invoices = await invoiceStore.read()
-  const invoice = invoices.find((entry) => entry.id === req.params.id || entry.ref === req.params.id)
+  const invoice = invoices.find(
+    (entry) => entry.id === req.params.id || entry.ref === req.params.id,
+  )
   if (!invoice) {
     res.status(404).json({ error: { code: 'not_found', message: 'Invoice not found.' } })
     return
@@ -266,7 +273,10 @@ businessRouter.post('/invoices', async (req, res) => {
   const parsed = invoiceInputSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({
-      error: { code: 'validation_error', message: parsed.error.issues[0]?.message ?? 'Invalid invoice.' },
+      error: {
+        code: 'validation_error',
+        message: parsed.error.issues[0]?.message ?? 'Invalid invoice.',
+      },
     })
     return
   }
@@ -283,7 +293,9 @@ businessRouter.post('/invoices', async (req, res) => {
     return [record, ...current]
   })
   if (!saved) {
-    res.status(500).json({ error: { code: 'server_error', message: 'The invoice could not be saved.' } })
+    res
+      .status(500)
+      .json({ error: { code: 'server_error', message: 'The invoice could not be saved.' } })
     return
   }
   if (saved.status === 'issued') {
@@ -300,7 +312,10 @@ businessRouter.patch('/invoices/:id', async (req, res) => {
   const parsed = invoicePatchSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({
-      error: { code: 'validation_error', message: parsed.error.issues[0]?.message ?? 'Invalid invoice.' },
+      error: {
+        code: 'validation_error',
+        message: parsed.error.issues[0]?.message ?? 'Invalid invoice.',
+      },
     })
     return
   }
@@ -350,7 +365,10 @@ businessRouter.post('/invoices/:id/payments', async (req, res) => {
   const parsed = invoicePaymentInputSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({
-      error: { code: 'validation_error', message: parsed.error.issues[0]?.message ?? 'Invalid payment.' },
+      error: {
+        code: 'validation_error',
+        message: parsed.error.issues[0]?.message ?? 'Invalid payment.',
+      },
     })
     return
   }
@@ -361,7 +379,11 @@ businessRouter.post('/invoices/:id/payments', async (req, res) => {
       if (current.id !== req.params.id && current.ref !== req.params.id) return current
       const totals = invoiceTotals(current)
       if (totals.state === 'cancelled') {
-        failure = { status: 400, code: 'cancelled', message: 'A cancelled invoice cannot receive payments.' }
+        failure = {
+          status: 400,
+          code: 'cancelled',
+          message: 'A cancelled invoice cannot receive payments.',
+        }
         return current
       }
       if (parsed.data.amount > totals.balance + 0.01) {
@@ -435,7 +457,9 @@ businessRouter.post('/invoices/:id/remind', async (req, res) => {
   }
   const totals = invoiceTotals(invoice)
   if (totals.balance <= 0) {
-    res.status(400).json({ error: { code: 'settled', message: 'This invoice has no open balance.' } })
+    res
+      .status(400)
+      .json({ error: { code: 'settled', message: 'This invoice has no open balance.' } })
     return
   }
   const now = new Date()
@@ -505,11 +529,26 @@ businessRouter.get('/expenses', async (_req, res) => {
   })
 })
 
+businessRouter.get('/expenses/report.pdf', async (req, res) => {
+  const requested = typeof req.query.month === 'string' ? req.query.month : ''
+  const month = /^\d{4}-\d{2}$/.test(requested) ? requested : new Date().toISOString().slice(0, 7)
+  const [expenses, content] = await Promise.all([expenseStore.read(), readSiteContent()])
+  streamExpenseReportPdf(
+    res,
+    month,
+    expenses.filter((expense) => expense.date.slice(0, 7) === month),
+    content.brand,
+  )
+})
+
 businessRouter.post('/expenses', async (req, res) => {
   const parsed = expenseInputSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({
-      error: { code: 'validation_error', message: parsed.error.issues[0]?.message ?? 'Invalid expense.' },
+      error: {
+        code: 'validation_error',
+        message: parsed.error.issues[0]?.message ?? 'Invalid expense.',
+      },
     })
     return
   }
@@ -523,7 +562,10 @@ businessRouter.patch('/expenses/:id', async (req, res) => {
   const parsed = expensePatchSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({
-      error: { code: 'validation_error', message: parsed.error.issues[0]?.message ?? 'Invalid expense.' },
+      error: {
+        code: 'validation_error',
+        message: parsed.error.issues[0]?.message ?? 'Invalid expense.',
+      },
     })
     return
   }
@@ -569,7 +611,10 @@ businessRouter.post('/team', async (req, res) => {
   const parsed = teamMemberInputSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({
-      error: { code: 'validation_error', message: parsed.error.issues[0]?.message ?? 'Invalid team member.' },
+      error: {
+        code: 'validation_error',
+        message: parsed.error.issues[0]?.message ?? 'Invalid team member.',
+      },
     })
     return
   }
@@ -584,7 +629,10 @@ businessRouter.patch('/team/:id', async (req, res) => {
   const parsed = teamMemberPatchSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({
-      error: { code: 'validation_error', message: parsed.error.issues[0]?.message ?? 'Invalid team member.' },
+      error: {
+        code: 'validation_error',
+        message: parsed.error.issues[0]?.message ?? 'Invalid team member.',
+      },
     })
     return
   }
@@ -607,9 +655,7 @@ businessRouter.patch('/team/:id', async (req, res) => {
 
 businessRouter.delete('/team/:id', async (req, res) => {
   const payroll = await payrollStore.read()
-  const next = await teamStore.mutate((team) =>
-    team.filter((entry) => entry.id !== req.params.id),
-  )
+  const next = await teamStore.mutate((team) => team.filter((entry) => entry.id !== req.params.id))
   res.json({ data: { deleted: req.params.id }, summary: summarizePayroll(payroll, next) })
 })
 
@@ -632,7 +678,10 @@ businessRouter.post('/payroll', async (req, res) => {
   const parsed = payrollInputSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({
-      error: { code: 'validation_error', message: parsed.error.issues[0]?.message ?? 'Invalid salary entry.' },
+      error: {
+        code: 'validation_error',
+        message: parsed.error.issues[0]?.message ?? 'Invalid salary entry.',
+      },
     })
     return
   }
@@ -647,8 +696,7 @@ businessRouter.post('/payroll', async (req, res) => {
     id: randomUUID(),
     ...parsed.data,
     amount,
-    paidAt:
-      parsed.data.status === 'paid' ? parsed.data.paidAt ?? now : null,
+    paidAt: parsed.data.status === 'paid' ? (parsed.data.paidAt ?? now) : null,
     createdAt: now,
     updatedAt: now,
   }
@@ -668,7 +716,10 @@ businessRouter.post('/payroll/generate', async (req, res) => {
       payroll.filter((entry) => entry.period === period).map((entry) => entry.memberId),
     )
     const batch: PayrollRecord[] = team
-      .filter((member) => member.status === 'active' && member.monthlySalary > 0 && !existing.has(member.id))
+      .filter(
+        (member) =>
+          member.status === 'active' && member.monthlySalary > 0 && !existing.has(member.id),
+      )
       .map((member) => ({
         id: randomUUID(),
         memberId: member.id,
@@ -689,7 +740,11 @@ businessRouter.post('/payroll/generate', async (req, res) => {
     return batch.length ? [...batch, ...payroll] : payroll
   })
   res.json({
-    data: { period, created: created.length, skipped: team.filter((member) => member.status === 'active').length - created.length },
+    data: {
+      period,
+      created: created.length,
+      skipped: team.filter((member) => member.status === 'active').length - created.length,
+    },
     summary: summarizePayroll(next, team),
   })
 })
@@ -698,7 +753,10 @@ businessRouter.patch('/payroll/:id', async (req, res) => {
   const parsed = payrollPatchSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({
-      error: { code: 'validation_error', message: parsed.error.issues[0]?.message ?? 'Invalid salary entry.' },
+      error: {
+        code: 'validation_error',
+        message: parsed.error.issues[0]?.message ?? 'Invalid salary entry.',
+      },
     })
     return
   }
@@ -720,7 +778,7 @@ businessRouter.patch('/payroll/:id', async (req, res) => {
           parsed.data.paidAt !== undefined
             ? parsed.data.paidAt
             : status === 'paid'
-              ? current.paidAt ?? nowIso()
+              ? (current.paidAt ?? nowIso())
               : null,
         updatedAt: nowIso(),
       }

@@ -8,14 +8,18 @@ import {
   AUDIT_RETENTION_DAYS,
   BUSINESS_TIMEZONE,
   EMAIL_LOG_RETENTION_DAYS,
+  EXPENSE_REPORT_EMAIL,
   mailerConfigured,
 } from './config.js'
+import { readSiteContent } from './content.js'
 import { readLeads } from './leads.js'
-import { pruneEmailLog, sendMail, worksDeskNotice } from './mailer.js'
+import { expenseReportEmail, pruneEmailLog, sendMail, worksDeskNotice } from './mailer.js'
 import { appointmentStore, nextAppointmentReference } from './portal.js'
 import { customerStore } from './portalAuth.js'
 import { amcStore, siteStore, ticketStore } from './portalModules.js'
 import { createJob } from './jobStore.js'
+import { expenseStore } from './business.js'
+import { buildExpenseReportPdf } from './expensePdf.js'
 import { reminderStore } from './reminders.js'
 import { createStore, DATA_DIR } from './store.js'
 import { hourInZone, startOfTodayInZone, todayInZone, zonedTimeToUtc } from './time.js'
@@ -26,6 +30,7 @@ interface JobState {
   amcNotified: Record<string, string>
   lastDigestDate: string | null
   lastBackupDate: string | null
+  lastExpenseReportMonth: string | null
 }
 
 const stateStore = createStore<JobState>('job-state.json', () => ({
@@ -34,6 +39,7 @@ const stateStore = createStore<JobState>('job-state.json', () => ({
   amcNotified: {},
   lastDigestDate: null,
   lastBackupDate: null,
+  lastExpenseReportMonth: null,
 }))
 const lockStore = createStore<{ owner: string; until: number }>('job-lock.json', () => ({
   owner: '',
@@ -358,6 +364,50 @@ export async function runAmcVisitScheduling(now = Date.now()): Promise<number> {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Monthly expense report                                                    */
+/* -------------------------------------------------------------------------- */
+
+function previousMonth(date: string): string {
+  const [year, month] = date.split('-').map(Number)
+  if (!year || !month) return date.slice(0, 7)
+  const value = new Date(Date.UTC(year, month - 2, 1))
+  return value.toISOString().slice(0, 7)
+}
+
+async function runMonthlyExpenseReport(now: number): Promise<void> {
+  if (!mailerConfigured()) return
+  const today = todayInZone(BUSINESS_TIMEZONE, now)
+  if (Number(today.slice(8, 10)) < 2) return
+  const month = previousMonth(today)
+  const state = await stateStore.read()
+  if (state.lastExpenseReportMonth === month) return
+  const [expenses, content] = await Promise.all([expenseStore.read(), readSiteContent()])
+  const monthExpenses = expenses
+    .filter((expense) => expense.date.slice(0, 7) === month)
+    .sort((a, b) => Date.parse(a.date) - Date.parse(b.date))
+  const total = monthExpenses.reduce((sum, expense) => sum + expense.amount, 0)
+  const pdf = await buildExpenseReportPdf(month, monthExpenses, content.brand)
+  const template = expenseReportEmail({
+    month,
+    total: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(total),
+    count: monthExpenses.length,
+    brand: content.brand.name,
+  })
+  const result = await sendMail({
+    to: EXPENSE_REPORT_EMAIL,
+    kind: 'expense-report',
+    ...template,
+    attachments: [{ filename: `expenses-${month}.pdf`, content: pdf }],
+  })
+  if (!result.ok) {
+    console.error('[hvac-api] monthly expense report was not sent', result.status, result.error)
+    return
+  }
+  await stateStore.mutate((current) => ({ ...current, lastExpenseReportMonth: month }))
+  console.log(`[hvac-api] sent monthly expense report for ${month} to ${EXPENSE_REPORT_EMAIL}`)
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Runner                                                                    */
 /* -------------------------------------------------------------------------- */
 
@@ -388,6 +438,7 @@ async function tick(): Promise<void> {
     await runAmcVisitScheduling(now)
     await runAmcReminders(now)
     await runDailyDigest(now)
+    await runMonthlyExpenseReport(now)
     await runBackup(now)
     await runRetention()
   } catch (error) {

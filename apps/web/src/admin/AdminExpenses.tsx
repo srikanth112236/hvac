@@ -3,6 +3,7 @@ import { useLiveRefresh } from '@/admin/useLiveRefresh'
 import { Icon } from '@/components/icons'
 import {
   Button,
+  ButtonAnchor,
   EmptyState,
   Input,
   Modal,
@@ -24,7 +25,10 @@ import {
   formatMoney,
 } from '@/admin/ui'
 
-const categories = Object.entries(EXPENSE_CATEGORY_LABELS).map(([value, label]) => ({ value, label }))
+const categories = Object.entries(EXPENSE_CATEGORY_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}))
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -40,6 +44,9 @@ export function AdminExpenses() {
   const [editing, setEditing] = useState<ExpenseRecord | null>(null)
   const [busy, setBusy] = useState(false)
   const [filter, setFilter] = useState('all')
+  const [period, setPeriod] = useState<'all' | 'this' | 'last'>('all')
+  const [method, setMethod] = useState('all')
+  const [search, setSearch] = useState('')
 
   const load = async () => {
     try {
@@ -56,10 +63,39 @@ export function AdminExpenses() {
 
   useLiveRefresh(load)
 
-  const filtered = useMemo(
-    () => (filter === 'all' ? expenses : expenses.filter((expense) => expense.category === filter)),
-    [expenses, filter],
-  )
+  const monthKeys = useMemo(() => {
+    const now = new Date()
+    const current = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const previousDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const previous = `${previousDate.getFullYear()}-${String(previousDate.getMonth() + 1).padStart(2, '0')}`
+    return { current, previous }
+  }, [])
+
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase()
+    return expenses.filter((expense) => {
+      if (filter !== 'all' && expense.category !== filter) return false
+      if (method !== 'all' && expense.method !== method) return false
+      if (period !== 'all') {
+        const key = expense.date.slice(0, 7)
+        if (key !== (period === 'this' ? monthKeys.current : monthKeys.previous)) return false
+      }
+      if (needle) {
+        const haystack =
+          `${expense.description} ${expense.vendor} ${expense.reference} ${expense.notes}`.toLowerCase()
+        if (!haystack.includes(needle)) return false
+      }
+      return true
+    })
+  }, [expenses, filter, method, period, search, monthKeys])
+
+  const filteredTotal = filtered.reduce((sum, expense) => sum + expense.amount, 0)
+  const thisMonthTotal = expenses
+    .filter((expense) => expense.date.slice(0, 7) === monthKeys.current)
+    .reduce((sum, expense) => sum + expense.amount, 0)
+  const lastMonthTotal = expenses
+    .filter((expense) => expense.date.slice(0, 7) === monthKeys.previous)
+    .reduce((sum, expense) => sum + expense.amount, 0)
 
   const save = async (input: ExpenseInput) => {
     setBusy(true)
@@ -69,7 +105,11 @@ export function AdminExpenses() {
         toast({ title: 'Expense updated', tone: 'success' })
       } else {
         await adminApi.createExpense(input)
-        toast({ title: 'Expense recorded', description: formatMoney(input.amount), tone: 'success' })
+        toast({
+          title: 'Expense recorded',
+          description: formatMoney(input.amount),
+          tone: 'success',
+        })
       }
       setOpen(false)
       setEditing(null)
@@ -100,15 +140,13 @@ export function AdminExpenses() {
     }
   }
 
-  const topCategory = summary
-    ? Object.entries(summary.byCategory).sort((a, b) => b[1] - a[1])[0]
-    : null
-
   const columns: Column<ExpenseRecord>[] = [
     {
       key: 'date',
       header: 'Date',
-      render: (row) => <span className="font-mono text-[10px] text-fg-dim">{formatDate(row.date)}</span>,
+      render: (row) => (
+        <span className="font-mono text-[10px] text-fg-dim">{formatDate(row.date)}</span>
+      ),
     },
     {
       key: 'description',
@@ -142,7 +180,9 @@ export function AdminExpenses() {
       key: 'amount',
       header: 'Amount',
       align: 'right',
-      render: (row) => <span className="t-num text-[12px] text-heat">{formatMoney(row.amount)}</span>,
+      render: (row) => (
+        <span className="t-num text-[12px] text-heat">{formatMoney(row.amount)}</span>
+      ),
     },
     {
       key: 'actions',
@@ -181,13 +221,24 @@ export function AdminExpenses() {
         description="Materials, equipment, transport, subcontractors and overheads in one ledger, with tax and payment method recorded for reconciliation."
         actions={
           <>
-            <Select
-              aria-label="Filter expenses"
-              value={filter}
-              options={[{ value: 'all', label: 'All categories' }, ...categories]}
-              onChange={(event) => setFilter(event.target.value)}
-              className="min-w-[150px]"
-            />
+            <ButtonAnchor
+              href={`/api/v1/admin/expenses/report.pdf?month=${monthKeys.current}`}
+              download
+              variant="secondary"
+              size="sm"
+              icon="download"
+            >
+              This month PDF
+            </ButtonAnchor>
+            <ButtonAnchor
+              href={`/api/v1/admin/expenses/report.pdf?month=${monthKeys.previous}`}
+              download
+              variant="secondary"
+              size="sm"
+              icon="download"
+            >
+              Last month PDF
+            </ButtonAnchor>
             <Button
               icon="plus"
               onClick={() => {
@@ -203,22 +254,67 @@ export function AdminExpenses() {
 
       {error ? <InlineError message={error} /> : null}
 
+      <div className="grid gap-3 border border-line bg-panel/30 p-3 sm:grid-cols-2 lg:grid-cols-[160px_160px_160px_1fr]">
+        <Select
+          label="Period"
+          value={period}
+          onChange={(event) => setPeriod(event.target.value as 'all' | 'this' | 'last')}
+          options={[
+            { value: 'all', label: 'All time' },
+            { value: 'this', label: 'This month' },
+            { value: 'last', label: 'Last month' },
+          ]}
+        />
+        <Select
+          label="Category"
+          value={filter}
+          options={[{ value: 'all', label: 'All categories' }, ...categories]}
+          onChange={(event) => setFilter(event.target.value)}
+        />
+        <Select
+          label="Paid by"
+          value={method}
+          onChange={(event) => setMethod(event.target.value)}
+          options={[
+            { value: 'all', label: 'All methods' },
+            { value: 'cash', label: 'Cash' },
+            { value: 'cheque', label: 'Cheque' },
+            { value: 'bank-transfer', label: 'Bank transfer' },
+            { value: 'card-on-site', label: 'Card on site' },
+          ]}
+        />
+        <div className="flex items-end">
+          <Input
+            label="Search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Vendor, description, reference"
+          />
+        </div>
+      </div>
+
       {summary ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard label="Expenses this month" value={formatMoney(summary.thisMonth)} accent="heat" />
+          <MetricCard
+            label="Expenses this month"
+            value={formatMoney(thisMonthTotal)}
+            accent="heat"
+          />
+          <MetricCard label="Last month" value={formatMoney(lastMonthTotal)} />
           <MetricCard label="Lifetime expenses" value={formatMoney(summary.total)} />
           <MetricCard
-            label="Largest category"
-            value={topCategory ? EXPENSE_CATEGORY_LABELS[topCategory[0]] ?? topCategory[0] : '—'}
-            note={topCategory ? formatMoney(topCategory[1]) : 'No expenses yet'}
+            label="Filtered total"
+            value={formatMoney(filteredTotal)}
+            note={`${filtered.length} of ${summary.count} entries`}
           />
-          <MetricCard label="Entries" value={summary.count} />
         </div>
       ) : null}
 
       {summary && Object.keys(summary.byCategory).length ? (
         <div className="border border-line bg-panel/30 p-4">
-          <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">Category mix</p>
+          <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">
+            Category mix
+          </p>
           <div className="mt-3 flex flex-col gap-2">
             {Object.entries(summary.byCategory)
               .sort((a, b) => b[1] - a[1])
@@ -228,14 +324,51 @@ export function AdminExpenses() {
                     {EXPENSE_CATEGORY_LABELS[category] ?? category}
                   </span>
                   <div className="h-1.5 bg-panel-2">
-                    <div className="h-1.5 bg-heat/70" style={{ width: `${Math.max(2, (amount / summary.total) * 100)}%` }} />
+                    <div
+                      className="h-1.5 bg-heat/70"
+                      style={{ width: `${Math.max(2, (amount / summary.total) * 100)}%` }}
+                    />
                   </div>
-                  <span className="t-num text-right text-[10px] text-fg-dim">{formatMoney(amount)}</span>
+                  <span className="t-num text-right text-[10px] text-fg-dim">
+                    {formatMoney(amount)}
+                  </span>
                 </div>
               ))}
           </div>
         </div>
       ) : null}
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border border-line bg-panel/20 p-4">
+        <div>
+          <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">
+            Monthly report archive
+          </p>
+          <p className="mt-1 max-w-prose text-[11px] leading-relaxed text-fg-dim">
+            The PDF ledger is emailed automatically on the 2nd of every month. It is also
+            downloadable here for the current and previous month.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <ButtonAnchor
+            href={`/api/v1/admin/expenses/report.pdf?month=${monthKeys.current}`}
+            download
+            variant="secondary"
+            size="sm"
+            icon="download"
+          >
+            Current month
+          </ButtonAnchor>
+          <ButtonAnchor
+            href={`/api/v1/admin/expenses/report.pdf?month=${monthKeys.previous}`}
+            download
+            variant="secondary"
+            size="sm"
+            icon="download"
+          >
+            Previous month
+          </ButtonAnchor>
+        </div>
+      </div>
 
       {loading ? (
         <AdminLoading rows={5} />
@@ -295,7 +428,9 @@ function ExpenseForm({
   onCancel: () => void
 }) {
   const [date, setDate] = useState(initial ? initial.date.slice(0, 10) : today())
-  const [category, setCategory] = useState<ExpenseInput['category']>(initial?.category ?? 'materials')
+  const [category, setCategory] = useState<ExpenseInput['category']>(
+    initial?.category ?? 'materials',
+  )
   const [vendor, setVendor] = useState(initial?.vendor ?? '')
   const [description, setDescription] = useState(initial?.description ?? '')
   const [amount, setAmount] = useState(String(initial?.amount ?? ''))
@@ -328,13 +463,27 @@ function ExpenseForm({
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
       {error ? (
-        <p role="alert" className="border border-danger/40 bg-danger/[0.06] px-3 py-2 text-[12px] text-fg-dim">
+        <p
+          role="alert"
+          className="border border-danger/40 bg-danger/[0.06] px-3 py-2 text-[12px] text-fg-dim"
+        >
           {error}
         </p>
       ) : null}
       <div className="grid gap-3 sm:grid-cols-3">
-        <Input label="Date" type="date" required value={date} onChange={(event) => setDate(event.target.value)} />
-        <Select label="Category" value={category} options={categories} onChange={(event) => setCategory(event.target.value as ExpenseInput['category'])} />
+        <Input
+          label="Date"
+          type="date"
+          required
+          value={date}
+          onChange={(event) => setDate(event.target.value)}
+        />
+        <Select
+          label="Category"
+          value={category}
+          options={categories}
+          onChange={(event) => setCategory(event.target.value as ExpenseInput['category'])}
+        />
         <Select
           label="Paid by"
           value={method}
@@ -347,17 +496,59 @@ function ExpenseForm({
           onChange={(event) => setMethod(event.target.value as ExpenseInput['method'])}
         />
       </div>
-      <Input label="Description" required value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Copper pipe 1/2 inch · 3 rolls" />
+      <Input
+        label="Description"
+        required
+        value={description}
+        onChange={(event) => setDescription(event.target.value)}
+        placeholder="Copper pipe 1/2 inch · 3 rolls"
+      />
       <div className="grid gap-3 sm:grid-cols-3">
-        <Input label="Vendor" value={vendor} onChange={(event) => setVendor(event.target.value)} placeholder="Supplier or subcontractor" />
-        <Input label="Amount" type="number" min="0" step="0.01" required value={amount} onChange={(event) => setAmount(event.target.value)} />
-        <Input label="Tax included" type="number" min="0" step="0.01" value={taxAmount} onChange={(event) => setTaxAmount(event.target.value)} hint="Sales tax portion, if any" />
+        <Input
+          label="Vendor"
+          value={vendor}
+          onChange={(event) => setVendor(event.target.value)}
+          placeholder="Supplier or subcontractor"
+        />
+        <Input
+          label="Amount"
+          type="number"
+          min="0"
+          step="0.01"
+          required
+          value={amount}
+          onChange={(event) => setAmount(event.target.value)}
+        />
+        <Input
+          label="Tax included"
+          type="number"
+          min="0"
+          step="0.01"
+          value={taxAmount}
+          onChange={(event) => setTaxAmount(event.target.value)}
+          hint="Sales tax portion, if any"
+        />
       </div>
-      <Input label="Reference" value={reference} onChange={(event) => setReference(event.target.value)} placeholder="Bill no. / UTR" />
-      <Textarea label="Notes" rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Job, site or approval note" />
+      <Input
+        label="Reference"
+        value={reference}
+        onChange={(event) => setReference(event.target.value)}
+        placeholder="Bill no. / UTR"
+      />
+      <Textarea
+        label="Notes"
+        rows={2}
+        value={notes}
+        onChange={(event) => setNotes(event.target.value)}
+        placeholder="Job, site or approval note"
+      />
       <div className="flex justify-end gap-2 border-t border-line pt-4">
-        <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
-        <Button type="submit" icon="check" disabled={busy}>{busy ? 'Saving…' : initial ? 'Save expense' : 'Record expense'}</Button>
+        <Button type="button" variant="secondary" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="submit" icon="check" disabled={busy}>
+          {busy ? 'Saving…' : initial ? 'Save expense' : 'Record expense'}
+        </Button>
       </div>
     </form>
   )

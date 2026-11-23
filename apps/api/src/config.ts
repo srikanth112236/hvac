@@ -71,10 +71,10 @@ export function mailerConfigured(): boolean {
   return Boolean(process.env.RESEND_API_KEY || process.env.MAIL_WEBHOOK_URL)
 }
 
-export const MAIL_FROM =
-  process.env.MAIL_FROM ?? 'Coolvane HVAC <works@coolvane.example>'
+export const MAIL_FROM = process.env.MAIL_FROM ?? 'Coolvane HVAC <works@coolvane.example>'
 export const ADMIN_NOTIFY_EMAIL =
   process.env.ADMIN_NOTIFY_EMAIL ?? process.env.ADMIN_EMAIL ?? 'works@coolvane.example'
+export const EXPENSE_REPORT_EMAIL = process.env.EXPENSE_REPORT_EMAIL ?? ADMIN_NOTIFY_EMAIL
 
 /**
  * Absolute origin used in emailed links (password reset, receipts). Production
