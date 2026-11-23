@@ -47,7 +47,8 @@ development the floating switcher also flips it live; the choice is stored in
 - Admin: overview, leads, **customer records with full contact details, invoices,
   payments and service history**, customers + full customer file, **dispatch**
   (separate full diary board with scheduling, status, engineer and AMC links),
-  **jobs with checklists, parts, photos and signatures**, invoices, expenses,
+  **jobs with checklists, parts, photos and signatures**, **quotations linked to
+  customers, leads and services**, invoices, expenses,
   team/payroll, reminders, newsletters, coupons, content studio, revisions,
   journal, media, settings, **global search (Ctrl K), CSV exports**, **RBAC users,
   permissions matrix**, **email two-factor authentication**, audit log, data

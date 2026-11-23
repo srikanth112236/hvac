@@ -280,6 +280,30 @@ describe('lead → invoice → customer portal', () => {
       })
       .expect(201)
     const quoteId = quote.body.data.id
+    const globalQuote = await adminHeaders(admin.post('/api/v1/admin/quotations'))
+      .send({
+        customerId: customer.id,
+        leadRef: lead.body.data.ref,
+        serviceSlug: 'ac-servicing',
+        title: 'Global linked quote',
+        service: 'AC servicing',
+        lines: [{ description: 'AC servicing', quantity: 1, unitPrice: 300, taxPercent: 0 }],
+        discount: 0,
+        notes: '',
+        terms: '',
+        status: 'draft',
+        validUntil: '2026-12-31',
+      })
+      .expect(201)
+    expect(globalQuote.body.data.leadRef).toBe(lead.body.data.ref)
+    const quotationList = await admin
+      .get('/api/v1/admin/quotations?q=Global')
+      .expect(200)
+    expect(
+      quotationList.body.data.some(
+        (entry: { id: string }) => entry.id === globalQuote.body.data.id,
+      ),
+    ).toBe(true)
     const quoteEdited = await adminHeaders(
       admin.patch(`/api/v1/admin/customers/${customer.id}/quotations/${quoteId}`),
     )

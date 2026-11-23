@@ -69,6 +69,9 @@ const AdminDispatch = lazy(() =>
 const AdminJobs = lazy(() =>
   import('@/admin/AdminJobs').then((module) => ({ default: module.AdminJobs })),
 )
+const AdminQuotations = lazy(() =>
+  import('@/admin/AdminQuotations').then((module) => ({ default: module.AdminQuotations })),
+)
 const AdminCustomerFile = lazy(() =>
   import('@/admin/AdminCustomerFile').then((module) => ({ default: module.AdminCustomerFile })),
 )
@@ -149,6 +152,7 @@ export function App() {
           <Route path="reminders" element={<AdminReminders />} />
           <Route path="invoices" element={<AdminInvoices />} />
           <Route path="invoices/:invoiceId" element={<AdminInvoiceDetail />} />
+          <Route path="quotations" element={<AdminQuotations />} />
           <Route path="expenses" element={<AdminExpenses />} />
           <Route path="team" element={<AdminTeam />} />
           <Route path="content" element={<AdminContent />} />

@@ -107,6 +107,8 @@ export interface QuotationRecord {
   id: string
   ref: string
   customerId: string
+  leadRef: string | null
+  serviceSlug: string | null
   title: string
   service: string
   lines: QuotationLine[]
@@ -116,6 +118,8 @@ export interface QuotationRecord {
   status: QuotationStatus
   validUntil: string
   acceptedAt: string | null
+  sentAt: string | null
+  lastReminderAt: string | null
   changeRequest: string | null
   createdAt: string
   updatedAt: string
@@ -140,6 +144,8 @@ export const quotationLineSchema = z.object({
 export const quotationInputSchema = z.object({
   title: z.string().trim().min(3, 'Give the quotation a title').max(160),
   service: z.string().trim().max(200).default(''),
+  leadRef: z.string().trim().max(40).nullable().optional(),
+  serviceSlug: z.string().trim().max(80).nullable().optional(),
   lines: z.array(quotationLineSchema).min(1).max(50),
   discount: z.number().min(0).max(100_000_000).default(0),
   notes: z.string().trim().max(1500).default(''),
@@ -151,6 +157,8 @@ export type QuotationInput = z.infer<typeof quotationInputSchema>
 export const quotationPatchSchema = z.object({
   title: z.string().trim().min(3, 'Give the quotation a title').max(160).optional(),
   service: z.string().trim().max(200).optional(),
+  leadRef: z.string().trim().max(40).nullable().optional(),
+  serviceSlug: z.string().trim().max(80).nullable().optional(),
   lines: z.array(quotationLineSchema).min(1).max(50).optional(),
   discount: z.number().min(0).max(100_000_000).optional(),
   notes: z.string().trim().max(1500).optional(),
@@ -280,7 +288,12 @@ export const jobReportInputSchema = z.object({
     .max(50)
     .default([]),
   photos: z
-    .array(z.object({ url: z.string().trim().min(1).max(500), alt: z.string().trim().max(200).default('') }))
+    .array(
+      z.object({
+        url: z.string().trim().min(1).max(500),
+        alt: z.string().trim().max(200).default(''),
+      }),
+    )
     .max(20)
     .default([]),
   findings: z.string().trim().max(2000).default(''),

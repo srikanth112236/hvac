@@ -9,19 +9,27 @@ import {
   BUSINESS_TIMEZONE,
   EMAIL_LOG_RETENTION_DAYS,
   EXPENSE_REPORT_EMAIL,
+  PUBLIC_SITE_URL,
   mailerConfigured,
 } from './config.js'
 import { readSiteContent } from './content.js'
 import { readLeads } from './leads.js'
-import { expenseReportEmail, pruneEmailLog, sendMail, worksDeskNotice } from './mailer.js'
+import {
+  expenseReportEmail,
+  pruneEmailLog,
+  quotationReminderEmail,
+  sendMail,
+  worksDeskNotice,
+} from './mailer.js'
 import { appointmentStore, nextAppointmentReference } from './portal.js'
 import { customerStore } from './portalAuth.js'
-import { amcStore, siteStore, ticketStore } from './portalModules.js'
+import { amcStore, siteStore, ticketStore, quotationStore } from './portalModules.js'
 import { createJob } from './jobStore.js'
 import { expenseStore } from './business.js'
 import { buildExpenseReportPdf } from './expensePdf.js'
 import { reminderStore } from './reminders.js'
 import { createStore, DATA_DIR } from './store.js'
+import { quotationTotals } from '@hvac/shared'
 import { hourInZone, startOfTodayInZone, todayInZone, zonedTimeToUtc } from './time.js'
 
 interface JobState {
@@ -31,6 +39,7 @@ interface JobState {
   lastDigestDate: string | null
   lastBackupDate: string | null
   lastExpenseReportMonth: string | null
+  quotationNotified: Record<string, string>
 }
 
 const stateStore = createStore<JobState>('job-state.json', () => ({
@@ -40,6 +49,7 @@ const stateStore = createStore<JobState>('job-state.json', () => ({
   lastDigestDate: null,
   lastBackupDate: null,
   lastExpenseReportMonth: null,
+  quotationNotified: {},
 }))
 const lockStore = createStore<{ owner: string; until: number }>('job-lock.json', () => ({
   owner: '',
@@ -251,6 +261,73 @@ async function runRetention(): Promise<void> {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Quotation reminders                                                       */
+/* -------------------------------------------------------------------------- */
+
+async function runQuotationReminders(now: number): Promise<void> {
+  if (!mailerConfigured()) return
+  const [quotations, customers, content] = await Promise.all([
+    quotationStore.read(),
+    customerStore.read(),
+    readSiteContent(),
+  ])
+  const state = await stateStore.read()
+  const sent: Record<string, string> = {}
+  const expiring: string[] = []
+  for (const quotation of quotations) {
+    if (quotation.status !== 'sent' || !quotation.validUntil) continue
+    const end = Date.parse(`${quotation.validUntil}T23:59:59`)
+    if (!Number.isFinite(end)) continue
+    const daysLeft = Math.ceil((end - now) / 86_400_000)
+    if (daysLeft > 3) continue
+    const key = `${quotation.id}:${quotation.validUntil}:${daysLeft <= 0 ? 'expired' : 'soon'}`
+    if (state.quotationNotified?.[key]) continue
+    const customer = customers.find((entry) => entry.id === quotation.customerId)
+    if (!customer?.email) continue
+    const totals = quotationTotals(quotation)
+    const message = quotationReminderEmail({
+      name: customer.name,
+      reference: quotation.ref,
+      title: quotation.title,
+      total: money.format(totals.total),
+      validUntil: quotation.validUntil,
+      daysLeft: Math.max(0, daysLeft),
+      brand: content.brand.name,
+      portalUrl: `${PUBLIC_SITE_URL.replace(/\/+$/, '')}/portal`,
+    })
+    const result = await sendMail({
+      to: customer.email,
+      kind: 'quotation-reminder',
+      ...message,
+    })
+    if (result.ok) {
+      sent[key] = new Date(now).toISOString()
+      if (daysLeft <= 0) expiring.push(quotation.id)
+    }
+  }
+  if (Object.keys(sent).length) {
+    await stateStore.mutate((current) => ({
+      ...current,
+      quotationNotified: capRecord({ ...current.quotationNotified, ...sent }),
+    }))
+  }
+  if (expiring.length) {
+    await quotationStore.mutate((rows) =>
+      rows.map((quotation) =>
+        expiring.includes(quotation.id)
+          ? {
+              ...quotation,
+              status: 'expired',
+              lastReminderAt: new Date(now).toISOString(),
+              updatedAt: new Date(now).toISOString(),
+            }
+          : quotation,
+      ),
+    )
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /*  AMC visit generation                                                      */
 /* -------------------------------------------------------------------------- */
 
@@ -435,6 +512,7 @@ async function tick(): Promise<void> {
   }
   try {
     await runReminderNotifications(now)
+    await runQuotationReminders(now)
     await runAmcVisitScheduling(now)
     await runAmcReminders(now)
     await runDailyDigest(now)

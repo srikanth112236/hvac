@@ -617,6 +617,16 @@ export const adminApi = {
       `/admin/customers/${encodeURIComponent(id)}/quotations`,
       { method: 'POST', body: JSON.stringify(input) },
     ).then((payload) => payload.data),
+  quotations: (query = '') =>
+    request<{
+      data: Array<QuotationRecord & { totals: QuotationTotals; customerName: string; customerEmail: string; leadName: string | null }>
+      meta: { count: number; totals: { counts: Record<string, number>; value: number } }
+    }>(`/admin/quotations${query}`),
+  createGlobalQuotation: (input: QuotationInput & { customerId: string }) =>
+    request<{ data: QuotationRecord & { totals: QuotationTotals } }>('/admin/quotations', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }).then((payload) => payload.data),
   patchQuotation: (
     id: string,
     quotationId: string,

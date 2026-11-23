@@ -32,11 +32,7 @@ import { ADMIN_NOTIFY_EMAIL, PUBLIC_SITE_URL } from './config.js'
 import { invoiceStore, toInvoiceView } from './business.js'
 import { readSiteContent } from './content.js'
 import { ifMatchSatisfied } from './concurrency.js'
-import {
-  customerWantsEmail,
-  preferenceStore,
-  preferencesFor,
-} from './customerPreferences.js'
+import { customerWantsEmail, preferenceStore, preferencesFor } from './customerPreferences.js'
 import { leadStore, readLeads } from './leads.js'
 import {
   amcRenewalAcknowledgementEmail,
@@ -991,7 +987,10 @@ portalAdminRouter.patch('/customers/:id/equipment/:equipmentId', async (req, res
   }
   if (!ifMatchSatisfied(req, currentEquipment.updatedAt)) {
     res.status(412).json({
-      error: { code: 'stale_record', message: 'This equipment changed in another session. Reload and apply your edit again.' },
+      error: {
+        code: 'stale_record',
+        message: 'This equipment changed in another session. Reload and apply your edit again.',
+      },
     })
     return
   }
@@ -1020,6 +1019,145 @@ portalAdminRouter.delete('/customers/:id/equipment/:equipmentId', async (req, re
 })
 
 /* Quotations */
+portalAdminRouter.get('/quotations', async (req, res) => {
+  const [quotations, customers, leads] = await Promise.all([
+    quotationStore.read(),
+    customerStore.read(),
+    leadStore.read(),
+  ])
+  const status = typeof req.query.status === 'string' ? req.query.status : ''
+  const query = typeof req.query.q === 'string' ? req.query.q.trim().toLowerCase() : ''
+  const customersById = new Map(customers.map((customer) => [customer.id, customer]))
+  const data = quotations
+    .filter((quotation) => (status ? quotation.status === status : true))
+    .filter((quotation) => {
+      if (!query) return true
+      const customer = customersById.get(quotation.customerId)
+      const lead = quotation.leadRef ? leads.find((entry) => entry.ref === quotation.leadRef) : null
+      return [
+        quotation.ref,
+        quotation.title,
+        quotation.service,
+        customer?.name,
+        customer?.email,
+        lead?.name,
+      ]
+        .join(' ')
+        .toLowerCase()
+        .includes(query)
+    })
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+    .map((quotation) => {
+      const customer = customersById.get(quotation.customerId)
+      const lead = quotation.leadRef ? leads.find((entry) => entry.ref === quotation.leadRef) : null
+      return {
+        ...quotation,
+        totals: quotationTotals(quotation),
+        customerName: customer?.name ?? 'Customer',
+        customerEmail: customer?.email ?? '',
+        leadName: lead?.name ?? null,
+      }
+    })
+  res.json({
+    data,
+    meta: {
+      count: data.length,
+      totals: {
+        counts: Object.fromEntries(
+          ['draft', 'sent', 'accepted', 'declined', 'changes-requested', 'expired'].map((entry) => [
+            entry,
+            quotations.filter((quotation) => quotation.status === entry).length,
+          ]),
+        ),
+        value: quotations.reduce((sum, quotation) => sum + quotationTotals(quotation).total, 0),
+      },
+    },
+  })
+})
+
+portalAdminRouter.post('/quotations', async (req, res) => {
+  const customerId = typeof req.body?.customerId === 'string' ? req.body.customerId : ''
+  const parsed = quotationInputSchema.safeParse(req.body)
+  if (!customerId || !parsed.success) {
+    res.status(400).json({
+      error: {
+        code: 'validation_error',
+        message: parsed.error?.issues[0]?.message ?? 'Choose a customer.',
+      },
+    })
+    return
+  }
+  const customer = await findCustomer(customerId)
+  if (!customer) {
+    res.status(404).json({ error: { code: 'not_found', message: 'Customer not found.' } })
+    return
+  }
+  const content = await readSiteContent()
+  const now = nowIso()
+  let saved: QuotationRecord | undefined
+  await quotationStore.mutate((quotations) => {
+    const record: QuotationRecord = {
+      id: randomUUID(),
+      ref: nextReference('QT', quotations),
+      customerId: customer.id,
+      leadRef: parsed.data.leadRef ?? null,
+      serviceSlug: parsed.data.serviceSlug ?? null,
+      title: parsed.data.title,
+      service: parsed.data.service,
+      lines: parsed.data.lines.map((line) => ({ ...line, id: line.id ?? randomUUID() })),
+      discount: parsed.data.discount,
+      notes: parsed.data.notes || content.brand.billing.invoiceNotes,
+      terms: parsed.data.terms || content.brand.billing.invoiceTerms,
+      status: parsed.data.status,
+      validUntil: parsed.data.validUntil,
+      acceptedAt: null,
+      sentAt: parsed.data.status === 'sent' ? now : null,
+      lastReminderAt: null,
+      changeRequest: null,
+      createdAt: now,
+      updatedAt: now,
+    }
+    saved = record
+    return [record, ...quotations]
+  })
+  if (!saved) {
+    res
+      .status(500)
+      .json({ error: { code: 'server_error', message: 'The quotation could not be saved.' } })
+    return
+  }
+  const quotation = saved
+  if (quotation.leadRef) {
+    await leadStore.mutate((leads) =>
+      leads.map((lead) =>
+        lead.ref === quotation.leadRef && lead.status !== 'won' && lead.status !== 'lost'
+          ? { ...lead, status: 'quoted', updatedAt: now }
+          : lead,
+      ),
+    )
+  }
+  res.status(201).json({ data: { ...quotation, totals: quotationTotals(quotation) } })
+  if (quotation.status !== 'draft') {
+    const totals = quotationTotals(quotation)
+    const email = quotationIssuedEmail({
+      name: customer.name,
+      reference: quotation.ref,
+      title: quotation.title,
+      total: formatPortalMoney(totals.total),
+      validUntil: quotation.validUntil,
+      brand: content.brand.name,
+      portalUrl: portalUrl('/portal'),
+    })
+    void emailCustomer({
+      customerId: customer.id,
+      field: 'emailBilling',
+      to: customer.email,
+      kind: 'quotation-issued',
+      ...email,
+    }).catch((error) => console.error('[hvac-api] quotation email failed', error))
+  }
+})
+
 portalAdminRouter.post('/customers/:id/quotations', async (req, res) => {
   const parsed = quotationInputSchema.safeParse(req.body)
   if (!parsed.success) {
@@ -1044,6 +1182,8 @@ portalAdminRouter.post('/customers/:id/quotations', async (req, res) => {
       id: randomUUID(),
       ref: nextReference('QT', quotations),
       customerId: customer.id,
+      leadRef: parsed.data.leadRef ?? null,
+      serviceSlug: parsed.data.serviceSlug ?? null,
       title: parsed.data.title,
       service: parsed.data.service,
       lines: parsed.data.lines.map((line) => ({ ...line, id: line.id ?? randomUUID() })),
@@ -1053,6 +1193,8 @@ portalAdminRouter.post('/customers/:id/quotations', async (req, res) => {
       status: parsed.data.status,
       validUntil: parsed.data.validUntil,
       acceptedAt: null,
+      sentAt: parsed.data.status === 'sent' ? now : null,
+      lastReminderAt: null,
       changeRequest: null,
       createdAt: now,
       updatedAt: now,
@@ -1061,6 +1203,15 @@ portalAdminRouter.post('/customers/:id/quotations', async (req, res) => {
     return [record, ...quotations]
   })
   res.status(201).json({ data: saved && { ...saved, totals: quotationTotals(saved) } })
+  if (saved?.leadRef) {
+    await leadStore.mutate((leads) =>
+      leads.map((lead) =>
+        lead.ref === saved?.leadRef && lead.status !== 'won' && lead.status !== 'lost'
+          ? { ...lead, status: 'quoted', updatedAt: nowIso() }
+          : lead,
+      ),
+    )
+  }
   if (saved && saved.status !== 'draft') {
     const quotation = saved
     const totals = quotationTotals(quotation)
@@ -1109,7 +1260,8 @@ portalAdminRouter.patch('/customers/:id/quotations/:quotationId', async (req, re
     return
   }
   const currentQuotation = (await quotationStore.read()).find(
-    (quotation) => quotation.id === req.params.quotationId && quotation.customerId === req.params.id,
+    (quotation) =>
+      quotation.id === req.params.quotationId && quotation.customerId === req.params.id,
   )
   if (!currentQuotation) {
     res.status(404).json({ error: { code: 'not_found', message: 'Quotation not found.' } })
@@ -1117,7 +1269,10 @@ portalAdminRouter.patch('/customers/:id/quotations/:quotationId', async (req, re
   }
   if (!ifMatchSatisfied(req, currentQuotation.updatedAt)) {
     res.status(412).json({
-      error: { code: 'stale_record', message: 'This quotation changed in another session. Reload and apply your edit again.' },
+      error: {
+        code: 'stale_record',
+        message: 'This quotation changed in another session. Reload and apply your edit again.',
+      },
     })
     return
   }
@@ -1134,6 +1289,10 @@ portalAdminRouter.patch('/customers/:id/quotations/:quotationId', async (req, re
         lines: parsed.data.lines
           ? parsed.data.lines.map((line) => ({ ...line, id: line.id ?? randomUUID() }))
           : quotation.lines,
+        sentAt:
+          (parsed.data.status ?? quotation.status) === 'sent' && !quotation.sentAt
+            ? nowIso()
+            : quotation.sentAt,
         updatedAt: nowIso(),
       }
       if (quotation.status !== 'sent' && saved.status === 'sent') notifyCustomer = saved
@@ -1234,7 +1393,10 @@ portalAdminRouter.patch('/customers/:id/amc/:contractId', async (req, res) => {
   }
   if (!ifMatchSatisfied(req, currentContract.updatedAt)) {
     res.status(412).json({
-      error: { code: 'stale_record', message: 'This contract changed in another session. Reload and apply your edit again.' },
+      error: {
+        code: 'stale_record',
+        message: 'This contract changed in another session. Reload and apply your edit again.',
+      },
     })
     return
   }

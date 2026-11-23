@@ -342,6 +342,36 @@ export function adminPortalNotice(input: { name: string; email: string; phone: s
   }
 }
 
+export function quotationReminderEmail(input: {
+  name: string
+  reference: string
+  title: string
+  total: string
+  validUntil: string
+  daysLeft: number
+  brand: string
+  portalUrl: string
+}): { subject: string; html: string } {
+  const expired = input.daysLeft <= 0
+  return {
+    subject: expired
+      ? `Quotation expired · ${input.reference}`
+      : `Quotation expires in ${input.daysLeft} day${input.daysLeft === 1 ? '' : 's'} · ${input.reference}`,
+    html: SHELL(
+      expired ? 'Quotation expired' : 'Quotation reminder',
+      `<p style="margin:0 0 14px">Hello ${escapeHtml(input.name)},</p>
+<p style="margin:0 0 14px">Quotation <strong>${escapeHtml(input.reference)}</strong> for <strong>${escapeHtml(input.title)}</strong> ${
+        expired
+          ? 'has reached its validity date'
+          : `expires in ${input.daysLeft} day${input.daysLeft === 1 ? '' : 's'}`
+      }. Total: <strong>${escapeHtml(input.total)}</strong>. Valid until ${escapeHtml(input.validUntil)}.</p>
+<p style="margin:0 0 14px">Open the portal to accept the quotation or ask for a change.</p>
+<p style="margin:0"><a href="${escapeHtml(input.portalUrl)}" style="color:#0b5f82">Open the quotation</a></p>`,
+      input.brand,
+    ),
+  }
+}
+
 export function quotationIssuedEmail(input: {
   name: string
   reference: string

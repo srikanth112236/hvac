@@ -14,6 +14,7 @@ const nav: { label: string; to: string; icon: IconName; end?: boolean }[] = [
   { label: 'Dispatch', to: '/admin/dispatch', icon: 'calendar' },
   { label: 'Jobs', to: '/admin/jobs', icon: 'wrench' },
   { label: 'Invoices', to: '/admin/invoices', icon: 'coil' },
+  { label: 'Quotations', to: '/admin/quotations', icon: 'tag' },
   { label: 'Expenses', to: '/admin/expenses', icon: 'refrigerant' },
   { label: 'Team & payroll', to: '/admin/team', icon: 'wrench' },
   { label: 'Reminders', to: '/admin/reminders', icon: 'calendar' },
