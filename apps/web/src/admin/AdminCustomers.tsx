@@ -161,6 +161,12 @@ export function AdminCustomers() {
             <Button size="sm" icon="plus" onClick={() => setCreateOpen(true)}>
               Schedule visit
             </Button>
+            <a
+              href="/api/v1/admin/csv/customers"
+              className="flex h-9 items-center border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:border-cold/50 hover:text-cold"
+            >
+              Export CSV
+            </a>
           </div>
         }
       />

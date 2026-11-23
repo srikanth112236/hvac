@@ -20,7 +20,7 @@ import {
   type ReminderRecord,
   type TeamMember,
 } from '@hvac/shared'
-import { requireAdmin, requireAdminMutation } from './auth.js'
+import { requireAdmin, requireAdminMutation, requireWriteRole } from './auth.js'
 import { readSiteContent } from './content.js'
 import { reminderStore } from './reminders.js'
 import { createStore } from './store.js'
@@ -219,7 +219,11 @@ function notifyInvoiceIssued(
 }
 
 export const businessRouter = Router()
-businessRouter.use(requireAdmin, requireAdminMutation)
+businessRouter.use(
+  requireAdmin,
+  requireWriteRole('owner', 'admin', 'accountant'),
+  requireAdminMutation,
+)
 
 /* -------------------------------------------------------------------------- */
 /*  Invoices                                                                   */

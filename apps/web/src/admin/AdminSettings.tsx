@@ -1,18 +1,28 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
+import { ADMIN_ROLES, adminRoleLabel, type AdminRole } from '@hvac/shared'
 import { useLiveRefresh } from '@/admin/useLiveRefresh'
 import { Icon } from '@/components/icons'
-import { Badge, Button } from '@/components/ui'
+import { Badge, Button, Input, Select, useToast } from '@/components/ui'
 import { useSiteContent } from '@/content/SiteContentProvider'
-import { adminApi, type AdminUser, type AuditEntry, type DataHealth } from '@/admin/api'
+import { adminApi, type AdminUser, type AuditEntry, type DataHealth, type PublicAdminUser } from '@/admin/api'
 import { AdminPageHeader, Panel, formatDateTime } from '@/admin/ui'
 
 export function AdminSettings() {
   const { content, syncedAt, stale, refresh } = useSiteContent()
+  const { toast } = useToast()
   const [user, setUser] = useState<AdminUser | null>(null)
   const [mail, setMail] = useState<{ configured: boolean; from: string; notify: string } | null>(null)
   const [audit, setAudit] = useState<AuditEntry[]>([])
   const [health, setHealth] = useState<DataHealth | null>(null)
+  const [users, setUsers] = useState<PublicAdminUser[]>([])
+  const [userForm, setUserForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'viewer' as AdminRole,
+  })
+  const [userBusy, setUserBusy] = useState(false)
 
   const load = useCallback(() => {
     adminApi
@@ -31,8 +41,48 @@ export function AdminSettings() {
       .dataHealth()
       .then(setHealth)
       .catch(() => setHealth(null))
+    adminApi
+      .users()
+      .then(setUsers)
+      .catch(() => setUsers([]))
   }, [])
   useLiveRefresh(load, 30_000)
+
+  const createUser = async (event: FormEvent) => {
+    event.preventDefault()
+    setUserBusy(true)
+    try {
+      const created = await adminApi.createAdminUser(userForm)
+      setUsers((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)))
+      setUserForm({ name: '', email: '', password: '', role: 'viewer' })
+      toast({ title: 'User created', description: `${created.email} can sign in as ${created.role}.`, tone: 'success' })
+    } catch (caught) {
+      toast({
+        title: 'Could not create user',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
+    } finally {
+      setUserBusy(false)
+    }
+  }
+
+  const patchUser = async (
+    id: string,
+    patch: { role?: AdminRole; status?: 'active' | 'disabled' },
+  ) => {
+    try {
+      const updated = await adminApi.patchAdminUser(id, patch)
+      setUsers((current) => current.map((entry) => (entry.id === id ? updated : entry)))
+      toast({ title: 'User updated', tone: 'success' })
+    } catch (caught) {
+      toast({
+        title: 'Could not update user',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -63,10 +113,92 @@ export function AdminSettings() {
             </div>
           </dl>
           <p className="mt-3 text-[11px] leading-relaxed text-fg-faint">
-            One owner account protects this desk. Set ADMIN_EMAIL and ADMIN_PASSWORD in the API
-            environment before deployment; the development fallback is disabled in production.
+            The environment owner remains the recovery account. Additional staff accounts are managed
+            in Users &amp; roles; write actions are limited by role on the API.
           </p>
         </Panel>
+
+        {user?.role === 'owner' ? (
+          <Panel title="Users & roles" action={<Badge tone="neutral">{users.length}</Badge>}>
+            <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => void createUser(event)}>
+              <Input
+                label="Name"
+                required
+                value={userForm.name}
+                onChange={(event) => setUserForm({ ...userForm, name: event.target.value })}
+              />
+              <Input
+                label="Email"
+                type="email"
+                required
+                value={userForm.email}
+                onChange={(event) => setUserForm({ ...userForm, email: event.target.value })}
+              />
+              <Input
+                label="Password"
+                type="password"
+                required
+                minLength={8}
+                hint="At least 8 characters."
+                value={userForm.password}
+                onChange={(event) => setUserForm({ ...userForm, password: event.target.value })}
+              />
+              <Select
+                label="Role"
+                value={userForm.role}
+                onChange={(event) => setUserForm({ ...userForm, role: event.target.value as AdminRole })}
+                options={ADMIN_ROLES.map((role) => ({ value: role, label: adminRoleLabel[role] }))}
+              />
+              <div className="sm:col-span-2">
+                <Button type="submit" size="sm" disabled={userBusy}>
+                  {userBusy ? 'Creating…' : 'Add user'}
+                </Button>
+              </div>
+            </form>
+
+            <ul className="mt-4 flex flex-col divide-y divide-line/70">
+              {users.length === 0 ? (
+                <li className="py-3 text-[11px] text-fg-faint">
+                  No additional users. The environment owner is the only account.
+                </li>
+              ) : (
+                users.map((entry) => (
+                  <li key={entry.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-[12px] text-fg">{entry.name}</p>
+                      <p className="truncate text-[10px] text-fg-faint">{entry.email}</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Select
+                        aria-label={`Role for ${entry.email}`}
+                        value={entry.role}
+                        onChange={(event) =>
+                          void patchUser(entry.id, { role: event.target.value as AdminRole })
+                        }
+                        options={ADMIN_ROLES.map((role) => ({ value: role, label: adminRoleLabel[role] }))}
+                        className="min-w-[120px]"
+                      />
+                      <Badge tone={entry.status === 'active' ? 'success' : 'danger'}>
+                        {entry.status}
+                      </Badge>
+                      <Button
+                        variant="quiet"
+                        size="sm"
+                        onClick={() =>
+                          void patchUser(entry.id, {
+                            status: entry.status === 'active' ? 'disabled' : 'active',
+                          })
+                        }
+                      >
+                        {entry.status === 'active' ? 'Disable' : 'Enable'}
+                      </Button>
+                    </div>
+                  </li>
+                ))
+              )}
+            </ul>
+          </Panel>
+        ) : null}
 
         <Panel
           title="Public content feed"

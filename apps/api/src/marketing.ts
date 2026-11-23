@@ -15,7 +15,7 @@ import {
   type NewsletterRecord,
   type NewsletterSummary,
 } from '@hvac/shared'
-import { requireAdmin, requireAdminMutation } from './auth.js'
+import { requireAdmin, requireAdminMutation, requireWriteRole } from './auth.js'
 import { invoiceStore } from './business.js'
 import { leadStore } from './leads.js'
 import { customerStore } from './portalAuth.js'
@@ -377,7 +377,11 @@ function summarizeCoupons(records: CouponRecord[], now = Date.now()): CouponSumm
 
 export const marketingRouter = Router()
 
-marketingRouter.use(requireAdmin, requireAdminMutation)
+marketingRouter.use(
+  requireAdmin,
+  requireWriteRole('owner', 'admin'),
+  requireAdminMutation,
+)
 
 /* -------------------------------------------------------------------------- */
 /*  Newsletters                                                               */

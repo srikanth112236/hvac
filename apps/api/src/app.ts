@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { adminRouter } from './admin.js'
+import { adminUsersRouter } from './adminUsersRouter.js'
 import { auditAdmin } from './audit.js'
 import { authRouter } from './auth.js'
 import { allowedOrigins, IS_PROD, mailerConfigured } from './config.js'
@@ -92,6 +93,7 @@ app.use('/api/v1', portalAuthRouter)
 app.use('/api/v1', portalRouter)
 app.use('/api/v1', portalFileRouter)
 app.use('/api/v1/admin', auditAdmin)
+app.use('/api/v1/admin', adminUsersRouter)
 app.use('/api/v1/admin', adminRouter)
 app.use('/api/v1/admin', businessRouter)
 app.use('/api/v1/admin', customersRouter)

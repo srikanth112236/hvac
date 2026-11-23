@@ -16,6 +16,33 @@ export const ROLES = [
 ] as const
 export type Role = (typeof ROLES)[number]
 
+/** Roles for the single-workspace admin panel. */
+export const ADMIN_ROLES = ['owner', 'admin', 'manager', 'accountant', 'viewer'] as const
+export type AdminRole = (typeof ADMIN_ROLES)[number]
+export const adminRoleLabel: Record<AdminRole, string> = {
+  owner: 'Owner',
+  admin: 'Admin',
+  manager: 'Manager',
+  accountant: 'Accountant',
+  viewer: 'Viewer',
+}
+
+export const adminUserInputSchema = z.object({
+  name: z.string().trim().min(2, 'Enter a name').max(120),
+  email: z.string().trim().email('Enter a valid email').max(160),
+  password: z.string().min(8, 'Use at least 8 characters').max(200),
+  role: z.enum(ADMIN_ROLES).default('viewer'),
+})
+export type AdminUserInput = z.infer<typeof adminUserInputSchema>
+
+export const adminUserPatchSchema = z.object({
+  name: z.string().trim().min(2).max(120).optional(),
+  role: z.enum(ADMIN_ROLES).optional(),
+  status: z.enum(['active', 'disabled']).optional(),
+  password: z.string().min(8).max(200).optional(),
+})
+export type AdminUserPatch = z.infer<typeof adminUserPatchSchema>
+
 export const SERVICE_CATEGORIES = ['residential', 'commercial', 'industrial', 'maintenance'] as const
 export type ServiceCategory = (typeof SERVICE_CATEGORIES)[number]
 

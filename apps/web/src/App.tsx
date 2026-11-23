@@ -42,6 +42,9 @@ const AdminSettings = lazy(() => import('@/admin/AdminSettings').then((module) =
 const AdminCustomers = lazy(() =>
   import('@/admin/AdminCustomers').then((module) => ({ default: module.AdminCustomers })),
 )
+const AdminDispatch = lazy(() =>
+  import('@/admin/AdminDispatch').then((module) => ({ default: module.AdminDispatch })),
+)
 const AdminCustomerFile = lazy(() =>
   import('@/admin/AdminCustomerFile').then((module) => ({ default: module.AdminCustomerFile })),
 )
@@ -114,6 +117,7 @@ export function App() {
           <Route path="leads" element={<AdminLeads />} />
           <Route path="customers" element={<AdminCustomers />} />
           <Route path="customers/:customerId" element={<AdminCustomerFile />} />
+          <Route path="dispatch" element={<AdminDispatch />} />
           <Route path="newsletters" element={<AdminNewsletters />} />
           <Route path="coupons" element={<AdminCoupons />} />
           <Route path="reminders" element={<AdminReminders />} />

@@ -1,12 +1,17 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { Router, type NextFunction, type Request, type Response } from 'express'
 import { z } from 'zod'
+import type { AdminRole } from '@hvac/shared'
 import {
   ADMIN_EMAIL,
   ADMIN_PASSWORD,
   IS_PROD,
   originAllowed,
 } from './config.js'
+import {
+  adminPasswordMatches,
+  findAdminUserByEmail,
+} from './adminUsers.js'
 import { createStore } from './store.js'
 
 /**
@@ -34,8 +39,9 @@ if (!process.env.ADMIN_PASSWORD && !IS_PROD) {
 }
 
 interface Session {
+  userId?: string
   email: string
-  role: 'owner'
+  role: AdminRole
   expiresAt: number
 }
 
@@ -94,6 +100,16 @@ export async function pruneSessions(): Promise<void> {
   })
 }
 
+export async function revokeAdminSessionsForUser(userId: string): Promise<void> {
+  await sessionStore.mutate((current) => {
+    const next: Record<string, Session> = {}
+    for (const [token, session] of Object.entries(current)) {
+      if (session.userId !== userId) next[token] = session
+    }
+    return next
+  })
+}
+
 export async function requireAdmin(
   req: Request,
   res: Response,
@@ -130,6 +146,42 @@ export function requireAdminMutation(req: Request, res: Response, next: NextFunc
   next()
 }
 
+/** Require one of the given roles for every request in this router. */
+export function requireRole(...roles: AdminRole[]) {
+  return (_req: Request, res: Response, next: NextFunction): void => {
+    const admin = res.locals.admin as Session | undefined
+    if (!admin) {
+      res.status(401).json({ error: { code: 'unauthorised', message: 'Sign in to the admin panel.' } })
+      return
+    }
+    if (!roles.includes(admin.role)) {
+      res.status(403).json({
+        error: { code: 'forbidden_role', message: 'Your role cannot perform this action.' },
+      })
+      return
+    }
+    next()
+  }
+}
+
+/** Read-only roles can still use GET/HEAD; writes are limited to the given roles. */
+export function requireWriteRole(...roles: AdminRole[]) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (req.method === 'GET' || req.method === 'HEAD') {
+      next()
+      return
+    }
+    const admin = res.locals.admin as Session | undefined
+    if (!admin || !roles.includes(admin.role)) {
+      res.status(403).json({
+        error: { code: 'forbidden_role', message: 'Your role cannot perform this action.' },
+      })
+      return
+    }
+    next()
+  }
+}
+
 export const authRouter = Router()
 
 authRouter.post('/auth/login', async (req, res, next) => {
@@ -149,9 +201,8 @@ authRouter.post('/auth/login', async (req, res, next) => {
     return
   }
 
-  const emailMatches = safeEqual(parsed.data.email.toLowerCase(), ADMIN_EMAIL)
-  const passwordMatches = safeEqual(parsed.data.password, ADMIN_PASSWORD)
-  const accountKey = `acct:${parsed.data.email.trim().toLowerCase()}`
+  const email = parsed.data.email.trim().toLowerCase()
+  const accountKey = `acct:${email}`
   const accountRecord = accountAttempts.get(accountKey)
   if (accountRecord && accountRecord.resetAt > now && accountRecord.count >= MAX_ATTEMPTS) {
     res.status(429).json({
@@ -160,7 +211,20 @@ authRouter.post('/auth/login', async (req, res, next) => {
     return
   }
 
-  if (!emailMatches || !passwordMatches) {
+  const envOwner =
+    safeEqual(email, ADMIN_EMAIL) && safeEqual(parsed.data.password, ADMIN_PASSWORD)
+  let resolved: { email: string; role: AdminRole; userId?: string } | null = envOwner
+    ? { email: ADMIN_EMAIL, role: 'owner' }
+    : null
+
+  if (!resolved) {
+    const user = await findAdminUserByEmail(email)
+    if (user && user.status === 'active' && adminPasswordMatches(parsed.data.password, user)) {
+      resolved = { email: user.email, role: user.role, userId: user.id }
+    }
+  }
+
+  if (!resolved) {
     const nextRecord =
       record && record.resetAt > now
         ? { count: record.count + 1, resetAt: record.resetAt }
@@ -179,7 +243,7 @@ authRouter.post('/auth/login', async (req, res, next) => {
   attempts.delete(key)
   accountAttempts.delete(accountKey)
   const token = randomBytes(32).toString('hex')
-  const session: Session = { email: ADMIN_EMAIL, role: 'owner', expiresAt: now + SESSION_TTL_MS }
+  const session: Session = { ...resolved, expiresAt: now + SESSION_TTL_MS }
   try {
     await sessionStore.mutate((current) => {
       const next: Record<string, Session> = {}
@@ -201,7 +265,14 @@ authRouter.post('/auth/login', async (req, res, next) => {
     path: '/',
     maxAge: SESSION_TTL_MS,
   })
-  res.json({ data: { email: session.email, role: session.role, expiresAt: session.expiresAt } })
+  res.json({
+    data: {
+      email: session.email,
+      role: session.role,
+      userId: session.userId ?? null,
+      expiresAt: session.expiresAt,
+    },
+  })
 })
 
 authRouter.post('/auth/logout', async (req, res, next) => {

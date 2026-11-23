@@ -26,7 +26,7 @@ import {
   requireCustomerMutation,
   revokeCustomerSessions,
 } from './portalAuth.js'
-import { requireAdmin, requireAdminMutation } from './auth.js'
+import { requireAdmin, requireAdminMutation, requireWriteRole } from './auth.js'
 import { BUSINESS_TIMEZONE } from './config.js'
 import { createStore } from './store.js'
 import { appointmentConfirmation, sendMail } from './mailer.js'
@@ -393,7 +393,11 @@ portalRouter.patch(
 /* -------------------------------------------------------------------------- */
 /*  Admin customers and appointments                                          */
 /* -------------------------------------------------------------------------- */export const customersRouter = Router()
-customersRouter.use(requireAdmin, requireAdminMutation)
+customersRouter.use(
+  requireAdmin,
+  requireWriteRole('owner', 'admin', 'manager'),
+  requireAdminMutation,
+)
 
 customersRouter.get('/customers', async (_req, res) => {
   const [customers, invoices, appointments] = await Promise.all([

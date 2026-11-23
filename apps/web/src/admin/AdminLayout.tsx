@@ -5,11 +5,13 @@ import { Icon, type IconName } from '@/components/icons'
 import { Button } from '@/components/ui'
 import { adminApi, type AdminUser } from '@/admin/api'
 import { AdminLogin } from '@/admin/AdminLogin'
+import { AdminSearch } from '@/admin/AdminSearch'
 
 const nav: { label: string; to: string; icon: IconName; end?: boolean }[] = [
   { label: 'Overview', to: '/admin', icon: 'gauge', end: true },
   { label: 'Leads', to: '/admin/leads', icon: 'airflow' },
   { label: 'Customers', to: '/admin/customers', icon: 'thermostat' },
+  { label: 'Dispatch', to: '/admin/dispatch', icon: 'calendar' },
   { label: 'Invoices', to: '/admin/invoices', icon: 'coil' },
   { label: 'Expenses', to: '/admin/expenses', icon: 'refrigerant' },
   { label: 'Team & payroll', to: '/admin/team', icon: 'wrench' },
@@ -142,6 +144,10 @@ export function AdminLayout() {
             </NavLink>
           ))}
         </nav>
+
+        <div className="px-3 py-2 lg:px-4 lg:py-3">
+          <AdminSearch />
+        </div>
 
         <div className="mt-auto hidden border-t border-line p-4 lg:block">
           <span className="font-mono text-[8px] uppercase tracking-[0.12em] text-fg-faint">

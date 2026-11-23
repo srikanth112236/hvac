@@ -47,8 +47,22 @@ VITE_GA_MEASUREMENT_ID=        # optional; loads only after consent
 npm ci
 npm run typecheck
 npm run lint
-npm run build          # apps/web/dist
+npm run test
+npm run build          # apps/web/dist (client build)
 ```
+
+For crawler-visible HTML and same-origin SEO files:
+
+```bash
+npm run build:prerender   # build + render all public routes with Playwright
+API_ORIGIN=http://127.0.0.1:4000 npm run serve:web
+```
+
+`server.mjs` serves `apps/web/dist`, the prerendered `dist/<route>.html` files,
+and proxies `/api`, `/uploads`, `/sitemap.xml`, `/robots.txt`, `/llms.txt` and
+`/feed.xml` to the API, so those files live on the site origin. Re-run
+`build:prerender` after a content release so the build-time HTML/meta catches up;
+the client still fetches live content after boot.
 
 The API runs TypeScript directly with `tsx`; start it with
 `npm run start -w @hvac/api` (or under a process manager).

@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:prerender": "npm run build && npm run prerender",
+    "prerender": "node scripts/prerender.mjs",
+    "serve": "node server.mjs",
     "preview": "vite preview --port 4173 --strictPort",
     "typecheck": "tsc --noEmit",
     "fonts": "node scripts/fetch-fonts.mjs"
@@ -20,6 +23,8 @@
     "@tiptap/react": "^2.27.3",
     "@tiptap/starter-kit": "^2.27.3",
     "clsx": "^2.1.1",
+    "compression": "^1.8.2",
+    "express": "^4.22.3",
     "framer-motion": "^11.15.0",
     "gsap": "^3.12.5",
     "lenis": "^1.1.18",

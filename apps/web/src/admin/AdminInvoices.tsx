@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useLiveRefresh } from '@/admin/useLiveRefresh'
 import { Link, useNavigate } from 'react-router-dom'
 import { Icon } from '@/components/icons'
@@ -7,6 +7,7 @@ import {
   EmptyState,
   Input,
   Modal,
+  Pagination,
   Select,
   Table,
   useToast,
@@ -33,6 +34,8 @@ export function AdminInvoices() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
+  const [page, setPage] = useState(1)
+  const pageSize = 20
   const [creating, setCreating] = useState(false)
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
@@ -63,6 +66,16 @@ export function AdminInvoices() {
         .includes(query)
     })
   }, [invoices, filter, search])
+
+  useEffect(() => {
+    setPage(1)
+  }, [filter, search])
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const paged = useMemo(
+    () => filtered.slice((page - 1) * pageSize, page * pageSize),
+    [filtered, page],
+  )
 
   const create = async (input: InvoiceInput) => {
     setCreating(true)
@@ -199,6 +212,12 @@ export function AdminInvoices() {
             <Button icon="plus" onClick={() => setCreateOpen(true)}>
               New invoice
             </Button>
+            <a
+              href="/api/v1/admin/csv/invoices"
+              className="flex h-9 items-center border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:border-cold/50 hover:text-cold"
+            >
+              Export CSV
+            </a>
           </>
         }
       />
@@ -247,8 +266,12 @@ export function AdminInvoices() {
           action={<Button onClick={() => setCreateOpen(true)}>Create invoice</Button>}
         />
       ) : (
-        <Table columns={columns} rows={filtered} caption="Invoices" />
+        <Table columns={columns} rows={paged} caption="Invoices" />
       )}
+
+      {filtered.length > pageSize ? (
+        <Pagination page={page} pageCount={pageCount} onPageChange={setPage} className="justify-end" />
+      ) : null}
 
       <Modal
         open={createOpen}

@@ -9,7 +9,7 @@ import {
   type AdminLead,
   type ReminderRecord,
 } from '@hvac/shared'
-import { requireAdmin, requireAdminMutation } from './auth.js'
+import { requireAdmin, requireAdminMutation, requireWriteRole } from './auth.js'
 import {
   expenseStore,
   invoiceStore,
@@ -49,7 +49,11 @@ import {
 } from './portalModules.js'
 
 export const adminRouter = Router()
-adminRouter.use(requireAdmin, requireAdminMutation)
+adminRouter.use(
+  requireAdmin,
+  requireWriteRole('owner', 'admin', 'manager'),
+  requireAdminMutation,
+)
 
 const LEAD_STATUS_VALUES = ['new', 'contacted', 'site-visit', 'quoted', 'won', 'lost'] as const
 
@@ -161,6 +165,166 @@ adminRouter.get('/export', async (_req, res) => {
       'email-log.json': emailLog,
     },
   })
+})
+
+adminRouter.get('/search', async (req, res) => {
+  const query = typeof req.query.q === 'string' ? req.query.q.trim().toLowerCase() : ''
+  if (query.length < 2) {
+    res.json({ data: { results: [] } })
+    return
+  }
+  const [leads, customers, invoices, quotations, tickets, equipment] = await Promise.all([
+    leadStore.read(),
+    customerStore.read(),
+    invoiceStore.read(),
+    quotationStore.read(),
+    ticketStore.read(),
+    equipmentStore.read(),
+  ])
+  type Result = { type: string; id: string; title: string; subtitle: string; path: string }
+  const results: Result[] = []
+  const matches = (...values: Array<string | null | undefined>) =>
+    values.some((value) => (value ?? '').toLowerCase().includes(query))
+
+  for (const lead of leads) {
+    if (matches(lead.ref, lead.name, lead.email, lead.phone, lead.serviceName)) {
+      results.push({
+        type: 'Lead',
+        id: lead.ref,
+        title: `${lead.ref} · ${lead.name}`,
+        subtitle: `${lead.status} · ${lead.serviceName ?? 'Unallocated'}`,
+        path: '/admin/leads',
+      })
+    }
+  }
+  for (const customer of customers) {
+    if (matches(customer.name, customer.email, customer.phone)) {
+      results.push({
+        type: 'Customer',
+        id: customer.id,
+        title: customer.name,
+        subtitle: `${customer.email} · ${customer.status}`,
+        path: `/admin/customers/${customer.id}`,
+      })
+    }
+  }
+  for (const invoice of invoices) {
+    if (matches(invoice.ref, invoice.customerName, invoice.customerEmail, invoice.service)) {
+      results.push({
+        type: 'Invoice',
+        id: invoice.id,
+        title: `${invoice.ref} · ${invoice.customerName}`,
+        subtitle: `${invoice.status} · due ${invoice.dueDate}`,
+        path: `/admin/invoices/${invoice.id}`,
+      })
+    }
+  }
+  for (const quotation of quotations) {
+    if (matches(quotation.ref, quotation.title, quotation.service)) {
+      results.push({
+        type: 'Quotation',
+        id: quotation.id,
+        title: `${quotation.ref} · ${quotation.title}`,
+        subtitle: `${quotation.status} · ${quotation.service || 'Defined scope'}`,
+        path: `/admin/customers/${quotation.customerId}`,
+      })
+    }
+  }
+  for (const ticket of tickets) {
+    if (matches(ticket.ref, ticket.subject, ticket.category)) {
+      results.push({
+        type: 'Ticket',
+        id: ticket.id,
+        title: `${ticket.ref} · ${ticket.subject}`,
+        subtitle: `${ticket.status} · ${ticket.category}`,
+        path: `/admin/customers/${ticket.customerId}`,
+      })
+    }
+  }
+  for (const item of equipment) {
+    if (matches(item.name, item.brand, item.model, item.serial)) {
+      results.push({
+        type: 'Equipment',
+        id: item.id,
+        title: item.name,
+        subtitle: [item.brand, item.model, item.serial].filter(Boolean).join(' · ') || 'Equipment',
+        path: `/admin/customers/${item.customerId}`,
+      })
+    }
+  }
+
+  res.json({ data: { results: results.slice(0, 30) } })
+})
+
+function csvEscape(value: unknown): string {
+  const text = String(value ?? '')
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
+
+function toCsv(rows: unknown[][]): string {
+  return rows.map((row) => row.map(csvEscape).join(',')).join('\n')
+}
+
+adminRouter.get('/csv/:type', async (req, res) => {
+  const type = req.params.type
+  let rows: unknown[][]
+  if (type === 'leads') {
+    const leads = await leadStore.read()
+    rows = [
+      ['ref', 'createdAt', 'status', 'source', 'name', 'email', 'phone', 'city', 'service', 'value', 'owner'],
+      ...leads.map((lead) => [
+        lead.ref,
+        lead.createdAt,
+        lead.status,
+        lead.source,
+        lead.name,
+        lead.email,
+        lead.phone,
+        lead.city,
+        lead.serviceName,
+        lead.value,
+        lead.owner,
+      ]),
+    ]
+  } else if (type === 'invoices') {
+    const invoices = await invoiceStore.read()
+    rows = [
+      ['ref', 'customer', 'email', 'issued', 'due', 'status', 'total', 'paid', 'balance'],
+      ...invoices.map((invoice) => {
+        const totals = toInvoiceView(invoice).totals
+        return [
+          invoice.ref,
+          invoice.customerName,
+          invoice.customerEmail,
+          invoice.issueDate,
+          invoice.dueDate,
+          totals.state,
+          totals.total,
+          totals.paid,
+          totals.balance,
+        ]
+      }),
+    ]
+  } else if (type === 'customers') {
+    const customers = await customerStore.read()
+    rows = [
+      ['name', 'email', 'phone', 'address', 'status', 'createdAt'],
+      ...customers.map((customer) => [
+        customer.name,
+        customer.email,
+        customer.phone,
+        customer.address,
+        customer.status,
+        customer.createdAt,
+      ]),
+    ]
+  } else {
+    res.status(404).json({ error: { code: 'not_found', message: 'Unknown CSV type.' } })
+    return
+  }
+  res.set('Content-Type', 'text/csv; charset=utf-8')
+  res.set('Content-Disposition', `attachment; filename="${type}-${new Date().toISOString().slice(0, 10)}.csv"`)
+  res.send(toCsv(rows))
 })
 
 adminRouter.get('/data-health', async (_req, res) => {

@@ -161,6 +161,63 @@ describe('lead → invoice → customer portal', () => {
     expect(file.body.data.invoices.some((entry: { id: string }) => entry.id === invoiceId)).toBe(true)
     expect(file.body.data.customer.email).toBe('portal-test@example.com')
   })
+
+  it('supports global admin search and CSV export', async () => {
+    const search = await admin
+      .get('/api/v1/admin/search?q=portal-test')
+      .expect(200)
+    const types = search.body.data.results.map((entry: { type: string }) => entry.type)
+    expect(types).toContain('Customer')
+    expect(types).toContain('Lead')
+    expect(types).toContain('Invoice')
+
+    const csv = await admin.get('/api/v1/admin/csv/invoices').expect(200)
+    expect(csv.headers['content-type']).toContain('text/csv')
+    expect(csv.text).toContain('INV-')
+    expect(csv.text).toContain('Portal Test')
+  })
+})
+
+describe('RBAC', () => {
+  it('creates a viewer, allows reads, blocks writes and revokes on disable', async () => {
+    const created = await adminHeaders(
+      admin.post('/api/v1/admin/users'),
+    )
+      .send({
+        name: 'Viewer User',
+        email: 'viewer@test.local',
+        password: 'ViewerPass123!',
+        role: 'viewer',
+      })
+      .expect(201)
+    expect(created.body.data.role).toBe('viewer')
+
+    const viewer = request.agent(app)
+    await viewer
+      .post('/api/v1/auth/login')
+      .set('Origin', ORIGIN)
+      .send({ email: 'viewer@test.local', password: 'ViewerPass123!' })
+      .expect(200)
+
+    await viewer.get('/api/v1/admin/metrics').expect(200)
+    await viewer
+      .post('/api/v1/admin/reminders')
+      .set('Origin', ORIGIN)
+      .set('X-Admin-Request', '1')
+      .send({ title: 'x', body: 'y', dueAt: '2026-12-01T09:00:00.000Z' })
+      .expect(403)
+    await viewer.get('/api/v1/admin/users').expect(403)
+
+    await adminHeaders(
+      admin
+        .patch(`/api/v1/admin/users/${created.body.data.id}`)
+        ,
+    )
+      .send({ status: 'disabled' })
+      .expect(200)
+
+    await viewer.get('/api/v1/auth/me').expect(401)
+  })
 })
 
 describe('spam and upload defences', () => {
@@ -192,4 +249,5 @@ describe('spam and upload defences', () => {
       .expect(400)
   })
 })
+
 

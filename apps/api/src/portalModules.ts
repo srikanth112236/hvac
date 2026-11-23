@@ -28,7 +28,7 @@ import {
   type QuotationRecord,
   type SupportTicket,
 } from '@hvac/shared'
-import { requireAdmin, requireAdminMutation } from './auth.js'
+import { requireAdmin, requireAdminMutation, requireWriteRole } from './auth.js'
 import { ADMIN_NOTIFY_EMAIL } from './config.js'
 import { invoiceStore, toInvoiceView } from './business.js'
 import { readSiteContent } from './content.js'
@@ -674,7 +674,11 @@ portalFileRouter.patch(
 /* -------------------------------------------------------------------------- */
 
 export const portalAdminRouter = Router()
-portalAdminRouter.use(requireAdmin, requireAdminMutation)
+portalAdminRouter.use(
+  requireAdmin,
+  requireWriteRole('owner', 'admin', 'manager'),
+  requireAdminMutation,
+)
 
 portalAdminRouter.get('/customers/:id/file', async (req, res) => {
   const customer = await findCustomer(req.params.id)

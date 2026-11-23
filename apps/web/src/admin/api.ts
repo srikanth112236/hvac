@@ -1,5 +1,6 @@
 import type {
   AdminLead,
+  AdminRole,
   AmcContract,
   AmcInput,
   AppointmentRecord,
@@ -49,8 +50,19 @@ import type {
 
 export interface AdminUser {
   email: string
-  role: 'owner'
+  role: AdminRole
+  userId?: string | null
   expiresAt: number
+}
+
+export interface PublicAdminUser {
+  id: string
+  name: string
+  email: string
+  role: AdminRole
+  status: 'active' | 'disabled'
+  createdAt: string
+  updatedAt: string
 }
 
 export interface AdminMetrics {
@@ -129,6 +141,14 @@ export interface DataHealth {
   dataVersion: number | null
   counts: Record<string, number>
   issues: string[]
+}
+
+export interface SearchResult {
+  type: string
+  id: string
+  title: string
+  subtitle: string
+  path: string
 }
 
 export class ApiError extends Error {
@@ -220,6 +240,29 @@ export const adminApi = {
     request<{ data: AuditEntry[] }>('/admin/audit?limit=25').then((payload) => payload.data),
   dataHealth: () =>
     request<{ data: DataHealth }>('/admin/data-health').then((payload) => payload.data),
+  search: (query: string) =>
+    request<{ data: { results: SearchResult[] } }>(
+      `/admin/search?q=${encodeURIComponent(query)}`,
+    ).then((payload) => payload.data.results),
+  users: () => request<{ data: PublicAdminUser[] }>('/admin/users').then((payload) => payload.data),
+  createAdminUser: (input: {
+    name: string
+    email: string
+    password: string
+    role: AdminRole
+  }) =>
+    request<{ data: PublicAdminUser }>('/admin/users', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }).then((payload) => payload.data),
+  patchAdminUser: (
+    id: string,
+    patch: { name?: string; role?: AdminRole; status?: 'active' | 'disabled'; password?: string },
+  ) =>
+    request<{ data: PublicAdminUser }>(`/admin/users/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }).then((payload) => payload.data),
 
   leads: (query = '') =>
     request<{ data: AdminLead[]; meta: { count: number; total: number } }>(
