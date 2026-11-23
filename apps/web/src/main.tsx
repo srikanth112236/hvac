@@ -1,4 +1,4 @@
-import { StrictMode, type ReactNode } from 'react'
+﻿import { StrictMode, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 
@@ -51,7 +51,7 @@ createRoot(container).render(
         <SiteContentProvider>
           <BrandFromContent>
             <ToastProvider>
-              <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+              <BrowserRouter>
                 <App />
               </BrowserRouter>
             </ToastProvider>
@@ -61,3 +61,4 @@ createRoot(container).render(
     </ErrorBoundary>
   </StrictMode>,
 )
+
