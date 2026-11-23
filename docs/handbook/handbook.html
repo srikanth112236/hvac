@@ -1,0 +1,1348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Coolvane HVAC - Website and Operations Handbook</title>
+<style>
+  :root {
+    --paper: #f5f2ec;
+    --panel: #ffffff;
+    --panel2: #ece8df;
+    --ink: #101820;
+    --ink-soft: #26333d;
+    --on-ink: #f5f2ec;
+    --line: #cec7b8;
+    --line-strong: #968e7f;
+    --body: #46525a;
+    --muted: #7c878f;
+    --teal: #0f5c66;
+    --teal-deep: #0b464e;
+    --rust: #b5562b;
+    --green: #2f7d55;
+  }
+
+  @page { size: A4; margin: 0; }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #d9d4c9;
+    color: var(--ink);
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page {
+    position: relative;
+    width: 210mm;
+    height: 297mm;
+    overflow: hidden;
+    background: var(--paper);
+    page-break-after: always;
+    break-after: page;
+    padding: 14mm 16mm 12mm;
+  }
+  .page:last-child { page-break-after: auto; break-after: auto; }
+
+  .page-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10mm;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 3.2mm;
+  }
+  .brandmark { display: flex; align-items: center; gap: 3.2mm; }
+  .monogram {
+    width: 8.6mm; height: 8.6mm;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--line-strong);
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 8pt;
+    letter-spacing: 0.02em;
+    color: var(--ink);
+  }
+  .wordmark {
+    font-size: 6.8pt;
+    line-height: 1.35;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .wordmark small {
+    display: block;
+    margin-top: 0.5mm;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 4.9pt;
+    letter-spacing: 0.1em;
+    font-weight: 400;
+    color: var(--muted);
+  }
+  .doc-mark {
+    padding-top: 1.2mm;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 5.4pt;
+    line-height: 1.5;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: right;
+  }
+
+  .footer {
+    position: absolute;
+    left: 16mm; right: 16mm; bottom: 7mm;
+    display: flex; align-items: center; justify-content: space-between;
+    padding-top: 2.4mm;
+    border-top: 1px solid var(--line);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 5.2pt;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .footer b { color: var(--ink); font-weight: 400; }
+
+  .eyebrow {
+    display: flex; align-items: center; gap: 2.6mm;
+    margin: 0;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 5.8pt;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--teal);
+  }
+  .eyebrow::before {
+    content: "";
+    width: 7mm; height: 1px;
+    background: currentColor;
+    flex: 0 0 auto;
+  }
+  .section-index {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 7mm;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 5.6pt;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .section-index b { color: var(--teal); font-weight: 400; }
+
+  h1, h2, h3, p, figure { margin: 0; }
+  h1 {
+    font-family: Georgia, "Times New Roman", serif;
+    font-weight: 400;
+    font-size: 35pt;
+    line-height: 0.99;
+    letter-spacing: -0.024em;
+    color: var(--ink);
+  }
+  h2 {
+    font-family: Georgia, "Times New Roman", serif;
+    font-weight: 400;
+    font-size: 20pt;
+    line-height: 1.05;
+    letter-spacing: -0.018em;
+    color: var(--ink);
+  }
+  h3 {
+    font-size: 9.4pt;
+    line-height: 1.25;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .lead {
+    max-width: 138mm;
+    margin-top: 4.4mm;
+    font-size: 9.6pt;
+    line-height: 1.55;
+    color: var(--body);
+  }
+  .body-copy p {
+    margin-top: 3.4mm;
+    font-size: 8.2pt;
+    line-height: 1.62;
+    color: var(--body);
+  }
+  .body-copy p:first-child { margin-top: 0; }
+  .body-copy strong { color: var(--ink); font-weight: 600; }
+  .small {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 5.4pt;
+    line-height: 1.6;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .rule { height: 1px; background: var(--line); }
+
+  figure { position: relative; }
+  .shot {
+    overflow: hidden;
+    border: 1px solid var(--line);
+    background: #e9e5dc;
+  }
+  .shot img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top center;
+  }
+  figcaption {
+    display: flex; align-items: flex-start; gap: 2.6mm;
+    margin-top: 2.4mm;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 5.2pt;
+    line-height: 1.55;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  figcaption::before {
+    content: "";
+    flex: 0 0 auto;
+    width: 5mm; height: 1px;
+    margin-top: 1.5mm;
+    background: var(--line-strong);
+  }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 1.8mm;
+    padding: 1.2mm 2.4mm;
+    border: 1px solid rgb(15 92 102 / 0.38);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 5.2pt;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--teal);
+    background: rgb(15 92 102 / 0.035);
+  }
+  .pill::before {
+    content: "";
+    width: 1.5mm; height: 1.5mm;
+    border-radius: 50%;
+    background: var(--teal);
+  }
+
+  .fact-card {
+    border: 1px solid var(--line);
+    background: var(--panel);
+    padding: 5mm;
+  }
+  .fact-card .small { margin-bottom: 3mm; }
+  .fact-row {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 4mm;
+    padding: 2.6mm 0;
+    border-top: 1px solid var(--line);
+  }
+  .fact-row:first-of-type { border-top: 1px solid var(--line-strong); }
+  .fact-row span {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 5.3pt;
+    line-height: 1.4;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .fact-row b {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 17pt;
+    line-height: 1;
+    font-weight: 400;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .fact-row b small {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 6pt;
+    letter-spacing: 0;
+    color: var(--muted);
+  }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 9mm; }
+  .three-col { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6mm; }
+
+  .number-list { display: grid; gap: 0; }
+  .number-item {
+    display: grid; grid-template-columns: 9mm 1fr;
+    gap: 3.2mm;
+    padding: 3.2mm 0;
+    border-top: 1px solid var(--line);
+  }
+  .number-item:first-child { border-top: 1px solid var(--line-strong); }
+  .number-item .num {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 5.4pt;
+    letter-spacing: 0.08em;
+    color: var(--rust);
+    padding-top: 0.7mm;
+  }
+  .number-item p {
+    font-size: 7.6pt;
+    line-height: 1.52;
+    color: var(--body);
+  }
+  .number-item b { display: block; margin-bottom: 0.7mm; color: var(--ink); font-weight: 600; }
+
+  /* ------------------------------------------------------------------ */
+  /* Cover                                                              */
+  /* ------------------------------------------------------------------ */
+  .cover {
+    padding: 0;
+    background: var(--ink);
+    color: var(--on-ink);
+  }
+  .cover .pad { padding: 15mm 16mm 0; }
+  .cover-top { display: flex; align-items: flex-start; justify-content: space-between; }
+  .cover .monogram { border-color: rgb(245 242 236 / 0.42); color: var(--on-ink); }
+  .cover .wordmark { color: var(--on-ink); }
+  .cover .wordmark small { color: rgb(245 242 236 / 0.54); }
+  .cover-meta {
+    text-align: right;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 5.2pt;
+    line-height: 1.65;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: rgb(245 242 236 / 0.55);
+  }
+  .cover-meta b { display: block; color: var(--on-ink); font-weight: 400; }
+  .cover-main { margin-top: 25mm; }
+  .cover .eyebrow { color: rgb(114 202 210 / 0.92); }
+  .cover h1 {
+    margin-top: 5mm;
+    color: var(--on-ink);
+    font-size: 48pt;
+    line-height: 0.96;
+    letter-spacing: -0.03em;
+  }
+  .cover-lead {
+    max-width: 127mm;
+    margin-top: 6mm;
+    font-size: 9.2pt;
+    line-height: 1.62;
+    color: rgb(245 242 236 / 0.66);
+  }
+  .cover-shot {
+    position: absolute;
+    left: 0; right: 0; bottom: 18mm;
+    height: 109mm;
+    overflow: hidden;
+    border-top: 1px solid rgb(245 242 236 / 0.18);
+  }
+  .cover-shot img { width: 100%; height: 100%; object-fit: cover; object-position: center 24%; display: block; }
+  .cover-shot::after {
+    content: "";
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgb(16 24 32 / 0.58) 0%, rgb(16 24 32 / 0) 24%, rgb(16 24 32 / 0.18) 100%);
+  }
+  .cover-caption {
+    position: absolute;
+    left: 16mm; bottom: calc(18mm + 5mm);
+    z-index: 2;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 5.1pt;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: rgb(245 242 236 / 0.7);
+  }
+  .cover-bottom {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    height: 18mm;
+    padding: 0 16mm;
+    display: flex; align-items: center; justify-content: space-between;
+    border-top: 1px solid rgb(245 242 236 / 0.18);
+    background: var(--ink);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 5.2pt;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgb(245 242 236 / 0.48);
+  }
+  .cover-bottom b { color: var(--on-ink); font-weight: 400; }
+
+  /* ------------------------------------------------------------------ */
+  /* Page 2                                                             */
+  /* ------------------------------------------------------------------ */
+  .p2-main { display: grid; grid-template-columns: 1.18fr 0.82fr; gap: 10mm; margin-top: 7mm; }
+  .p2-points { margin-top: 5mm; }
+  .p2-shot { margin-top: 6mm; height: 64mm; }
+  .p2-shot img { object-position: center 30%; }
+
+  /* ------------------------------------------------------------------ */
+  /* Page 3                                                             */
+  /* ------------------------------------------------------------------ */
+  .sitemap {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 7mm;
+    border-top: 1px solid var(--line-strong);
+    margin-top: 5mm;
+  }
+  .site-item {
+    display: grid;
+    grid-template-columns: 7mm 1fr;
+    gap: 2mm;
+    padding: 2.5mm 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .site-item .n {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 5.1pt;
+    color: var(--rust);
+    padding-top: 0.5mm;
+  }
+  .site-item b { display: block; font-size: 7.6pt; color: var(--ink); font-weight: 600; }
+  .site-item span { display: block; margin-top: 0.3mm; font-size: 6.3pt; line-height: 1.4; color: var(--muted); }
+  .p3-top { display: grid; grid-template-columns: 1.02fr 0.98fr; gap: 9mm; margin-top: 7mm; align-items: start; }
+  .p3-shot { height: 67mm; }
+  .p3-note {
+    margin-top: 5mm;
+    padding: 4.4mm;
+    border: 1px solid var(--line);
+    background: var(--panel2);
+    font-size: 7.3pt;
+    line-height: 1.55;
+    color: var(--body);
+  }
+  .p3-note b { color: var(--ink); }
+  .journey {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    margin-top: 6mm;
+    border-top: 1px solid var(--line-strong);
+    border-bottom: 1px solid var(--line);
+  }
+  .journey div { padding: 3.6mm 3mm 3.6mm 0; border-right: 1px solid var(--line); }
+  .journey div:last-child { border-right: 0; padding-right: 0; }
+  .journey .k {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 5pt;
+    letter-spacing: 0.1em;
+    color: var(--rust);
+  }
+  .journey b { display: block; margin-top: 1.2mm; font-size: 7.4pt; font-weight: 600; }
+  .journey span { display: block; margin-top: 0.6mm; font-size: 6.2pt; line-height: 1.4; color: var(--muted); }
+
+  /* ------------------------------------------------------------------ */
+  /* Page 4                                                             */
+  /* ------------------------------------------------------------------ */
+  .theme-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; margin-top: 6mm; }
+  .theme-pair .shot { height: 58mm; }
+  .theme-pair figcaption { margin-top: 2mm; }
+  .theme-caption {
+    margin-top: 2mm;
+    display: flex; align-items: center; justify-content: space-between;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 5.3pt; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+  }
+  .theme-caption b { color: var(--ink); font-weight: 400; }
+  .tokens { margin-top: 7mm; display: grid; grid-template-columns: repeat(3, 1fr); gap: 5mm; }
+  .token-block { border-top: 1px solid var(--line-strong); padding-top: 3.2mm; }
+  .token-block h3 { font-family: Georgia, "Times New Roman", serif; font-size: 14pt; font-weight: 400; }
+  .token-block p { margin-top: 2mm; font-size: 7.4pt; line-height: 1.55; color: var(--body); }
+  .swatches { display: flex; gap: 1.6mm; margin-top: 3mm; }
+  .swatches i {
+    width: 7.6mm; height: 7.6mm; border: 1px solid rgb(16 24 32 / 0.12); display: block;
+  }
+  .swatches i:nth-child(1) { background: #f5f2ec; }
+  .swatches i:nth-child(2) { background: #101820; }
+  .swatches i:nth-child(3) { background: #0f5c66; }
+  .swatches i:nth-child(4) { background: #b5562b; }
+  .swatches i:nth-child(5) { background: #cec7b8; }
+  .contrast-note {
+    margin-top: 6mm;
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--teal);
+    background: var(--panel);
+    padding: 4.2mm 5mm;
+    display: grid; grid-template-columns: 1fr auto; gap: 6mm; align-items: center;
+  }
+  .contrast-note p { font-size: 7.5pt; line-height: 1.55; color: var(--body); }
+  .contrast-note b { color: var(--ink); }
+  .applied {
+    margin-top: 7mm;
+    border-top: 1px solid var(--line-strong);
+    padding-top: 3.4mm;
+    display: grid;
+    grid-template-columns: 38mm 1fr;
+    gap: 6mm;
+  }
+  .applied-kicker {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 5.2pt;
+    line-height: 1.5;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .applied-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6mm; }
+  .applied-grid b { display: block; font-size: 7.3pt; font-weight: 600; color: var(--ink); }
+  .applied-grid span { display: block; margin-top: 1mm; font-size: 6.4pt; line-height: 1.45; color: var(--muted); }
+
+  /* ------------------------------------------------------------------ */
+  /* Page 5                                                             */
+  /* ------------------------------------------------------------------ */
+  .p5-top { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 8mm; margin-top: 6mm; align-items: start; }
+  .p5-main { height: 64mm; }
+  .p5-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; margin-top: 5mm; }
+  .p5-pair .shot { height: 53mm; }
+  .motion-list { border-top: 1px solid var(--line-strong); }
+  .motion-item {
+    display: grid; grid-template-columns: 7mm 1fr;
+    gap: 2.5mm;
+    padding: 2.7mm 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .motion-item .n { font-family: Consolas, "Courier New", monospace; font-size: 5.1pt; color: var(--rust); padding-top: 0.5mm; }
+  .motion-item b { display: block; font-size: 7.5pt; font-weight: 600; color: var(--ink); }
+  .motion-item span { display: block; margin-top: 0.4mm; font-size: 6.4pt; line-height: 1.4; color: var(--muted); }
+
+  /* ------------------------------------------------------------------ */
+  /* Page 6                                                             */
+  /* ------------------------------------------------------------------ */
+  .p6-shot { height: 91mm; margin-top: 6mm; }
+  .p6-bottom { display: grid; grid-template-columns: 1.12fr 0.88fr; gap: 8mm; margin-top: 6mm; }
+  .module-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 6mm; }
+  .module {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 3mm;
+    padding: 2.1mm 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 7.2pt;
+    color: var(--ink);
+  }
+  .module span { font-family: Consolas, "Courier New", monospace; font-size: 5pt; color: var(--muted); }
+  .p6-quote {
+    border-left: 2px solid var(--rust);
+    padding-left: 4.5mm;
+    margin-top: 4mm;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 13pt;
+    line-height: 1.25;
+    color: var(--ink);
+  }
+  .p6-quote small {
+    display: block;
+    margin-top: 2.2mm;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 5.1pt;
+    line-height: 1.5;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Page 7                                                             */
+  /* ------------------------------------------------------------------ */
+  .p7-shot { height: 87mm; margin-top: 6mm; }
+  .workflow {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    margin-top: 6mm;
+    border-top: 1px solid var(--line-strong);
+    border-bottom: 1px solid var(--line);
+  }
+  .workflow div { padding: 3.2mm 3mm 3.2mm 0; border-right: 1px solid var(--line); }
+  .workflow div:last-child { border-right: 0; }
+  .workflow .n { font-family: Consolas, "Courier New", monospace; font-size: 5pt; color: var(--rust); }
+  .workflow b { display: block; margin-top: 1mm; font-size: 7.4pt; font-weight: 600; }
+  .workflow span { display: block; margin-top: 0.6mm; font-size: 6.3pt; line-height: 1.4; color: var(--muted); }
+  .p7-bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; margin-top: 6mm; }
+  .edit-table { width: 100%; border-collapse: collapse; }
+  .edit-table th {
+    text-align: left;
+    padding: 1.8mm 2mm 1.8mm 0;
+    border-bottom: 1px solid var(--line-strong);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 5pt; font-weight: 400; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+  }
+  .edit-table td {
+    padding: 1.7mm 2mm 1.7mm 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 6.9pt;
+    line-height: 1.35;
+    color: var(--body);
+    vertical-align: top;
+  }
+  .edit-table td:first-child { color: var(--ink); }
+
+  /* ------------------------------------------------------------------ */
+  /* Page 8                                                             */
+  /* ------------------------------------------------------------------ */
+  .p8-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; margin-top: 6mm; }
+  .p8-pair .shot { height: 56mm; }
+  .p8-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; margin-top: 6mm; }
+  .p8-cols .number-item p { min-height: 13mm; }
+  .security-note {
+    margin-top: 5mm;
+    border-top: 1px solid var(--line-strong);
+    border-bottom: 1px solid var(--line);
+    padding: 3mm 0;
+    display: grid; grid-template-columns: auto 1fr; gap: 5mm; align-items: start;
+  }
+  .security-note .tag { font-family: Consolas, "Courier New", monospace; font-size: 5.1pt; color: var(--rust); letter-spacing: 0.1em; }
+  .security-note p { font-size: 6.8pt; line-height: 1.55; color: var(--body); }
+
+  /* ------------------------------------------------------------------ */
+  /* Page 9                                                             */
+  /* ------------------------------------------------------------------ */
+  .benefits { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8mm; margin-top: 6mm; }
+  .benefit {
+    display: grid; grid-template-columns: 8mm 1fr;
+    gap: 2.5mm;
+    padding: 3.8mm 0;
+    border-top: 1px solid var(--line);
+  }
+  .benefit:nth-child(-n+2) { border-top: 1px solid var(--line-strong); }
+  .benefit .n { font-family: Consolas, "Courier New", monospace; font-size: 5.1pt; color: var(--rust); padding-top: 0.6mm; }
+  .benefit b { display: block; font-family: Georgia, "Times New Roman", serif; font-size: 13pt; font-weight: 400; color: var(--ink); }
+  .benefit p { margin-top: 1.3mm; font-size: 7.2pt; line-height: 1.5; color: var(--body); }
+  .compare {
+    display: grid; grid-template-columns: 1fr 1fr;
+    margin-top: 6mm;
+    border: 1px solid var(--line);
+  }
+  .compare > div { padding: 4.5mm; }
+  .compare .before { background: var(--panel2); border-right: 1px solid var(--line); }
+  .compare .after { background: var(--ink); color: var(--on-ink); }
+  .compare h3 { font-family: Consolas, "Courier New", monospace; font-size: 5.3pt; font-weight: 400; letter-spacing: 0.13em; text-transform: uppercase; color: var(--muted); }
+  .compare .after h3 { color: rgb(245 242 236 / 0.55); }
+  .compare ul { margin: 2.6mm 0 0; padding: 0; list-style: none; }
+  .compare li { padding: 1.8mm 0; border-top: 1px solid var(--line); font-size: 7.2pt; line-height: 1.4; color: var(--body); }
+  .compare .after li { border-top: 1px solid rgb(245 242 236 / 0.16); color: rgb(245 242 236 / 0.82); }
+  .compare li:first-child { border-top: 0; }
+  .principle {
+    margin-top: 6mm;
+    display: flex; align-items: center; justify-content: space-between; gap: 8mm;
+    padding: 4.2mm 0;
+    border-top: 1px solid var(--line-strong);
+    border-bottom: 1px solid var(--line);
+  }
+  .principle p { font-family: Georgia, "Times New Roman", serif; font-size: 14pt; line-height: 1.25; color: var(--ink); }
+  .principle span { font-family: Consolas, "Courier New", monospace; font-size: 5.2pt; letter-spacing: 0.11em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+
+  /* ------------------------------------------------------------------ */
+  /* Page 10                                                            */
+  /* ------------------------------------------------------------------ */
+  .closing {
+    padding: 15mm 16mm 0;
+    background: var(--ink);
+    color: var(--on-ink);
+  }
+  .closing .page-head { border-bottom-color: rgb(245 242 236 / 0.2); }
+  .closing .monogram { border-color: rgb(245 242 236 / 0.42); color: var(--on-ink); }
+  .closing .wordmark { color: var(--on-ink); }
+  .closing .wordmark small { color: rgb(245 242 236 / 0.52); }
+  .closing .doc-mark { color: rgb(245 242 236 / 0.48); }
+  .closing .section-index { color: rgb(245 242 236 / 0.46); }
+  .closing .section-index b { color: #72cad2; }
+  .closing .eyebrow { color: rgb(114 202 210 / 0.92); }
+  .closing h1 { color: var(--on-ink); font-size: 38pt; max-width: 160mm; margin-top: 4mm; }
+  .closing .lead { color: rgb(245 242 236 / 0.64); max-width: 145mm; }
+  .closing-grid { display: grid; grid-template-columns: 1.02fr 0.98fr; gap: 10mm; margin-top: 10mm; }
+  .include-list { display: grid; grid-template-columns: 1fr 1fr; gap: 0 6mm; border-top: 1px solid rgb(245 242 236 / 0.4); }
+  .include {
+    display: flex; align-items: flex-start; gap: 2.6mm;
+    padding: 2.8mm 0;
+    border-bottom: 1px solid rgb(245 242 236 / 0.16);
+    font-size: 7.1pt;
+    line-height: 1.4;
+    color: rgb(245 242 236 / 0.78);
+  }
+  .include::before { content: "—"; color: #72cad2; flex: 0 0 auto; }
+  .contact-block {
+    border: 1px solid rgb(245 242 236 / 0.2);
+    padding: 5mm;
+    background: rgb(255 255 255 / 0.025);
+  }
+  .contact-block h3 {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 5.3pt; font-weight: 400; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(245 242 236 / 0.52);
+  }
+  .contact-block p { margin-top: 2.2mm; font-size: 7.4pt; line-height: 1.55; color: rgb(245 242 236 / 0.82); }
+  .contact-block .big { font-family: Georgia, "Times New Roman", serif; font-size: 16pt; line-height: 1.15; color: var(--on-ink); }
+  .contact-block a { color: var(--on-ink); text-decoration: none; }
+  .closing-lower {
+    position: absolute; left: 16mm; right: 16mm; bottom: 22mm;
+    display: grid; grid-template-columns: 1.3fr 0.7fr;
+    gap: 10mm;
+    align-items: end;
+    padding-top: 5mm;
+    border-top: 1px solid rgb(245 242 236 / 0.2);
+  }
+  .signature { font-family: Georgia, "Times New Roman", serif; font-size: 12pt; line-height: 1.35; color: var(--on-ink); }
+  .signature small {
+    display: block; margin-top: 2mm;
+    font-family: Consolas, "Courier New", monospace; font-size: 5.1pt; letter-spacing: 0.1em; text-transform: uppercase; color: rgb(245 242 236 / 0.48);
+  }
+  .closing-quote {
+    position: absolute;
+    left: 16mm; right: 16mm; bottom: 64mm;
+    max-width: 155mm;
+    padding-top: 4mm;
+    border-top: 1px solid rgb(245 242 236 / 0.22);
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 16pt;
+    line-height: 1.24;
+    color: rgb(245 242 236 / 0.86);
+  }
+  .closing .footer { border-top-color: rgb(245 242 236 / 0.2); color: rgb(245 242 236 / 0.44); }
+  .closing .footer b { color: rgb(245 242 236 / 0.72); }
+
+  .screen-only { display: none; }
+  @media screen and (max-width: 900px) {
+    body { background: #d9d4c9; padding: 10px; }
+    .page { margin: 0 auto 14px; box-shadow: 0 8px 30px rgb(16 24 32 / 0.18); transform-origin: top center; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ======================================================================= -->
+<!-- 01 — COVER                                                              -->
+<!-- ======================================================================= -->
+<section class="page cover" data-page="1">
+  <div class="pad">
+    <div class="cover-top">
+      <div class="brandmark">
+        <span class="monogram">CV</span>
+        <span class="wordmark">Coolvane HVAC<small>Thermal systems · Mumbai</small></span>
+      </div>
+      <div class="cover-meta">
+        <b>Website &amp; operations handbook</b>
+        Edition 01 · November 2026<br />
+        Private client document
+      </div>
+    </div>
+
+    <div class="cover-main">
+      <p class="eyebrow">Website · design · management · portal</p>
+      <h1>The Coolvane<br />operating system.</h1>
+      <p class="cover-lead">
+        A corporate website, a content studio and an administration workspace built around one
+        principle: the evidence should be as considered as the engineering. This document explains
+        what has been built, how it is maintained, and why it needs no developer for daily work.
+      </p>
+    </div>
+  </div>
+
+  <figure class="cover-shot">
+    <img src="assets/home-hero-dark.png" alt="Coolvane homepage in the Foundry dark theme" />
+  </figure>
+  <div class="cover-bottom">
+    <span>Prepared for the partners of Coolvane Climate Systems Pvt. Ltd.</span>
+    <span><b>10 pages</b> · Website / design / management / benefits / admin</span>
+  </div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- 02 — EXECUTIVE SUMMARY                                                  -->
+<!-- ======================================================================= -->
+<section class="page" data-page="2">
+  <header class="page-head">
+    <div class="brandmark">
+      <span class="monogram">CV</span>
+      <span class="wordmark">Coolvane HVAC<small>Thermal systems · Mumbai</small></span>
+    </div>
+    <div class="doc-mark">Website &amp; operations handbook<br />Edition 01 · 2026</div>
+  </header>
+
+  <div class="section-index"><span><b>01</b> / Executive summary</span><span>CV-DOC-01</span></div>
+  <h1 style="margin-top:6mm;max-width:170mm">A website that works the way the business does.</h1>
+  <p class="lead">
+    Coolvane does not sell air conditioning by atmosphere. Every project is selected on load,
+    installed to a drawing, and handed over with measurements. The website now follows the same
+    discipline — and the team can maintain it without writing code.
+  </p>
+
+  <div class="p2-main">
+    <div class="body-copy">
+      <p>
+        The public site explains the practice across ten focused pages. Behind it, a single content
+        document feeds every headline, service, case study and process gate. When the team edits a
+        section and saves, the public pages follow within the publishing window. There is no deploy,
+        no developer ticket and no second copy of the truth.
+      </p>
+      <p>
+        The same back office carries the commercial file: enquiries, customers, GST invoices,
+        payments, expenses, payroll, reminders and the customer portal. It is one authenticated
+        workspace rather than a collection of disconnected tools.
+      </p>
+      <div class="p2-points">
+        <div class="number-list">
+          <div class="number-item">
+            <span class="num">01</span>
+            <p><b>One source of truth.</b> Pages, services, cases and process stages read from the same versioned content document.</p>
+          </div>
+          <div class="number-item">
+            <span class="num">02</span>
+            <p><b>Publishing without code.</b> Copy, imagery and SEO fields are edited in the studio and saved to the live site.</p>
+          </div>
+          <div class="number-item">
+            <span class="num">03</span>
+            <p><b>Operations in the same place.</b> Leads, invoices, collections, payroll and the customer portal share one admin.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="fact-card">
+      <div class="small">At a glance</div>
+      <div class="fact-row"><span>Primary public pages</span><b>10</b></div>
+      <div class="fact-row"><span>Systems in the index</span><b>22</b></div>
+      <div class="fact-row"><span>Delivery gates</span><b>6</b></div>
+      <div class="fact-row"><span>Service cities</span><b>3</b></div>
+      <div class="fact-row"><span>Publish window</span><b>30<small> sec</small></b></div>
+      <div class="fact-row"><span>Admin modules</span><b>11</b></div>
+      <p class="small" style="margin-top:4mm;color:var(--muted)">
+        Live data, not sample numbers. Figures are read from the API and the current content version.
+      </p>
+    </aside>
+  </div>
+
+  <figure class="shot p2-shot">
+    <img src="assets/home-hero-light.png" alt="Coolvane homepage in the Atelier light theme" />
+  </figure>
+  <figcaption>Atelier light theme · the same homepage, tuned for paper, daylight and print-adjacent reading.</figcaption>
+
+  <div class="footer"><span>Coolvane · Website &amp; operations handbook</span><span><b>02</b> / 10</span></div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- 03 — PUBLIC WEBSITE                                                     -->
+<!-- ======================================================================= -->
+<section class="page" data-page="3">
+  <header class="page-head">
+    <div class="brandmark">
+      <span class="monogram">CV</span>
+      <span class="wordmark">Coolvane HVAC<small>Thermal systems · Mumbai</small></span>
+    </div>
+    <div class="doc-mark">Website &amp; operations handbook<br />Edition 01 · 2026</div>
+  </header>
+
+  <div class="section-index"><span><b>02</b> / The public website</span><span>CV-IDX-01</span></div>
+  <h1 style="margin-top:6mm;max-width:160mm">Ten pages. One argument.</h1>
+  <p class="lead">
+    The site is structured as a considered sales conversation, not a catalogue. Each page has one
+    commercial job and hands the visitor to the next useful decision: understand the system, see the
+    proof, then send a brief or book a visit.
+  </p>
+
+  <div class="p3-top">
+    <div>
+      <div class="sitemap">
+        <div class="site-item"><span class="n">01</span><div><b>Home</b><span>Position, systems, proof, process</span></div></div>
+        <div class="site-item"><span class="n">02</span><div><b>Services</b><span>22 systems, filters, capacities</span></div></div>
+        <div class="site-item"><span class="n">03</span><div><b>Systems</b><span>Equipment index and detail</span></div></div>
+        <div class="site-item"><span class="n">04</span><div><b>About</b><span>Firm, record, people, standards</span></div></div>
+        <div class="site-item"><span class="n">05</span><div><b>Process</b><span>Survey to signature, six gates</span></div></div>
+        <div class="site-item"><span class="n">06</span><div><b>Work</b><span>Before/after cases and metrics</span></div></div>
+        <div class="site-item"><span class="n">07</span><div><b>AMC</b><span>Maintenance plans and cover</span></div></div>
+        <div class="site-item"><span class="n">08</span><div><b>Journal</b><span>Field notes and articles</span></div></div>
+        <div class="site-item"><span class="n">09</span><div><b>Contact</b><span>Coverage, callback, brief</span></div></div>
+        <div class="site-item"><span class="n">10</span><div><b>Portal</b><span>Customer sign-in and service</span></div></div>
+      </div>
+    </div>
+
+    <div>
+      <figure class="shot p3-shot">
+        <img src="assets/services-index.png" alt="Coolvane services index page" />
+      </figure>
+      <figcaption>Services index · the register states the span: 22 systems, 4 categories, 3 cities.</figcaption>
+      <div class="p3-note">
+        <b>Written for a buyer, not a browser.</b> Capacity, lead time and the specification that
+        decides the selection are stated before price. The page earns the enquiry by being useful
+        before it is persuasive.
+      </div>
+    </div>
+  </div>
+
+  <div class="journey">
+    <div><span class="k">STEP 01</span><b>Orient</b><span>Home and service index establish the range and the standard.</span></div>
+    <div><span class="k">STEP 02</span><b>Specify</b><span>System detail gives capacity, features and selection logic.</span></div>
+    <div><span class="k">STEP 03</span><b>Verify</b><span>Work, process and journal show the record behind the claim.</span></div>
+    <div><span class="k">STEP 04</span><b>Act</b><span>Brief, callback or portal booking — one clear next step.</span></div>
+  </div>
+
+  <div class="footer"><span>Coolvane · Website &amp; operations handbook</span><span><b>03</b> / 10</span></div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- 04 — DESIGN LANGUAGE                                                    -->
+<!-- ======================================================================= -->
+<section class="page" data-page="4">
+  <header class="page-head">
+    <div class="brandmark">
+      <span class="monogram">CV</span>
+      <span class="wordmark">Coolvane HVAC<small>Thermal systems · Mumbai</small></span>
+    </div>
+    <div class="doc-mark">Website &amp; operations handbook<br />Edition 01 · 2026</div>
+  </header>
+
+  <div class="section-index"><span><b>03</b> / Design language</span><span>CV-DS-02</span></div>
+  <h1 style="margin-top:6mm;max-width:165mm">Two registers. One system.</h1>
+  <p class="lead">
+    Foundry is the dark, engineered register: control-room surfaces, precise rules and cool light.
+    Atelier is its daylight counterpart: warm paper, editorial serif and quiet borders. They are not
+    two websites. They are one token layer, cast twice.
+  </p>
+
+  <div class="theme-pair">
+    <figure>
+      <div class="shot"><img src="assets/home-hero-dark.png" alt="Homepage in the Foundry dark theme" /></div>
+      <div class="theme-caption"><b>Foundry</b><span>Dark · engineered</span></div>
+    </figure>
+    <figure>
+      <div class="shot"><img src="assets/home-hero-light.png" alt="Homepage in the Atelier light theme" /></div>
+      <div class="theme-caption"><b>Atelier</b><span>Light · editorial</span></div>
+    </figure>
+  </div>
+
+  <div class="tokens">
+    <div class="token-block">
+      <h3>Tokens, not duplicates</h3>
+      <p>Colour, type, spacing, radius and depth are semantic variables. A component is written once and resolves correctly in both themes — including fills, borders and schematic lines.</p>
+      <div class="swatches"><i></i><i></i><i></i><i></i><i></i></div>
+    </div>
+    <div class="token-block">
+      <h3>A typographic hierarchy</h3>
+      <p>An editorial serif carries the argument. A neutral sans carries the detail. A mono face marks references, labels and measurements — the language of a commissioning sheet.</p>
+    </div>
+    <div class="token-block">
+      <h3>Drawn, not decorated</h3>
+      <p>Blueprints, system maps and process diagrams use stronger line tokens so they remain legible on paper. Connectors carry information; decorative layers never carry meaning.</p>
+    </div>
+  </div>
+
+  <div class="contrast-note">
+    <p>
+      <b>Light-theme correction, completed.</b> Primary actions now always carry a filled surface;
+      ink panels remain ink; schematic connectors and diagram rows use the strong line tokens; and
+      decorative parallax layers sit behind the information rather than collapsing it. The result is
+      parity between the two themes, not a light version of the dark one.
+    </p>
+    <span class="pill">Contrast checked</span>
+  </div>
+
+  <div class="applied">
+    <span class="applied-kicker">The system, applied</span>
+    <div class="applied-grid">
+      <div><b>Public site</b><span>Hierarchy, proof and motion at reading pace.</span></div>
+      <div><b>Admin</b><span>Density without noise; every number remains legible.</span></div>
+      <div><b>Documents</b><span>Print-consistent rules, charts and handover sheets.</span></div>
+    </div>
+  </div>
+
+  <div class="footer"><span>Coolvane · Website &amp; operations handbook</span><span><b>04</b> / 10</span></div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- 05 — MOTION & SIGNATURE SECTIONS                                        -->
+<!-- ======================================================================= -->
+<section class="page" data-page="5">
+  <header class="page-head">
+    <div class="brandmark">
+      <span class="monogram">CV</span>
+      <span class="wordmark">Coolvane HVAC<small>Thermal systems · Mumbai</small></span>
+    </div>
+    <div class="doc-mark">Website &amp; operations handbook<br />Edition 01 · 2026</div>
+  </header>
+
+  <div class="section-index"><span><b>04</b> / Motion &amp; signature sections</span><span>CV-MOT-05</span></div>
+  <h1 style="margin-top:6mm;max-width:158mm">Motion with a job to do.</h1>
+  <p class="lead">
+    Five new sequences carry the visitor through the argument: a setpoint, a delivery rail, a measured
+    band, a system drawing and a dispatch clock. Every movement explains sequence or scale. None of
+    it is there simply to fill the scroll.
+  </p>
+
+  <div class="p5-top">
+    <figure>
+      <div class="shot p5-main"><img src="assets/section-setpoint.png" alt="Setpoint section with animated gauge" /></div>
+      <figcaption>The setpoint · copy, gauge and measurement panel share one pinned view.</figcaption>
+    </figure>
+    <div>
+      <div class="motion-list">
+        <div class="motion-item"><span class="n">01</span><div><b>The setpoint</b><span>A pinned standard, a live gauge and the measurements that prove it.</span></div></div>
+        <div class="motion-item"><span class="n">02</span><div><b>Delivery rail</b><span>Six gates move horizontally as the page is held — the process as a physical sequence.</span></div></div>
+        <div class="motion-item"><span class="n">03</span><div><b>Measured band</b><span>A dark full-bleed pause where the counters advance against the record.</span></div></div>
+        <div class="motion-item"><span class="n">04</span><div><b>System map</b><span>Connectors draw on scroll: source, branch, terminals and control link.</span></div></div>
+        <div class="motion-item"><span class="n">05</span><div><b>Dispatch coverage</b><span>A scroll-driven city strip and a response band for Mumbai, Pune and Navi Mumbai.</span></div></div>
+      </div>
+      <p class="small" style="margin-top:3.6mm">Reduced-motion preference respected · no autoplay media · no layout shift</p>
+    </div>
+  </div>
+
+  <div class="p5-pair">
+    <figure>
+      <div class="shot"><img src="assets/section-measured-3.png" alt="Dark measured band with animated statistics" /></div>
+      <figcaption>Measured band · 17 years, 4,120 systems, 18,600 TR, 4-hour response.</figcaption>
+    </figure>
+    <figure>
+      <div class="shot"><img src="assets/system-map-crop.png" alt="System map drawing with visible connectors" style="object-position:center center" /></div>
+      <figcaption>System map · one line schedule, one control narrative, one commissioning record.</figcaption>
+    </figure>
+  </div>
+
+  <div class="footer"><span>Coolvane · Website &amp; operations handbook</span><span><b>05</b> / 10</span></div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- 06 — ADMIN PORTAL                                                       -->
+<!-- ======================================================================= -->
+<section class="page" data-page="6">
+  <header class="page-head">
+    <div class="brandmark">
+      <span class="monogram">CV</span>
+      <span class="wordmark">Coolvane HVAC<small>Thermal systems · Mumbai</small></span>
+    </div>
+    <div class="doc-mark">Website &amp; operations handbook<br />Edition 01 · 2026</div>
+  </header>
+
+  <div class="section-index"><span><b>05</b> / The control room</span><span>CV-ADM-01</span></div>
+  <h1 style="margin-top:6mm;max-width:160mm">The control room.</h1>
+  <p class="lead">
+    One authenticated workspace holds the pipeline, the commercial file and the website copy. The
+    figures are read live from the API, so the dashboard is a working instrument rather than a
+    monthly report.
+  </p>
+
+  <figure class="shot p6-shot">
+    <img src="assets/admin-overview.png" alt="Coolvane admin overview dashboard" />
+  </figure>
+  <figcaption>Overview · open pipeline, collections, month-to-date position, pipeline stages and cash movement.</figcaption>
+
+  <div class="p6-bottom">
+    <div>
+      <div class="module-grid">
+        <div class="module">Overview <span>01</span></div>
+        <div class="module">Leads <span>02</span></div>
+        <div class="module">Customers <span>03</span></div>
+        <div class="module">Invoices <span>04</span></div>
+        <div class="module">Expenses <span>05</span></div>
+        <div class="module">Team &amp; payroll <span>06</span></div>
+        <div class="module">Reminders <span>07</span></div>
+        <div class="module">Website content <span>08</span></div>
+        <div class="module">Journal <span>09</span></div>
+        <div class="module">Systems <span>10</span></div>
+        <div class="module">Settings <span>11</span></div>
+        <div class="module">Customer portal <span>12</span></div>
+      </div>
+    </div>
+    <div>
+      <div class="p6-quote">
+        “Inbox, pipeline and collections in one view.”
+        <small>Admin overview · live data from the API</small>
+      </div>
+      <p class="body-copy" style="margin-top:4mm;font-size:7.4pt;line-height:1.55;color:var(--body)">
+        The dashboard is the first screen after sign-in. It shows what needs attention today, then
+        lets the team move directly into the record that needs action. No developer, no export, no
+        reconciliation between separate systems.
+      </p>
+    </div>
+  </div>
+
+  <div class="footer"><span>Coolvane · Website &amp; operations handbook</span><span><b>06</b> / 10</span></div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- 07 — CONTENT STUDIO                                                     -->
+<!-- ======================================================================= -->
+<section class="page" data-page="7">
+  <header class="page-head">
+    <div class="brandmark">
+      <span class="monogram">CV</span>
+      <span class="wordmark">Coolvane HVAC<small>Thermal systems · Mumbai</small></span>
+    </div>
+    <div class="doc-mark">Website &amp; operations handbook<br />Edition 01 · 2026</div>
+  </header>
+
+  <div class="section-index"><span><b>06</b> / Content studio</span><span>CV-CMS-19</span></div>
+  <h1 style="margin-top:6mm;max-width:166mm">Change the words, not the code.</h1>
+  <p class="lead">
+    Every public section is addressable in the content studio. The team opens a page, edits its copy
+    or image, previews it if needed, and saves. The site publishes from the same versioned document
+    that the studio writes to.
+  </p>
+
+  <figure class="shot p7-shot">
+    <img src="assets/admin-content.png" alt="Content studio editing the Coolvane homepage" />
+  </figure>
+  <figcaption>Content &amp; SEO · live version 19 · page and section navigation · image replacement and alt text.</figcaption>
+
+  <div class="workflow">
+    <div><span class="n">01</span><b>Choose</b><span>Select a page, then a section within it.</span></div>
+    <div><span class="n">02</span><b>Edit</b><span>Change copy, references, images and alt text.</span></div>
+    <div><span class="n">03</span><b>Preview</b><span>Open the page before publishing if a check is needed.</span></div>
+    <div><span class="n">04</span><b>Save</b><span>Publish within the 30-second window; browsers poll in 10.</span></div>
+  </div>
+
+  <div class="p7-bottom">
+    <div>
+      <table class="edit-table">
+        <thead><tr><th>What the team can change</th><th>Where</th></tr></thead>
+        <tbody>
+          <tr><td>Homepage eyebrow, headline and lead</td><td>Pages → Home → Hero</td></tr>
+          <tr><td>Services, systems and capacities</td><td>Services / Systems</td></tr>
+          <tr><td>Work cases and measured outcomes</td><td>Work cases</td></tr>
+          <tr><td>Process gates and handover copy</td><td>Process</td></tr>
+          <tr><td>Brand, contact and service areas</td><td>Brand &amp; contact</td></tr>
+          <tr><td>Journal articles and page copy</td><td>Journal / Page copy</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <h3 style="font-family:Georgia,serif;font-size:15pt;font-weight:400">Built for the people who do the work.</h3>
+      <p class="body-copy" style="margin-top:3mm;font-size:7.5pt;line-height:1.58;color:var(--body)">
+        The studio uses the same language as the site: pages, sections, headlines, imagery. It does
+        not ask the team to think in components. A change is a sentence, a photograph or a figure —
+        not a deployment.
+      </p>
+      <div class="security-note" style="margin-top:4mm">
+        <span class="tag">MEDIA</span>
+        <p>Images are uploaded once and reused. Alt text and removal are handled in the same panel, so accessibility copy travels with the asset.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer"><span>Coolvane · Website &amp; operations handbook</span><span><b>07</b> / 10</span></div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- 08 — BILLING & CUSTOMER PORTAL                                          -->
+<!-- ======================================================================= -->
+<section class="page" data-page="8">
+  <header class="page-head">
+    <div class="brandmark">
+      <span class="monogram">CV</span>
+      <span class="wordmark">Coolvane HVAC<small>Thermal systems · Mumbai</small></span>
+    </div>
+    <div class="doc-mark">Website &amp; operations handbook<br />Edition 01 · 2026</div>
+  </header>
+
+  <div class="section-index"><span><b>07</b> / Billing &amp; customer service</span><span>CV-PRT-01</span></div>
+  <h1 style="margin-top:6mm;max-width:168mm">The customer sees the same truth.</h1>
+  <p class="lead">
+    The back office and the customer portal are two views of one record. An invoice issued in admin
+    appears in the portal addressed to that customer. A visit booked in the portal appears on the
+    dispatch board. Neither side has to ask the other what is current.
+  </p>
+
+  <div class="p8-pair">
+    <figure>
+      <div class="shot"><img src="assets/admin-invoices.png" alt="Admin invoices and collections screen" /></div>
+      <figcaption>Invoices &amp; collections · issue, part-pay, print, remind.</figcaption>
+    </figure>
+    <figure>
+      <div class="shot"><img src="assets/portal-desktop.png" alt="Customer portal sign-in screen" /></div>
+      <figcaption>Customer portal · the same invoices and visits, in the customer’s language.</figcaption>
+    </figure>
+  </div>
+
+  <div class="p8-cols">
+    <div>
+      <div class="eyebrow" style="margin-bottom:3mm">Back office</div>
+      <div class="number-list">
+        <div class="number-item"><span class="num">01</span><p><b>GST invoices.</b> Draft, split, part-pay and print an A4 tax invoice without leaving the ledger.</p></div>
+        <div class="number-item"><span class="num">02</span><p><b>Collections.</b> Outstanding, overdue and part-paid states are visible at a glance, with reminders queued from the same record.</p></div>
+        <div class="number-item"><span class="num">03</span><p><b>Costs and crew.</b> Expenses, team records and monthly payroll sit beside the revenue they support.</p></div>
+      </div>
+    </div>
+    <div>
+      <div class="eyebrow" style="margin-bottom:3mm">Customer portal</div>
+      <div class="number-list">
+        <div class="number-item"><span class="num">01</span><p><b>Invoices and balance.</b> Totals, payments and open balance, addressed to the signed-in email.</p></div>
+        <div class="number-item"><span class="num">02</span><p><b>Next visit.</b> Service, date, window, engineer and status — before the customer has to call.</p></div>
+        <div class="number-item"><span class="num">03</span><p><b>Book or rebook.</b> A portal booking creates a dispatch-board visit and a lead for the works team.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="security-note">
+    <span class="tag">ACCESS</span>
+    <p>Admin and portal are authenticated separately. Administrator credentials are issued privately and are deliberately not printed in this handbook. Customer portal accounts see only the invoices, visits and contact details addressed to their own email.</p>
+  </div>
+
+  <div class="footer"><span>Coolvane · Website &amp; operations handbook</span><span><b>08</b> / 10</span></div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- 09 — BENEFITS                                                           -->
+<!-- ======================================================================= -->
+<section class="page" data-page="9">
+  <header class="page-head">
+    <div class="brandmark">
+      <span class="monogram">CV</span>
+      <span class="wordmark">Coolvane HVAC<small>Thermal systems · Mumbai</small></span>
+    </div>
+    <div class="doc-mark">Website &amp; operations handbook<br />Edition 01 · 2026</div>
+  </header>
+
+  <div class="section-index"><span><b>08</b> / Why it matters</span><span>CV-BEN-05</span></div>
+  <h1 style="margin-top:6mm;max-width:158mm">Why this earns its place.</h1>
+  <p class="lead">
+    A website is not a brochure on a shelf. It is the first specification a buyer reads, the file the
+    team maintains, and the place a customer checks before calling. These are the practical returns
+    of treating it as one system.
+  </p>
+
+  <div class="benefits">
+    <div class="benefit"><span class="n">01</span><div><b>One source of truth</b><p>Copy, services, cases and process gates come from one versioned document. The site cannot disagree with the studio.</p></div></div>
+    <div class="benefit"><span class="n">02</span><div><b>Publishing without a developer</b><p>The team edits the sentence, image or figure it owns. Saving publishes; browsers follow within seconds.</p></div></div>
+    <div class="benefit"><span class="n">03</span><div><b>A brand that holds</b><p>Two themes, one token layer. New pages inherit the same type, colour, spacing and contrast rules.</p></div></div>
+    <div class="benefit"><span class="n">04</span><div><b>Commercial control</b><p>Leads, invoices, collections, expenses and payroll are visible in the same workspace as the website.</p></div></div>
+    <div class="benefit"><span class="n">05</span><div><b>Customer confidence</b><p>The portal answers the two questions that create phone calls: what do I owe, and when is my visit?</p></div></div>
+    <div class="benefit"><span class="n">06</span><div><b>Institutional memory</b><p>Versioned content and a permanent admin record keep the handover file intact as people and projects change.</p></div></div>
+  </div>
+
+  <div class="compare">
+    <div class="before">
+      <h3>Without a managed system</h3>
+      <ul>
+        <li>Copy changes wait for a developer or a monthly batch.</li>
+        <li>The site and the sales deck drift into different claims.</li>
+        <li>Invoices and visits live in separate spreadsheets.</li>
+        <li>Customers call to ask what they already know.</li>
+        <li>Light and dark themes are maintained as two codebases.</li>
+      </ul>
+    </div>
+    <div class="after">
+      <h3>With the Coolvane system</h3>
+      <ul>
+        <li>The team publishes the change it owns, the same day.</li>
+        <li>Every page reads from the same approved record.</li>
+        <li>Invoices, payments and visits share one ledger.</li>
+        <li>The portal answers before the phone rings.</li>
+        <li>One component library serves both registers.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="principle">
+    <p>“The handover is a measurement, not a meeting.”</p>
+    <span>Coolvane · operating principle</span>
+  </div>
+
+  <div class="footer"><span>Coolvane · Website &amp; operations handbook</span><span><b>09</b> / 10</span></div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- 10 — HANDOVER                                                           -->
+<!-- ======================================================================= -->
+<section class="page closing" data-page="10">
+  <header class="page-head">
+    <div class="brandmark">
+      <span class="monogram">CV</span>
+      <span class="wordmark">Coolvane HVAC<small>Thermal systems · Mumbai</small></span>
+    </div>
+    <div class="doc-mark">Website &amp; operations handbook<br />Edition 01 · 2026</div>
+  </header>
+
+  <div class="section-index"><span><b>09</b> / Handover</span><span>CV-DOC-END</span></div>
+  <p class="eyebrow" style="margin-top:7mm">A calm handover</p>
+  <h1>A website you can run without us in the room.</h1>
+  <p class="lead">
+    The work is complete when the team can use it. This is the short version of what is included,
+    what happens first, and who to call when something needs a human answer.
+  </p>
+
+  <div class="closing-grid">
+    <div>
+      <h3 style="font-family:Consolas,monospace;font-size:5.3pt;font-weight:400;letter-spacing:.14em;text-transform:uppercase;color:rgba(245,242,236,.52);margin-bottom:3mm">Included in the handover</h3>
+      <div class="include-list">
+        <div class="include">Ten-page public website</div>
+        <div class="include">Admin workspace</div>
+        <div class="include">Content &amp; SEO studio</div>
+        <div class="include">Media library</div>
+        <div class="include">Customer portal</div>
+        <div class="include">Invoice &amp; payment ledger</div>
+        <div class="include">Leads &amp; reminders</div>
+        <div class="include">Team &amp; payroll records</div>
+        <div class="include">Light and dark themes</div>
+        <div class="include">Motion &amp; diagram system</div>
+      </div>
+    </div>
+
+    <div class="contact-block">
+      <h3>Coolvane Climate Systems Pvt. Ltd.</h3>
+      <p class="big">Works &amp; projects desk</p>
+      <p>
+        Unit 4, Laxmi Industrial Estate<br />
+        Off New Link Road, Andheri West<br />
+        Mumbai 400053 · Maharashtra · India
+      </p>
+      <p style="margin-top:4mm">
+        <a href="tel:+912212004480">+91 22 1200 4480</a><br />
+        <a href="tel:+919820071120">+91 98200 71120</a> · 24 × 7 breakdown<br />
+        works@coolvane.example<br />
+        projects@coolvane.example
+      </p>
+      <p style="margin-top:4mm;font-family:Consolas,monospace;font-size:5.2pt;letter-spacing:.08em;text-transform:uppercase;color:rgba(245,242,236,.48)">
+        Weekdays 08:00–19:00 · Saturday 09:00–16:00<br />
+        Sunday emergency cover only
+      </p>
+    </div>
+  </div>
+
+  <div style="margin-top:8mm;display:grid;grid-template-columns:repeat(3,1fr);gap:5mm">
+    <div style="border-top:1px solid rgba(245,242,236,.22);padding-top:3mm">
+      <span class="small" style="color:rgba(245,242,236,.44)">01 · Sign in</span>
+      <p style="margin-top:1.6mm;font-size:7.2pt;line-height:1.5;color:rgba(245,242,236,.76)">Use the administrator account issued separately. The workspace opens on today’s position.</p>
+    </div>
+    <div style="border-top:1px solid rgba(245,242,236,.22);padding-top:3mm">
+      <span class="small" style="color:rgba(245,242,236,.44)">02 · Edit one page</span>
+      <p style="margin-top:1.6mm;font-size:7.2pt;line-height:1.5;color:rgba(245,242,236,.76)">Change a headline, swap a photograph, preview, then save. The public page follows.</p>
+    </div>
+    <div style="border-top:1px solid rgba(245,242,236,.22);padding-top:3mm">
+      <span class="small" style="color:rgba(245,242,236,.44)">03 · Keep the file</span>
+      <p style="margin-top:1.6mm;font-size:7.2pt;line-height:1.5;color:rgba(245,242,236,.76)">Use the studio for copy, the admin for the commercial record, and the portal for the customer.</p>
+    </div>
+  </div>
+
+  <p class="closing-quote">The measure of the handover is the first change the team makes without calling us.</p>
+
+  <div class="closing-lower">
+    <div class="signature">
+      With thanks for the trust placed in this work.
+      <small>Coolvane HVAC · Website &amp; operations handbook · November 2026</small>
+    </div>
+    <div style="text-align:right">
+      <span class="small" style="color:rgba(245,242,236,.46)">Administration</span>
+      <p style="margin-top:1mm;font-family:Consolas,monospace;font-size:6pt;letter-spacing:.08em;color:rgba(245,242,236,.8)">/admin · /portal</p>
+    </div>
+  </div>
+
+  <div class="footer"><span>Coolvane · Website &amp; operations handbook</span><span><b>10</b> / 10</span></div>
+</section>
+
+<script>
+  // Build-only single-page preview: handbook.html?p=4 shows page 4 at A4 pixels.
+  (function () {
+    var page = new URLSearchParams(location.search).get('p');
+    if (!page) return;
+    var n = Number(page);
+    if (!Number.isFinite(n)) return;
+    var pages = document.querySelectorAll('.page');
+    pages.forEach(function (el, i) {
+      if (i !== n - 1) el.style.display = 'none';
+      el.style.margin = '0';
+      el.style.boxShadow = 'none';
+      el.style.pageBreakAfter = 'auto';
+    });
+    document.body.style.background = '#f5f2ec';
+    document.body.style.padding = '0';
+  })();
+</script>
+</body>
+</html>

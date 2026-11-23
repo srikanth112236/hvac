@@ -1,0 +1,425 @@
+/* ==========================================================================
+   LAYER 4 — BASE
+   Preflight-adjacent resets, page texture, typographic classes and the small
+   crafted primitives (rules, ticks, registration marks, gradient thread).
+   ========================================================================== */
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: auto; /* Lenis owns scrolling when active */
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: rgb(var(--base));
+  color: rgb(var(--fg));
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  font-synthesis-weight: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  transition:
+    background-color var(--dur-4) var(--ease-standard),
+    color var(--dur-4) var(--ease-standard);
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+  isolation: isolate;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  margin: 0;
+  text-wrap: balance;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* --- page texture -------------------------------------------------------- */
+
+/* Blueprint grid: two scales, faded out towards the fold. Off in Atelier. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: var(--texture-grid);
+  background-image:
+    linear-gradient(to right, rgb(var(--fg) / 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(var(--fg) / 0.045) 1px, transparent 1px),
+    linear-gradient(to right, rgb(var(--fg) / 0.075) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(var(--fg) / 0.075) 1px, transparent 1px);
+  background-size:
+    var(--grid-size) var(--grid-size),
+    var(--grid-size) var(--grid-size),
+    var(--grid-size-lg) var(--grid-size-lg),
+    var(--grid-size-lg) var(--grid-size-lg);
+  -webkit-mask-image: radial-gradient(130% 90% at 50% 0%, #000 25%, transparent 100%);
+  mask-image: radial-gradient(130% 90% at 50% 0%, #000 25%, transparent 100%);
+}
+
+/* Film grain: fixed, non-interactive, soft-light so it grimes both variants. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-grain);
+  pointer-events: none;
+  opacity: var(--texture-grain);
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+}
+
+/* --- selection, focus, scrollbars --------------------------------------- */
+
+::selection {
+  background-color: rgb(var(--cold) / 0.28);
+  color: rgb(var(--fg));
+}
+
+:focus-visible {
+  outline: var(--focus-width) solid rgb(var(--focus));
+  outline-offset: var(--focus-offset);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--line-strong)) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgb(var(--line-strong));
+  border: 3px solid rgb(var(--base));
+  border-radius: var(--radius-full);
+}
+
+/* --- typographic roles --------------------------------------------------- */
+
+.t-display,
+.t-h1,
+.t-h2,
+.t-h3 {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+}
+
+.t-display {
+  font-size: var(--text-display);
+  line-height: var(--lh-display);
+  letter-spacing: var(--ls-display);
+}
+
+.t-h1 {
+  font-size: var(--text-h1);
+  line-height: var(--lh-h1);
+  letter-spacing: var(--ls-h1);
+}
+
+.t-h2 {
+  font-size: var(--text-h2);
+  line-height: var(--lh-h2);
+  letter-spacing: var(--ls-h2);
+}
+
+.t-h3 {
+  font-size: var(--text-h3);
+  line-height: var(--lh-h3);
+  letter-spacing: var(--ls-h3);
+}
+
+.t-h4 {
+  font-family: var(--font-body);
+  font-size: var(--text-h4);
+  line-height: var(--lh-h4);
+  letter-spacing: var(--ls-h4);
+  font-weight: 500;
+}
+
+.t-lead {
+  font-size: var(--text-lead);
+  line-height: var(--lh-lead);
+  color: rgb(var(--fg-dim));
+  max-width: var(--measure);
+  text-wrap: pretty;
+}
+
+.t-body {
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  text-wrap: pretty;
+}
+
+.t-small {
+  font-size: var(--text-xs);
+  line-height: var(--lh-sm);
+  color: rgb(var(--fg-dim));
+}
+
+.t-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  line-height: var(--lh-label);
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: rgb(var(--fg-dim));
+}
+
+.t-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* --- crafted details ---------------------------------------------------- */
+
+.shell {
+  width: 100%;
+  max-width: var(--shell-max);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.section {
+  padding-block: var(--section-y);
+}
+
+.section-lg {
+  padding-block: var(--section-y-lg);
+}
+
+.rule {
+  height: var(--hairline);
+  width: 100%;
+  background-color: rgb(var(--line));
+}
+
+/* Hairline with drafting ticks sitting on top of it. */
+.rule-ticks {
+  position: relative;
+  height: var(--hairline);
+  width: 100%;
+  background-color: rgb(var(--line));
+}
+
+.rule-ticks::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: calc(-1 * var(--space-1));
+  height: var(--space-1-5);
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgb(var(--line-strong)) 0 1px,
+    transparent 1px var(--space-2)
+  );
+  opacity: 0.55;
+}
+
+/* Heat/cold thread — the signature Foundry accent. */
+.thread {
+  height: var(--hairline);
+  width: 100%;
+  background: linear-gradient(
+    90deg,
+    rgb(var(--cold)) 0%,
+    rgb(var(--cold) / 0.15) 32%,
+    rgb(var(--line)) 52%,
+    rgb(var(--heat) / 0.15) 70%,
+    rgb(var(--heat)) 100%
+  );
+}
+
+/* Two registration marks, top-left and bottom-right. */
+.marks {
+  position: relative;
+}
+
+.marks::before,
+.marks::after {
+  content: '';
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-color: rgb(var(--line-strong));
+  border-style: solid;
+  pointer-events: none;
+}
+
+.marks::before {
+  top: -1px;
+  left: -1px;
+  border-width: 1px 0 0 1px;
+}
+
+.marks::after {
+  right: -1px;
+  bottom: -1px;
+  border-width: 0 1px 1px 0;
+}
+
+/* Drawing-callout label with a leader line to its left. */
+.annot {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgb(var(--fg-dim));
+}
+
+.annot::before {
+  content: '';
+  width: 18px;
+  height: var(--hairline);
+  background-color: rgb(var(--cold) / 0.6);
+}
+
+.panel {
+  background-color: rgb(var(--panel));
+  border: var(--hairline) solid rgb(var(--line));
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-panel);
+}
+
+.wash {
+  transition: background-color var(--dur-2) var(--ease-standard);
+}
+
+.wash:hover {
+  background-color: rgb(var(--wash) / 0.04);
+}
+
+.measure {
+  max-width: var(--measure);
+}
+
+.measure-tight {
+  max-width: var(--measure-tight);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* --- 3D depth scenes ------------------------------------------------------ */
+
+.depth-scene {
+  --mx: 0;
+  --my: 0;
+  --sy: 0.5;
+  --travel: 56px;
+  position: relative;
+  perspective: 1200px;
+  transform-style: preserve-3d;
+}
+
+.depth-layer {
+  transform-style: preserve-3d;
+  transform: translate3d(
+      calc(var(--mx) * var(--depth) * 12px),
+      calc((var(--sy) - 0.5) * var(--depth) * var(--travel) * -1),
+      calc(var(--depth) * 26px)
+    )
+    rotateX(calc(var(--my) * var(--depth) * -1.4deg))
+    rotateY(calc(var(--mx) * var(--depth) * 2deg));
+  transition: transform 180ms linear;
+  will-change: transform;
+}
+
+.depth-float {
+  animation: depth-float 7s var(--ease-standard) infinite alternate;
+}
+
+@keyframes depth-float {
+  from {
+    transform: translate3d(0, -5px, 0);
+  }
+  to {
+    transform: translate3d(0, 7px, 0);
+  }
+}
+
+.scene-plane {
+  background:
+    linear-gradient(145deg, rgb(var(--wash) / 0.07), transparent 52%),
+    rgb(var(--panel) / 0.86);
+  border: var(--hairline) solid rgb(var(--line));
+  box-shadow:
+    0 36px 80px -42px rgb(0 0 0 / 0.72),
+    inset 0 1px 0 rgb(var(--wash) / 0.06);
+  backdrop-filter: blur(14px);
+}
+
+.scene-grid {
+  background-image:
+    linear-gradient(rgb(var(--cold) / 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--cold) / 0.1) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: radial-gradient(ellipse at center, black 20%, transparent 78%);
+}
+
+.depth-ruler {
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgb(var(--fg) / 0.14) 0 1px,
+    transparent 1px 8px
+  );
+}
+
+/* --- motion preference --------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

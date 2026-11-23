@@ -1,0 +1,269 @@
+import { useMemo, useState } from 'react'
+import { useLiveRefresh } from '@/admin/useLiveRefresh'
+import { Link, useNavigate } from 'react-router-dom'
+import { Icon } from '@/components/icons'
+import {
+  Button,
+  EmptyState,
+  Input,
+  Modal,
+  Select,
+  Table,
+  useToast,
+  type Column,
+} from '@/components/ui'
+import type { InvoiceInput, InvoiceSummary, InvoiceWithTotals } from '@hvac/shared'
+import { adminApi } from '@/admin/api'
+import { InvoiceForm } from '@/admin/InvoiceForm'
+import { InvoiceStateBadge } from '@/admin/invoice-ui'
+import {
+  AdminLoading,
+  AdminPageHeader,
+  InlineError,
+  MetricCard,
+  formatDate,
+  formatMoney,
+} from '@/admin/ui'
+
+export function AdminInvoices() {
+  const { toast } = useToast()
+  const navigate = useNavigate()
+  const [invoices, setInvoices] = useState<InvoiceWithTotals[]>([])
+  const [summary, setSummary] = useState<InvoiceSummary | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [createOpen, setCreateOpen] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [filter, setFilter] = useState('all')
+  const [search, setSearch] = useState('')
+
+  const load = async () => {
+    try {
+      const payload = await adminApi.invoices()
+      setInvoices(payload.data)
+      setSummary(payload.summary)
+      setError('')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not load invoices.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useLiveRefresh(load)
+
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return invoices.filter((invoice) => {
+      if (filter !== 'all' && invoice.totals.state !== filter) return false
+      if (!query) return true
+      return [invoice.ref, invoice.customerName, invoice.customerPhone, invoice.service]
+        .join(' ')
+        .toLowerCase()
+        .includes(query)
+    })
+  }, [invoices, filter, search])
+
+  const create = async (input: InvoiceInput) => {
+    setCreating(true)
+    try {
+      const result = await adminApi.createInvoice(input)
+      setCreateOpen(false)
+      toast({ title: 'Invoice created', description: result.data.ref, tone: 'success' })
+      navigate(`/admin/invoices/${result.data.id}`)
+    } catch (caught) {
+      toast({
+        title: 'Invoice not created',
+        description: caught instanceof Error ? caught.message : 'Check the line items.',
+        tone: 'danger',
+      })
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const remind = async (invoice: InvoiceWithTotals) => {
+    try {
+      await adminApi.remindInvoice(invoice.id)
+      toast({ title: 'Reminder queued', description: `${invoice.ref} · due tomorrow 9am`, tone: 'success' })
+      await load()
+    } catch (caught) {
+      toast({
+        title: 'Reminder not created',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
+    }
+  }
+
+  const columns: Column<InvoiceWithTotals>[] = [
+    {
+      key: 'ref',
+      header: 'Invoice',
+      render: (row) => (
+        <Link to={`/admin/invoices/${row.id}`} className="group block">
+          <span className="font-mono text-[10px] text-cold group-hover:text-fg">{row.ref}</span>
+          <span className="mt-0.5 block font-mono text-[8px] uppercase tracking-[0.06em] text-fg-faint">
+            {formatDate(row.issueDate)} · due {formatDate(row.dueDate)}
+          </span>
+        </Link>
+      ),
+    },
+    {
+      key: 'customerName',
+      header: 'Customer',
+      render: (row) => (
+        <div>
+          <p className="text-[12px] text-fg">{row.customerName}</p>
+          <p className="text-[10px] text-fg-faint">{row.service || row.customerPhone || 'General works'}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'total',
+      header: 'Total',
+      align: 'right',
+      render: (row) => <span className="t-num text-[12px] text-fg">{formatMoney(row.totals.total)}</span>,
+    },
+    {
+      key: 'balance',
+      header: 'Balance',
+      align: 'right',
+      render: (row) => (
+        <div className="text-right">
+          <p className={row.totals.balance > 0 ? 't-num text-[12px] text-heat' : 't-num text-[12px] text-success'}>
+            {formatMoney(row.totals.balance)}
+          </p>
+          {row.totals.paid > 0 ? (
+            <p className="font-mono text-[8px] uppercase tracking-[0.06em] text-fg-faint">
+              {formatMoney(row.totals.paid)} paid
+            </p>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      key: 'state',
+      header: 'Status',
+      render: (row) => <InvoiceStateBadge state={row.totals.state} />,
+    },
+    {
+      key: 'actions',
+      header: '',
+      align: 'right',
+      render: (row) => (
+        <div className="flex items-center justify-end gap-1">
+          {row.totals.balance > 0 && row.totals.state !== 'draft' && row.totals.state !== 'cancelled' ? (
+            <button
+              type="button"
+              onClick={() => void remind(row)}
+              className="flex h-7 items-center gap-1 border border-line px-2 font-mono text-[8px] uppercase tracking-[0.06em] text-fg-dim hover:border-heat/40 hover:text-heat"
+            >
+              <Icon name="mail" size={10} /> Remind
+            </button>
+          ) : null}
+          <Link
+            to={`/admin/invoices/${row.id}`}
+            className="flex h-7 items-center gap-1 border border-line px-2 font-mono text-[8px] uppercase tracking-[0.06em] text-fg-dim hover:border-cold/40 hover:text-cold"
+          >
+            Open <Icon name="arrow-right" size={10} />
+          </Link>
+        </div>
+      ),
+    },
+  ]
+
+  return (
+    <div className="flex flex-col gap-6">
+      <AdminPageHeader
+        eyebrow="Revenue"
+        title="Invoices and collections."
+        description="Issue sales-tax invoices, record part payments as they arrive, print an A4 invoice and queue a payment reminder without leaving the ledger."
+        actions={
+          <>
+            <Select
+              aria-label="Filter invoices"
+              value={filter}
+              options={[
+                { value: 'all', label: 'All states' },
+                { value: 'draft', label: 'Draft' },
+                { value: 'unpaid', label: 'Unpaid' },
+                { value: 'partial', label: 'Part paid' },
+                { value: 'overdue', label: 'Overdue' },
+                { value: 'paid', label: 'Paid' },
+                { value: 'cancelled', label: 'Cancelled' },
+              ]}
+              onChange={(event) => setFilter(event.target.value)}
+              className="min-w-[140px]"
+            />
+            <Button icon="plus" onClick={() => setCreateOpen(true)}>
+              New invoice
+            </Button>
+          </>
+        }
+      />
+
+      {error ? <InlineError message={error} /> : null}
+
+      {summary ? (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <MetricCard label="Collected" value={formatMoney(summary.collected)} accent="success" />
+          <MetricCard label="Outstanding" value={formatMoney(summary.outstanding)} accent="heat" />
+          <MetricCard
+            label="Overdue"
+            value={formatMoney(summary.overdueAmount)}
+            accent="warn"
+            note={`${summary.overdueCount} invoice${summary.overdueCount === 1 ? '' : 's'}`}
+          />
+          <MetricCard label="Invoiced this month" value={formatMoney(summary.invoicedThisMonth)} />
+          <MetricCard
+            label="Part paid"
+            value={summary.partialCount}
+            note={`${summary.paidCount} settled · ${summary.draftCount} draft`}
+          />
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-2 border border-line bg-panel/30 p-3">
+        <Input
+          aria-label="Search invoices"
+          placeholder="Search reference, customer, phone or job…"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          className="max-w-md"
+        />
+        <span className="ml-auto font-mono text-[9px] uppercase tracking-[0.08em] text-fg-faint">
+          {filtered.length} of {invoices.length} invoices
+        </span>
+      </div>
+
+      {loading ? (
+        <AdminLoading rows={5} />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon="coil"
+          title="No invoices in this view."
+          description="Raise the first invoice from a completed job. It can stay a draft until you are ready to issue it."
+          action={<Button onClick={() => setCreateOpen(true)}>Create invoice</Button>}
+        />
+      ) : (
+        <Table columns={columns} rows={filtered} caption="Invoices" />
+      )}
+
+      <Modal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title="New tax invoice"
+        description="The reference is assigned on save. Part payments can be added from the invoice page."
+        size="lg"
+      >
+        <InvoiceForm
+          submitLabel="Create invoice"
+          busy={creating}
+          onSubmit={create}
+          onCancel={() => setCreateOpen(false)}
+        />
+      </Modal>
+    </div>
+  )
+}

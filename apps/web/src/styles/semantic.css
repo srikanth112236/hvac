@@ -1,0 +1,30 @@
+/* ==========================================================================
+   LAYER 2 — SEMANTIC (shared roles)
+   Roles that do NOT change between variants: layout rhythm, hairline weights,
+   focus geometry, measures. Colours and typefaces are assigned per variant in
+   foundry.css / atelier.css — that is the only layer components read from.
+   ========================================================================== */
+
+:root {
+  --shell-max: 1320px;
+  --gutter: clamp(20px, 5vw, 72px);
+  --measure: 62ch;
+  --measure-tight: 46ch;
+
+  --section-y: clamp(72px, 9vw, 128px);
+  --section-y-lg: clamp(96px, 12vw, 192px);
+  --section-y-sm: clamp(48px, 6vw, 80px);
+
+  --grid-size: 64px;
+  --grid-size-lg: 320px;
+
+  --hairline: 1px;
+  --focus-width: 2px;
+  --focus-offset: 2px;
+
+  --btn-h-sm: 36px;
+  --btn-h-md: 44px;
+  --btn-h-lg: 52px;
+
+  --header-h: 76px;
+}

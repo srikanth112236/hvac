@@ -1,0 +1,69 @@
+/* ==========================================================================
+   LAYER 3A — FOUNDRY (dark, engineered, industrial-premium)
+   Casts the shared primitives into dark semantic roles. Applied to :root so
+   there is no flash before JS resolves the theme.
+   ========================================================================== */
+
+:root,
+[data-theme='foundry'] {
+  color-scheme: dark;
+
+  /* surfaces */
+  --base: 10 13 16;
+  --panel: 17 22 27;
+  --panel-2: 24 31 38;
+  --panel-3: 38 48 58;
+  --line: 38 48 58;
+  --line-strong: 51 64 76;
+  --ink-block: 24 31 38;
+  --on-ink: 232 237 241;
+  --wash: 255 255 255;
+
+  /* text */
+  --fg: 232 237 241;
+  --fg-dim: 142 154 166;
+  --fg-faint: 107 119 131;
+
+  /* accents */
+  --cold: 94 200 229;
+  --cold-ink: 10 13 16;
+  --heat: 232 134 58;
+  --success: 79 191 139;
+  --warn: 232 179 58;
+  --danger: 229 88 79;
+  --focus: 94 200 229;
+
+  /* type */
+  --font-display: 'Clash Display', 'Archivo', 'Arial Narrow', sans-serif;
+  --font-body: 'Satoshi', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', monospace;
+
+  --display-weight: 600;
+  --lh-display: 0.9;
+  --ls-display: -0.035em;
+  --lh-h1: 0.94;
+  --ls-h1: -0.03em;
+  --lh-h2: 0.98;
+  --ls-h2: -0.02em;
+  --lh-h3: 1.08;
+  --ls-h3: -0.012em;
+  --lh-h4: 1.25;
+  --ls-h4: -0.005em;
+  --lh-lead: 1.55;
+  --lh-body: 1.6;
+  --lh-sm: 1.55;
+  --lh-label: 1.2;
+  --ls-label: 0.14em;
+
+  /* geometry */
+  --radius-control: 2px;
+  --radius-panel: 3px;
+
+  /* effects */
+  --shadow-panel: inset 0 1px 0 rgb(255 255 255 / 0.035), 0 24px 64px -40px rgb(0 0 0 / 0.9);
+  --shadow-pop: 0 32px 80px -24px rgb(0 0 0 / 0.85), 0 0 0 1px rgb(var(--line));
+  --texture-grain: 0.055;
+  --texture-grid: 0.9;
+  --glow-cold: 94 200 229;
+  --glow-heat: 232 134 58;
+}

@@ -1,0 +1,42 @@
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  body {
+    background: #fff !important;
+  }
+
+  body > * {
+    visibility: hidden;
+  }
+
+  #invoice-sheet,
+  #invoice-sheet * {
+    visibility: visible;
+  }
+
+  #invoice-sheet {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0 !important;
+    background: #fff !important;
+    color: #111 !important;
+    box-shadow: none !important;
+    font-size: 10pt;
+  }
+
+  #invoice-sheet * {
+    color: #111 !important;
+    border-color: #bbb !important;
+    background: transparent !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}

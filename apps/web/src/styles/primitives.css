@@ -1,0 +1,113 @@
+/* ==========================================================================
+   LAYER 1 — PRIMITIVES
+   Raw, brand-neutral values. Nothing in a component references these directly;
+   the semantic layer maps roles onto them per variant.
+   ========================================================================== */
+
+:root {
+  /* --- raw palette ------------------------------------------------------- */
+  --raw-ink-950: #0a0d10;
+  --raw-ink-900: #11161b;
+  --raw-ink-850: #181f26;
+  --raw-ink-700: #26303a;
+  --raw-ink-600: #33404c;
+
+  --raw-mist-100: #e8edf1;
+  --raw-mist-300: #c3cdd6;
+  --raw-mist-500: #8e9aa6;
+  --raw-mist-600: #6b7783;
+
+  --raw-frost-300: #9adff0;
+  --raw-frost-500: #5ec8e5;
+  --raw-frost-600: #3fb2d2;
+  --raw-frost-900: #0b3641;
+
+  --raw-ember-300: #f3b184;
+  --raw-ember-500: #e8863a;
+  --raw-ember-600: #d06f27;
+
+  --raw-signal-green: #4fbf8b;
+  --raw-signal-yellow: #e8b33a;
+  --raw-signal-red: #e5584f;
+
+  --raw-bone-50: #fbf9f5;
+  --raw-bone-100: #f5f2ec;
+  --raw-bone-200: #ece8df;
+  --raw-bone-300: #d9d3c6;
+  --raw-bone-500: #b9b2a3;
+
+  --raw-graphite-950: #101820;
+  --raw-graphite-900: #14181c;
+  --raw-graphite-600: #5b6670;
+
+  --raw-teal-800: #0f5c66;
+  --raw-teal-700: #14727f;
+  --raw-copper-700: #b5562b;
+
+  /* --- spacing (8px grid, 4px half-steps) -------------------------------- */
+  --space-0-5: 2px;
+  --space-1: 4px;
+  --space-1-5: 6px;
+  --space-2: 8px;
+  --space-2-5: 10px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-14: 56px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+  --space-32: 128px;
+  --space-40: 160px;
+  --space-48: 192px;
+
+  /* --- radii ------------------------------------------------------------- */
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 10px;
+  --radius-full: 999px;
+
+  /* --- motion ------------------------------------------------------------ */
+  --dur-1: 120ms;
+  --dur-2: 180ms;
+  --dur-3: 260ms;
+  --dur-4: 380ms;
+  --dur-5: 560ms;
+  --dur-6: 760ms;
+  --dur-7: 1000ms;
+
+  --ease-mech: cubic-bezier(0.16, 1, 0.3, 1); /* expo.out */
+  --ease-mech-inout: cubic-bezier(0.87, 0, 0.13, 1); /* power4.inOut */
+  --ease-soft: cubic-bezier(0.33, 1, 0.68, 1); /* power3.out */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* --- fluid type steps -------------------------------------------------- */
+  /* Hero scale reduced 40% across every page that uses .t-display. */
+  --text-display: clamp(2.04rem, 1.14rem + 4.44vw, 5.1rem);
+  --text-h1: clamp(2.6rem, 1.7rem + 4.2vw, 5rem);
+  --text-h2: clamp(2rem, 1.4rem + 2.7vw, 3.4rem);
+  --text-h3: clamp(1.5rem, 1.25rem + 1.1vw, 2.1rem);
+  --text-h4: clamp(1.15rem, 1.05rem + 0.45vw, 1.4rem);
+  --text-lead: clamp(1.05rem, 0.98rem + 0.35vw, 1.25rem);
+  --text-body: clamp(0.95rem, 0.93rem + 0.12vw, 1.03rem);
+  --text-sm: 0.875rem;
+  --text-xs: 0.8125rem;
+  --text-label: 0.6875rem;
+  --text-micro: 0.625rem;
+
+  /* --- layers ------------------------------------------------------------ */
+  --z-raised: 10;
+  --z-sticky: 40;
+  --z-nav: 50;
+  --z-overlay: 80;
+  --z-modal: 90;
+  --z-toast: 100;
+  --z-grain: 120;
+}

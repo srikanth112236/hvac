@@ -1,0 +1,140 @@
+/* Long-form editorial typography for journal articles. */
+
+.article-body {
+  color: rgb(var(--fg-dim));
+  font-size: clamp(1rem, 0.96rem + 0.18vw, 1.08rem);
+  line-height: 1.82;
+}
+
+.article-body > * + * {
+  margin-top: 1.35em;
+}
+
+.article-body h2 {
+  margin-top: 2.4em;
+  margin-bottom: 0.7em;
+  color: rgb(var(--fg));
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 1.3rem + 1.2vw, 2.3rem);
+  font-weight: var(--display-weight);
+  line-height: var(--lh-h2);
+  letter-spacing: var(--ls-h2);
+}
+
+.article-body h3 {
+  margin-top: 2em;
+  margin-bottom: 0.55em;
+  color: rgb(var(--fg));
+  font-size: clamp(1.1rem, 1rem + 0.5vw, 1.35rem);
+  font-weight: 600;
+  line-height: var(--lh-h3);
+  letter-spacing: var(--ls-h3);
+}
+
+.article-body h2:first-child,
+.article-body h3:first-child {
+  margin-top: 0;
+}
+
+.article-body strong {
+  color: rgb(var(--fg));
+  font-weight: 600;
+}
+
+.article-body a {
+  color: rgb(var(--cold));
+  text-decoration: underline;
+  text-decoration-color: rgb(var(--cold) / 0.4);
+  text-underline-offset: 3px;
+}
+
+.article-body a:hover {
+  text-decoration-color: rgb(var(--cold));
+}
+
+.article-body ul,
+.article-body ol {
+  padding-left: 1.35rem;
+}
+
+.article-body ul {
+  list-style: none;
+}
+
+.article-body ul > li {
+  position: relative;
+}
+
+.article-body ul > li::before {
+  content: '';
+  position: absolute;
+  top: 0.72em;
+  left: -1.15rem;
+  width: 5px;
+  height: 1px;
+  background-color: rgb(var(--cold));
+}
+
+.article-body ol {
+  list-style: decimal;
+}
+
+.article-body li + li {
+  margin-top: 0.55em;
+}
+
+.article-body li::marker {
+  color: rgb(var(--cold));
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+}
+
+.article-body blockquote {
+  position: relative;
+  margin-top: 2em;
+  margin-bottom: 2em;
+  padding: 1.25rem 1.5rem;
+  border-left: 2px solid rgb(var(--cold));
+  background: rgb(var(--cold) / 0.05);
+  color: rgb(var(--fg));
+  font-family: var(--font-display);
+  font-size: clamp(1.2rem, 1.05rem + 0.6vw, 1.5rem);
+  line-height: 1.45;
+}
+
+.article-body code {
+  padding: 0.1em 0.35em;
+  border: 1px solid rgb(var(--line));
+  background: rgb(var(--panel-2));
+  color: rgb(var(--fg));
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+}
+
+/* Portal invoice print: only the invoice sheet is sent to paper/PDF. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  #portal-invoice-print,
+  #portal-invoice-print * {
+    visibility: visible;
+  }
+
+  #portal-invoice-print {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    padding: 0;
+    border: 0 !important;
+    background: #fff !important;
+    color: #111 !important;
+  }
+
+  #portal-invoice-print * {
+    color: #111 !important;
+    border-color: #bbb !important;
+    background: transparent !important;
+  }
+}
