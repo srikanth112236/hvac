@@ -171,8 +171,11 @@ export function AdminLeads() {
           phone: record.phone,
           email: record.email || undefined,
           city: record.city || undefined,
-          serviceSlug: record.service || undefined,
+          serviceSlug: record.serviceslug || record.service || undefined,
           message: record.message || record.brief || undefined,
+          urgency: record.urgency || undefined,
+          plan: record.plan || undefined,
+          context: record.context || undefined,
           value: record.value ? Number(record.value) : undefined,
           status: record.status || 'new',
         })
