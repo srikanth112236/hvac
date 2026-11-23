@@ -206,7 +206,14 @@ export function BlogPost() {
               </div>
             ) : null}
 
-            <MarkdownArticle markdown={post.body} className="mt-10" />
+            {post.bodyHtml ? (
+              <div
+                className="article-body mt-10"
+                dangerouslySetInnerHTML={{ __html: post.bodyHtml }}
+              />
+            ) : (
+              <MarkdownArticle markdown={post.body} className="mt-10" />
+            )}
 
             {post.faqs.length ? (
               <div className="mt-14 border-t border-line pt-8">

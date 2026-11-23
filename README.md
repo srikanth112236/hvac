@@ -54,7 +54,8 @@ development the floating switcher also flips it live; the choice is stored in
   snooze**, **newsletter campaign ledger with recurring schedules, per-minute/
   hour/day throttles, suppression overrides and coupon blocks**, coupons,
   content studio, revisions,
-  journal, media, settings, **global search (Ctrl K), CSV exports**, **RBAC users,
+  **journal with separate add/edit routes and a full rich-text editor**, media,
+  settings, **global search (Ctrl K), CSV exports**, **RBAC users,
   permissions matrix**, **email two-factor authentication**, audit log, data
   health, GDPR erasure, backup export. Expenses include period/category/method
   filters, full CRUD, current/last-month totals and monthly PDF reports emailed on
@@ -71,6 +72,8 @@ development the floating switcher also flips it live; the choice is stored in
 - Newsletter control: all-status campaign ledger, recurring schedules,
   five-minute send lock, per-minute/hour/day caps, suppression list and coupon
   blocks. See `docs/newsletters.md`.
+- Journal editor: separate article index, new and edit routes, rich-text body,
+  media insertion, SEO fields and safe HTML publication. See `docs/journal.md`.
 - Customer portal: overview, bookings (book, reschedule, cancel), invoices and
   **server-generated PDFs**, quotations (accept / request changes / edit /
   **PDF**), equipment + service history, AMC cover + renewal request +

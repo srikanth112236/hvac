@@ -24,9 +24,11 @@ export function formatDate(value: string | null | undefined): string {
   if (!value) return '—'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
-  return new Intl.DateTimeFormat('en-US', { day: '2-digit', month: 'short', year: 'numeric' }).format(
-    date,
-  )
+  return new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(date)
 }
 
 export function formatDateTime(value: string | null | undefined): string {
@@ -90,7 +92,9 @@ export function AdminPageHeader({
   return (
     <header className="flex flex-col gap-5 border-b border-line pb-6 md:flex-row md:items-end md:justify-between">
       <div>
-        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-cold">{eyebrow}</span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-cold">
+          {eyebrow}
+        </span>
         <h1 className="t-h2 mt-2 text-fg">{title}</h1>
         {description ? (
           <p className="mt-2 max-w-[68ch] text-[13px] leading-relaxed text-fg-dim">{description}</p>
@@ -103,12 +107,14 @@ export function AdminPageHeader({
 
 export function Panel({
   title,
+  description,
   action,
   children,
   className,
   bodyClassName,
 }: {
   title?: ReactNode
+  description?: ReactNode
   action?: ReactNode
   children: ReactNode
   className?: string
@@ -117,8 +123,17 @@ export function Panel({
   return (
     <section className={cn('border border-line bg-panel/50', className)}>
       {title || action ? (
-        <div className="flex items-center justify-between gap-4 border-b border-line px-5 py-3">
-          <h2 className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">{title}</h2>
+        <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-3">
+          <div className="min-w-0">
+            <h2 className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
+              {title}
+            </h2>
+            {description ? (
+              <p className="mt-1 max-w-[80ch] text-[11px] leading-relaxed text-fg-faint">
+                {description}
+              </p>
+            ) : null}
+          </div>
           {action}
         </div>
       ) : null}
@@ -148,7 +163,9 @@ export function MetricCard({
           : 'text-cold'
   return (
     <div className="marks relative border border-line bg-panel/50 p-5">
-      <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-fg-faint">{label}</span>
+      <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-fg-faint">
+        {label}
+      </span>
       <p className={cn('t-num mt-4 text-h2 leading-none', accentClass)}>{value}</p>
       {note ? <div className="mt-3 text-[11px] leading-snug text-fg-faint">{note}</div> : null}
     </div>

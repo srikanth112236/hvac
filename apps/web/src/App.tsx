@@ -162,6 +162,7 @@ export function App() {
           <Route path="content/classic" element={<AdminContent />} />
           <Route path="content/revisions" element={<AdminRevisions />} />
           <Route path="blog" element={<AdminBlog />} />
+          <Route path="blog/:postId" element={<AdminBlog />} />
           <Route path="products" element={<Navigate to="/admin/content" replace />} />
           <Route path="settings" element={<AdminSettings />} />
         </Route>

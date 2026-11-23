@@ -33,6 +33,7 @@ import {
 } from './contentHistory.js'
 import { appendLead, leadStore, readLeads } from './leads.js'
 import { reminderStore } from './reminders.js'
+import { sanitizeNewsletterHtml } from './sanitize.js'
 import { mailerStatus, readEmailLog } from './mailer.js'
 import { readAuditLog } from './audit.js'
 import { DATA_VERSION } from './migrations.js'
@@ -983,10 +984,16 @@ adminRouter.put('/content', async (req, res) => {
 
   const rawVersion = Number.parseInt(String(req.get('if-match') ?? ''), 10)
   const expectedVersion = Number.isInteger(rawVersion) && rawVersion >= 0 ? rawVersion : undefined
+  const payload = {
+    ...parsed.data,
+    posts: parsed.data.posts.map((post) =>
+      post.bodyHtml ? { ...post, bodyHtml: sanitizeNewsletterHtml(post.bodyHtml) } : post,
+    ),
+  }
 
   try {
     const result = await saveContentWithRevision(
-      parsed.data,
+      payload,
       String(res.locals.admin.email),
       expectedVersion,
     )

@@ -180,7 +180,7 @@ export function BlogTab({ draft, update }: { draft: SiteContent; update: Update 
           <Input label="Tags · comma separated" value={post.tags.join(', ')} onChange={(event) => patch(index, { tags: event.target.value.split(',').map((tag) => tag.trim()).filter(Boolean) })} />
           <Full><Textarea label="Excerpt" rows={3} value={post.excerpt} onChange={(event) => patch(index, { excerpt: event.target.value })} /></Full>
           <Full><Textarea label="Direct answer" rows={3} value={post.answer} onChange={(event) => patch(index, { answer: event.target.value })} /></Full>
-          <Full><Textarea label="Body · Markdown" rows={18} value={post.body} onChange={(event) => patch(index, { body: event.target.value })} /></Full>
+          <Full><Textarea label="Body · Markdown" rows={18} value={post.body} onChange={(event) => patch(index, { body: event.target.value, bodyHtml: undefined })} /></Full>
           <Full><Textarea label="Key takeaways · one per line" rows={4} value={post.takeaways.join('\n')} onChange={(event) => patch(index, { takeaways: splitLines(event.target.value) })} /></Full>
           <Full><Textarea label="Related service ids · comma separated" value={post.relatedServices.join(', ')} onChange={(event) => patch(index, { relatedServices: event.target.value.split(',').map((service) => service.trim()).filter(Boolean) })} /></Full>
           <Input label="SEO title" value={post.seoTitle} onChange={(event) => patch(index, { seoTitle: event.target.value })} />

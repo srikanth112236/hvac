@@ -265,6 +265,8 @@ export interface SitePost {
   featured: boolean
   published: boolean
   body: string
+  /** Sanitised rich-text body from the journal editor. Markdown `body` remains the fallback. */
+  bodyHtml?: string
   takeaways: string[]
   faqs: SitePostFaq[]
   relatedServices: string[]
@@ -576,6 +578,7 @@ const postSchema = z.object({
   featured: z.boolean(),
   published: z.boolean(),
   body: trimmed(40_000).min(1),
+  bodyHtml: trimmed(120_000).optional(),
   takeaways: z.array(trimmed(400)).max(12),
   faqs: z.array(z.object({ question: trimmed(300), answer: trimmed(3000) })).max(12),
   relatedServices: z.array(trimmed(80)).max(12),
