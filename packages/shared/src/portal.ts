@@ -71,6 +71,15 @@ export const customerAdminCreateSchema = z.object({
 })
 export type CustomerAdminCreateInput = z.infer<typeof customerAdminCreateSchema>
 
+export const customerAdminPatchSchema = z.object({
+  name: z.string().trim().min(2).max(120).optional(),
+  email: z.string().trim().email().max(160).optional(),
+  phone: z.string().trim().max(30).optional(),
+  address: z.string().trim().max(500).optional(),
+  status: z.enum(CUSTOMER_STATUSES).optional(),
+})
+export type CustomerAdminPatchInput = z.infer<typeof customerAdminPatchSchema>
+
 export interface CustomerAccountWithStats extends CustomerAccount {
   invoiceCount: number
   openBalance: number

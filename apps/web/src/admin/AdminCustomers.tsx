@@ -1,68 +1,41 @@
 import { useCallback, useMemo, useState } from 'react'
-import { useLiveRefresh } from '@/admin/useLiveRefresh'
 import { Link } from 'react-router-dom'
-import {
-  appointmentStatusLabel,
-  APPOINTMENT_STATUSES,
-  customerStatusLabel,
-  serviceWindowLabel,
-  type AppointmentRecord,
-  type AppointmentStatus,
-  type CustomerAccountWithStats,
-  type CustomerStatus,
-} from '@hvac/shared'
-import { Badge, Button, EmptyState, Input, Modal, Select, Textarea, useToast } from '@/components/ui'
+import { customerStatusLabel, type CustomerAccountWithStats, type CustomerStatus } from '@hvac/shared'
+import { Badge, Button, EmptyState, Input, Modal, Textarea, useToast } from '@/components/ui'
 import { adminApi } from '@/admin/api'
-import {
-  AdminLoading,
-  AdminPageHeader,
-  InlineError,
-  formatDate,
-  formatDateTime,
-  formatMoney,
-} from '@/admin/ui'
+import { AdminLoading, AdminPageHeader, InlineError, formatDate, formatDateTime, formatMoney } from '@/admin/ui'
+import { useLiveRefresh } from '@/admin/useLiveRefresh'
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10)
+interface CustomerForm {
+  name: string
+  email: string
+  phone: string
+  address: string
 }
+
+const blankForm: CustomerForm = { name: '', email: '', phone: '', address: '' }
 
 export function AdminCustomers() {
   const { toast } = useToast()
   const [customers, setCustomers] = useState<CustomerAccountWithStats[]>([])
-  const [appointments, setAppointments] = useState<AppointmentRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
-  const [createOpen, setCreateOpen] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({
-    customerName: '',
-    customerEmail: '',
-    customerPhone: '',
-    serviceName: 'HVAC service',
-    address: '',
-    scheduledAt: today(),
-    window: 'morning' as AppointmentRecord['window'],
-    technician: '',
-    notes: '',
-  })
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState<CustomerAccountWithStats | null>(null)
+  const [form, setForm] = useState<CustomerForm>(blankForm)
+  const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
     setError('')
     try {
-      const [accounts, visits] = await Promise.all([
-        adminApi.customers(),
-        adminApi.appointments(),
-      ])
-      setCustomers(accounts)
-      setAppointments(visits)
+      setCustomers(await adminApi.customers())
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not load customers.')
     } finally {
       setLoading(false)
     }
   }, [])
-
   useLiveRefresh(load)
 
   const filtered = useMemo(() => {
@@ -83,83 +56,87 @@ export function AdminCustomers() {
         (customer) => customer.status === 'pending' || customer.status === 'unverified',
       ).length,
       outstanding: customers.reduce((sum, customer) => sum + customer.openBalance, 0),
-      upcoming: appointments.filter(
-        (appointment) =>
-          appointment.status !== 'cancelled' && appointment.status !== 'completed',
-      ).length,
-      completed: appointments.filter((appointment) => appointment.status === 'completed').length,
+      invoiced: customers.reduce((sum, customer) => sum + customer.invoiceCount, 0),
     }),
-    [appointments, customers],
+    [customers],
   )
 
-  const updateCustomerStatus = async (
-    customer: CustomerAccountWithStats,
-    status: CustomerStatus,
-  ) => {
+  const openCreate = () => {
+    setEditing(null)
+    setForm(blankForm)
+    setOpen(true)
+  }
+
+  const openEdit = (customer: CustomerAccountWithStats) => {
+    setEditing(customer)
+    setForm({
+      name: customer.name,
+      email: customer.email,
+      phone: customer.phone,
+      address: customer.address,
+    })
+    setOpen(true)
+  }
+
+  const save = async () => {
+    setBusy(true)
+    try {
+      if (editing) {
+        await adminApi.patchCustomer(editing.id, {
+          name: form.name,
+          email: form.email,
+          phone: form.phone,
+          address: form.address,
+        })
+        toast({ title: 'Customer updated', tone: 'success' })
+      } else {
+        await adminApi.createCustomer(form)
+        toast({ title: 'Customer added', description: form.name, tone: 'success' })
+      }
+      setOpen(false)
+      setEditing(null)
+      setForm(blankForm)
+      await load()
+    } catch (caught) {
+      toast({
+        title: editing ? 'Customer not updated' : 'Customer not added',
+        description: caught instanceof Error ? caught.message : 'Check the details.',
+        tone: 'danger',
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const updateStatus = async (customer: CustomerAccountWithStats, status: CustomerStatus) => {
     try {
       const updated = await adminApi.patchCustomer(customer.id, status)
       setCustomers((current) =>
         current.map((entry) =>
-          entry.id === updated.id ? { ...entry, status: updated.status } : entry,
+          entry.id === customer.id ? { ...entry, status: updated.status } : entry,
         ),
       )
-      toast({
-        title: 'Portal access updated',
-        description: `${customer.name} is now ${customerStatusLabel[status].toLowerCase()}.`,
-        tone: 'success',
-      })
+      toast({ title: 'Status updated', description: `${customer.name} is now ${customerStatusLabel[status].toLowerCase()}.`, tone: 'success' })
     } catch (caught) {
-      toast({
-        title: 'Could not update access',
-        description: caught instanceof Error ? caught.message : 'Try again.',
-        tone: 'danger',
-      })
-    }
-  }
-
-  const updateStatus = async (appointment: AppointmentRecord, status: AppointmentStatus) => {
-    try {
-      const updated = await adminApi.patchAppointment(appointment.id, { status })
-      setAppointments((current) =>
-        current.map((entry) => (entry.id === updated.id ? updated : entry)),
-      )
-      toast({ title: 'Visit updated', description: `${appointment.ref} is now ${appointmentStatusLabel[status]}.`, tone: 'success' })
-    } catch (caught) {
-      toast({ title: 'Could not update visit', description: caught instanceof Error ? caught.message : 'Try again.', tone: 'danger' })
-    }
-  }
-
-  const createAppointment = async () => {
-    setSaving(true)
-    try {
-      const created = await adminApi.createAppointment(form)
-      setAppointments((current) => [created, ...current])
-      setCreateOpen(false)
-      setForm((current) => ({ ...current, customerName: '', customerEmail: '', customerPhone: '', address: '', notes: '' }))
-      toast({ title: 'Visit scheduled', description: `${created.ref} was added to the dispatch board.`, tone: 'success' })
-      void load()
-    } catch (caught) {
-      toast({ title: 'Could not schedule visit', description: caught instanceof Error ? caught.message : 'Check the details.', tone: 'danger' })
-    } finally {
-      setSaving(false)
+      toast({ title: 'Status not updated', description: caught instanceof Error ? caught.message : 'Try again.', tone: 'danger' })
     }
   }
 
   if (loading) return <AdminLoading rows={6} />
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       <AdminPageHeader
-        eyebrow="People · CV-CRM"
-        title="Customers & dispatch"
-        description="Portal accounts, invoice balances and every service visit on one board. Changes here appear in the customer portal immediately."
+        eyebrow="Customers · CV-CRM"
+        title="Customers and their complete file."
+        description="Contact details, invoices, payments, sites, equipment, quotations, AMC cover and service history in one customer record."
         actions={
-          <div className="flex flex-wrap gap-2">
+          <>
             <Button variant="secondary" size="sm" icon="refresh" onClick={() => void load()}>
               Refresh
             </Button>
-            <Button size="sm" icon="plus" onClick={() => setCreateOpen(true)}>
-              Schedule visit
+            <Button size="sm" icon="plus" onClick={openCreate}>
+              Add customer
             </Button>
             <a
               href="/api/v1/admin/csv/customers"
@@ -167,19 +144,18 @@ export function AdminCustomers() {
             >
               Export CSV
             </a>
-          </div>
+          </>
         }
       />
 
       {error ? <InlineError message={error} /> : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          ['Portal accounts', String(totals.accounts), 'Registered customers'],
+          ['Customers', String(totals.accounts), 'Complete customer records'],
           ['Awaiting approval', String(totals.pending), 'Verification or approval'],
           ['Open balance', formatMoney(totals.outstanding), 'Across all invoices'],
-          ['Active visits', String(totals.upcoming), 'Requested or scheduled'],
-          ['Completed', String(totals.completed), 'Closed service visits'],
+          ['Invoices', String(totals.invoiced), 'Issued to these customers'],
         ].map(([label, value, note]) => (
           <div key={label} className="border border-line bg-panel/30 p-4">
             <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">{label}</span>
@@ -189,82 +165,70 @@ export function AdminCustomers() {
         ))}
       </div>
 
-      <section className="mt-6 border border-line bg-panel/20">
+      <section className="border border-line bg-panel/20">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
-          <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">Customer accounts</h2>
-          <Input
-            aria-label="Search customers"
-            placeholder="Search name, email or phone"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            className="max-w-[280px]"
-          />
+          <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">Customer records</h2>
+          <div className="w-full max-w-sm">
+            <Input
+              aria-label="Search customers"
+              placeholder="Search name, email, phone or address"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
         </div>
         {filtered.length === 0 ? (
           <div className="p-4">
             <EmptyState
-              title="No portal accounts yet"
-              description="Customers appear here after they register at /portal. Invoices already addressed to their email show up automatically."
+              title="No customers in this view"
+              description="Add a customer here, or let a portal registration or lead create one."
+              action={<Button onClick={openCreate}>Add customer</Button>}
             />
           </div>
         ) : (
           <div className="divide-y divide-line">
             {filtered.map((customer) => (
-              <article key={customer.id} className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1.3fr)_repeat(3,minmax(0,0.55fr))_auto] md:items-center">
+              <article key={customer.id} className="grid gap-4 px-4 py-5 lg:grid-cols-[minmax(0,1.4fr)_repeat(2,minmax(0,0.5fr))_auto] lg:items-center">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="truncate text-sm text-fg">{customer.name}</p>
-                    <Badge
-                      tone={
-                        customer.status === 'active'
-                          ? 'success'
-                          : customer.status === 'pending'
-                            ? 'warn'
-                            : 'heat'
-                      }
-                    >
+                    <Link to={`/admin/customers/${customer.id}`} className="truncate text-sm text-fg hover:text-cold">
+                      {customer.name}
+                    </Link>
+                    <Badge tone={customer.status === 'active' ? 'success' : customer.status === 'pending' ? 'warn' : 'heat'}>
                       {customerStatusLabel[customer.status]}
                     </Badge>
                   </div>
-                  <p className="truncate text-[11px] text-fg-dim">{customer.email}</p>
-                  <p className="text-[10px] text-fg-faint">{customer.phone || 'No phone'} · joined {formatDate(customer.createdAt)}</p>
+                  <p className="mt-1 truncate text-[11px] text-fg-dim">{customer.email}</p>
+                  <p className="text-[11px] text-fg-dim">{customer.phone || 'No mobile number'}</p>
+                  <p className="mt-1 line-clamp-1 text-[10px] text-fg-faint">{customer.address || 'No address on file'} · joined {formatDate(customer.createdAt)}</p>
                 </div>
                 <div>
                   <span className="block font-mono text-[8px] uppercase tracking-[0.1em] text-fg-faint">Invoices</span>
                   <span className="text-sm text-fg">{customer.invoiceCount}</span>
-                </div>
-                <div>
-                  <span className="block font-mono text-[8px] uppercase tracking-[0.1em] text-fg-faint">Open balance</span>
-                  <span className={customer.openBalance > 0 ? 'text-sm text-heat' : 'text-sm text-fg'}>{formatMoney(customer.openBalance)}</span>
+                  <span className="mt-1 block text-[10px] text-fg-faint">{formatMoney(customer.openBalance)} open</span>
                 </div>
                 <div>
                   <span className="block font-mono text-[8px] uppercase tracking-[0.1em] text-fg-faint">Next visit</span>
                   <span className="text-[11px] text-fg-dim">{customer.nextAppointmentAt ? formatDateTime(customer.nextAppointmentAt) : 'None booked'}</span>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 md:justify-self-end">
+                <div className="flex flex-wrap items-center gap-2 lg:justify-self-end">
                   <Link
                     to={`/admin/customers/${customer.id}`}
-                    className="flex h-8 items-center border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:border-cold/50 hover:text-cold"
+                    className="flex h-8 items-center border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-cold hover:border-cold/50 hover:text-fg"
                   >
-                    File
+                    Open file
                   </Link>
+                  <Button variant="quiet" size="sm" onClick={() => openEdit(customer)}>
+                    Edit
+                  </Button>
                   {customer.status === 'active' ? (
-                    <Button
-                      variant="quiet"
-                      size="sm"
-                      onClick={() => void updateCustomerStatus(customer, 'suspended')}
-                    >
+                    <Button variant="quiet" size="sm" onClick={() => void updateStatus(customer, 'suspended')}>
                       Suspend
                     </Button>
                   ) : customer.status === 'unverified' ? (
-                    <span className="font-mono text-[8px] uppercase tracking-[0.08em] text-fg-faint">
-                      Email unverified
-                    </span>
+                    <span className="font-mono text-[8px] uppercase tracking-[0.08em] text-fg-faint">Email unverified</span>
                   ) : (
-                    <Button
-                      size="sm"
-                      onClick={() => void updateCustomerStatus(customer, 'active')}
-                    >
+                    <Button size="sm" onClick={() => void updateStatus(customer, 'active')}>
                       Approve
                     </Button>
                   )}
@@ -275,78 +239,34 @@ export function AdminCustomers() {
         )}
       </section>
 
-      <section className="mt-6 border border-line bg-panel/20">
-        <div className="flex items-center justify-between border-b border-line px-4 py-3">
-          <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">Dispatch board</h2>
-          <Badge tone="cold">{appointments.length} visits</Badge>
-        </div>
-        {appointments.length === 0 ? (
-          <div className="p-4">
-            <EmptyState title="No visits booked" description="Schedule a visit here or wait for a customer portal booking. Each portal request also creates a lead." />
-          </div>
-        ) : (
-          <div className="divide-y divide-line">
-            {appointments.map((appointment) => (
-              <article key={appointment.id} className="grid gap-4 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_240px] lg:items-center">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-[9px] text-cold">{appointment.ref}</span>
-                    <Badge tone={appointment.status === 'cancelled' ? 'heat' : 'neutral'}>{appointmentStatusLabel[appointment.status]}</Badge>
-                    {appointment.rebookOf ? <Badge tone="cold">Rebook</Badge> : null}
-                  </div>
-                  <p className="mt-1 text-sm text-fg">{appointment.customerName} · {appointment.serviceName}</p>
-                  <p className="text-[11px] text-fg-dim">{formatDateTime(appointment.scheduledAt)} · {serviceWindowLabel(appointment.window)}</p>
-                  <p className="mt-1 text-[11px] text-fg-faint">{appointment.address || 'Address to confirm'}</p>
-                  <p className="mt-1 text-[10px] text-fg-faint">{appointment.customerEmail}{appointment.customerPhone ? ` · ${appointment.customerPhone}` : ''}{appointment.leadRef ? ` · lead ${appointment.leadRef}` : ''}</p>
-                </div>
-                <label className="flex flex-col gap-1">
-                  <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-fg-faint">Status</span>
-                  <Select
-                    aria-label={`Status for ${appointment.ref}`}
-                    value={appointment.status}
-                    onChange={(event) => void updateStatus(appointment, event.target.value as AppointmentStatus)}
-                    options={APPOINTMENT_STATUSES.map((status) => ({ value: status, label: appointmentStatusLabel[status] }))}
-                  />
-                </label>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-
       <Modal
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        title="Schedule a service visit"
-        description="Adds a visit to the dispatch board. Link a portal customer by using their email address."
+        open={open}
+        onClose={() => setOpen(false)}
+        title={editing ? `Edit ${editing.name}` : 'Add customer'}
+        description="These details appear on invoices, service visits, emails and the customer portal."
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button loading={saving} onClick={() => void createAppointment()}>Schedule visit</Button>
+            <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button loading={busy} onClick={() => void save()} icon={editing ? 'check' : 'plus'}>
+              {editing ? 'Save customer' : 'Add customer'}
+            </Button>
           </div>
         }
       >
         <div className="grid gap-4 sm:grid-cols-2">
-          <Input label="Customer name" required value={form.customerName} onChange={(event) => setForm({ ...form, customerName: event.target.value })} />
-          <Input label="Email" type="email" value={form.customerEmail} onChange={(event) => setForm({ ...form, customerEmail: event.target.value })} />
-          <Input label="Phone" value={form.customerPhone} onChange={(event) => setForm({ ...form, customerPhone: event.target.value })} />
-          <Input label="Service" value={form.serviceName} onChange={(event) => setForm({ ...form, serviceName: event.target.value })} />
-          <Input label="Visit date" type="date" min={today()} value={form.scheduledAt} onChange={(event) => setForm({ ...form, scheduledAt: event.target.value })} />
-          <Select
-            label="Window"
-            value={form.window}
-            onChange={(event) => setForm({ ...form, window: event.target.value as AppointmentRecord['window'] })}
-            options={(['morning', 'afternoon', 'evening', 'emergency'] as const).map((entry) => ({ value: entry, label: serviceWindowLabel(entry) }))}
-          />
-          <Input label="Technician" value={form.technician} onChange={(event) => setForm({ ...form, technician: event.target.value })} />
+          <Input label="Customer name" required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+          <Input label="Mobile number" type="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+          <Input label="Email" type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
           <div className="sm:col-span-2">
             <Textarea label="Service address" rows={2} value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} />
           </div>
-          <div className="sm:col-span-2">
-            <Textarea label="Notes" rows={3} value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
-          </div>
+          {editing ? (
+            <p className="sm:col-span-2 text-[11px] leading-relaxed text-fg-faint">
+              Changing the email keeps invoice matching tied to the new address. Portal access status is managed separately.
+            </p>
+          ) : null}
         </div>
       </Modal>
-    </>
+    </div>
   )
 }

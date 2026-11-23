@@ -5,8 +5,8 @@ import {
   appointmentPatchSchema,
   customerBookingSchema,
   customerAdminCreateSchema,
+  customerAdminPatchSchema,
   customerAppointmentActionSchema,
-  customerStatusPatchSchema,
   invoiceTotals,
   serviceWindowLabel,
   type AdminLead,
@@ -535,14 +535,29 @@ customersRouter.get('/customers', async (_req, res) => {
 })
 
 customersRouter.patch('/customers/:id', async (req, res) => {
-  const parsed = customerStatusPatchSchema.safeParse(req.body)
+  const parsed = customerAdminPatchSchema.safeParse(req.body)
   if (!parsed.success) {
-    validationError(res, 'Choose a valid account status.')
+    validationError(res, parsed.error.issues[0]?.message ?? 'Check the customer details.')
     return
   }
   const existing = (await customerStore.read()).find((entry) => entry.id === req.params.id)
+  if (!existing) {
+    res.status(404).json({ error: { code: 'not_found', message: 'Customer not found.' } })
+    return
+  }
+  const email = parsed.data.email ? parsed.data.email.trim().toLowerCase() : existing.email
+  if (email !== existing.email) {
+    const duplicate = (await customerStore.read()).find(
+      (entry) => entry.id !== existing.id && entry.email === email,
+    )
+    if (duplicate) {
+      res.status(409).json({
+        error: { code: 'email_in_use', message: 'Another customer already uses this email.' },
+      })
+      return
+    }
+  }
   if (
-    existing &&
     parsed.data.status === 'active' &&
     (existing.status ?? 'active') === 'unverified'
   ) {
@@ -557,7 +572,13 @@ customersRouter.patch('/customers/:id', async (req, res) => {
   const customers = await customerStore.mutate((current) =>
     current.map((customer) =>
       customer.id === req.params.id
-        ? { ...customer, status: parsed.data.status, updatedAt: nowIso() }
+        ? {
+            ...customer,
+            ...parsed.data,
+            email,
+            emailVerifiedAt: email !== customer.email ? nowIso() : customer.emailVerifiedAt,
+            updatedAt: nowIso(),
+          }
         : customer,
     ),
   )
@@ -566,7 +587,7 @@ customersRouter.patch('/customers/:id', async (req, res) => {
     res.status(404).json({ error: { code: 'not_found', message: 'Customer not found.' } })
     return
   }
-  if (parsed.data.status !== 'active') {
+  if (parsed.data.status && parsed.data.status !== 'active') {
     await revokeCustomerSessions(customer.id)
   }
   res.json({ data: publicCustomer(customer) })

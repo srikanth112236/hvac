@@ -193,6 +193,10 @@ describe('lead → invoice → customer portal', () => {
       })
       .expect(201)
     expect(walkIn.body.data.status).toBe('active')
+    const updatedWalkIn = await adminHeaders(admin.patch(`/api/v1/admin/customers/${walkIn.body.data.id}`))
+      .send({ phone: '2145550199', name: 'Walk In Updated' })
+      .expect(200)
+    expect(updatedWalkIn.body.data.phone).toBe('2145550199')
 
     await adminHeaders(admin.patch(`/api/v1/admin/customers/${customer.id}`))
       .send({ status: 'active' })

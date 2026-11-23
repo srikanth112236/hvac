@@ -7,6 +7,8 @@ import type {
   CustomerAccount,
   CustomerAccountWithStats,
   CustomerAdminCreateInput,
+  CustomerAdminPatchInput,
+  CustomerStatus,
   CustomerPortalFile,
   CustomerSite,
   CustomerSiteInput,
@@ -562,10 +564,10 @@ export const adminApi = {
       method: 'POST',
       body: JSON.stringify(input),
     }).then((payload) => payload.data),
-  patchCustomer: (id: string, status: string) =>
+  patchCustomer: (id: string, input: CustomerAdminPatchInput | CustomerStatus) =>
     request<{ data: CustomerAccountWithStats }>(`/admin/customers/${encodeURIComponent(id)}`, {
       method: 'PATCH',
-      body: JSON.stringify({ status }),
+      body: JSON.stringify(typeof input === 'string' ? { status: input } : input),
     }).then((payload) => payload.data),
   customerFile: (id: string) =>
     request<{ data: { customer: CustomerAccount; file: CustomerPortalFile } }>(

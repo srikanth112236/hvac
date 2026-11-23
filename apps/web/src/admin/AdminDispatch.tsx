@@ -9,7 +9,7 @@ import {
   type AppointmentStatus,
   type TeamMember,
 } from '@hvac/shared'
-import { Badge, Button, EmptyState, Select, useToast } from '@/components/ui'
+import { Badge, Button, EmptyState, Input, Modal, Select, Textarea, useToast } from '@/components/ui'
 import { adminApi } from '@/admin/api'
 import { useLiveRefresh } from '@/admin/useLiveRefresh'
 import { AdminLoading, AdminPageHeader, InlineError, formatDateTime } from '@/admin/ui'
@@ -26,6 +26,19 @@ export function AdminDispatch() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [day, setDay] = useState<'today' | 'upcoming' | 'all'>('today')
+  const [createOpen, setCreateOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState({
+    customerName: '',
+    customerEmail: '',
+    customerPhone: '',
+    serviceName: 'HVAC service',
+    address: '',
+    scheduledAt: today(),
+    window: 'morning' as AppointmentRecord['window'],
+    technician: '',
+    notes: '',
+  })
 
   const load = useCallback(async () => {
     setError('')
@@ -95,6 +108,29 @@ export function AdminDispatch() {
     }
   }
 
+  const createAppointment = async () => {
+    setSaving(true)
+    try {
+      const created = await adminApi.createAppointment(form)
+      setAppointments((current) => [created, ...current])
+      setCreateOpen(false)
+      setForm((current) => ({
+        ...current,
+        customerName: '',
+        customerEmail: '',
+        customerPhone: '',
+        address: '',
+        notes: '',
+      }))
+      toast({ title: 'Visit scheduled', description: `${created.ref} added to dispatch.`, tone: 'success' })
+      await load()
+    } catch (caught) {
+      toast({ title: 'Could not schedule visit', description: caught instanceof Error ? caught.message : 'Check the details.', tone: 'danger' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (loading) return <AdminLoading rows={7} />
 
   return (
@@ -125,6 +161,9 @@ export function AdminDispatch() {
               onClick={() => setDay('all')}
             >
               All
+            </Button>
+            <Button size="sm" icon="plus" onClick={() => setCreateOpen(true)}>
+              Schedule visit
             </Button>
           </div>
         }
@@ -242,6 +281,31 @@ export function AdminDispatch() {
           ))}
         </div>
       )}
+
+      <Modal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title="Schedule a service visit"
+        description="Adds a diary appointment and its linked job. Link a portal customer by email, or enter the visit manually."
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button loading={saving} onClick={() => void createAppointment()} icon="plus">Schedule visit</Button>
+          </div>
+        }
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input label="Customer name" required value={form.customerName} onChange={(event) => setForm({ ...form, customerName: event.target.value })} />
+          <Input label="Mobile number" type="tel" value={form.customerPhone} onChange={(event) => setForm({ ...form, customerPhone: event.target.value })} />
+          <Input label="Email" type="email" value={form.customerEmail} onChange={(event) => setForm({ ...form, customerEmail: event.target.value })} />
+          <Input label="Service" value={form.serviceName} onChange={(event) => setForm({ ...form, serviceName: event.target.value })} />
+          <Input label="Visit date" type="date" min={today()} value={form.scheduledAt} onChange={(event) => setForm({ ...form, scheduledAt: event.target.value })} />
+          <Select label="Window" value={form.window} onChange={(event) => setForm({ ...form, window: event.target.value as AppointmentRecord['window'] })} options={(['morning', 'afternoon', 'evening', 'emergency'] as const).map((entry) => ({ value: entry, label: serviceWindowLabel(entry) }))} />
+          <Input label="Technician" value={form.technician} onChange={(event) => setForm({ ...form, technician: event.target.value })} />
+          <div className="sm:col-span-2"><Textarea label="Service address" rows={2} value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} /></div>
+          <div className="sm:col-span-2"><Textarea label="Notes" rows={3} value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></div>
+        </div>
+      </Modal>
     </div>
   )
 }

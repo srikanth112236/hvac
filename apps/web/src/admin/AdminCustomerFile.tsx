@@ -38,9 +38,18 @@ import {
   formatMoney,
 } from '@/admin/ui'
 
-type Tab = 'sites' | 'equipment' | 'quotations' | 'amc' | 'reports' | 'tickets' | 'preferences'
+type Tab =
+  | 'invoices'
+  | 'sites'
+  | 'equipment'
+  | 'quotations'
+  | 'amc'
+  | 'reports'
+  | 'tickets'
+  | 'preferences'
 
 const tabs: { id: Tab; label: string }[] = [
+  { id: 'invoices', label: 'Invoices & payments' },
   { id: 'sites', label: 'Sites' },
   { id: 'equipment', label: 'Equipment' },
   { id: 'quotations', label: 'Quotations' },
@@ -80,8 +89,10 @@ export function AdminCustomerFile() {
   )
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [tab, setTab] = useState<Tab>('sites')
+  const [tab, setTab] = useState<Tab>('invoices')
   const [busy, setBusy] = useState(false)
+  const [customerEditOpen, setCustomerEditOpen] = useState(false)
+  const [customerForm, setCustomerForm] = useState({ name: '', email: '', phone: '', address: '' })
 
   const [siteOpen, setSiteOpen] = useState(false)
   const [siteEditing, setSiteEditing] = useState<CustomerSite | null>(null)
@@ -163,6 +174,36 @@ export function AdminCustomerFile() {
   }, [customerId])
 
   useLiveRefresh(load)
+
+  const openCustomerEdit = () => {
+    if (!customer) return
+    setCustomerForm({
+      name: customer.name,
+      email: customer.email,
+      phone: customer.phone,
+      address: customer.address,
+    })
+    setCustomerEditOpen(true)
+  }
+
+  const saveCustomerDetails = async () => {
+    if (!customer) return
+    setBusy(true)
+    try {
+      await adminApi.patchCustomer(customer.id, customerForm)
+      await load()
+      setCustomerEditOpen(false)
+      toast({ title: 'Customer details updated', tone: 'success' })
+    } catch (caught) {
+      toast({
+        title: 'Could not update customer',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const file = data?.file
   const customer = data?.customer
@@ -523,7 +564,7 @@ export function AdminCustomerFile() {
       <AdminPageHeader
         eyebrow="Customer file · CV-FILE"
         title={customer.name}
-        description={`${customer.email} · ${customer.phone || 'No phone'} · ${customer.status === 'active' ? 'portal access active' : customer.status === 'pending' ? 'awaiting portal approval' : 'portal access suspended'}`}
+        description={`${customer.email} · ${customer.phone || 'No phone'} · ${customer.address || 'No address'} · ${customer.status === 'active' ? 'portal access active' : customer.status === 'pending' ? 'awaiting portal approval' : 'portal access suspended'}`}
         actions={
           <div className="flex flex-wrap gap-2">
             <Link
@@ -532,6 +573,9 @@ export function AdminCustomerFile() {
             >
               Back to customers
             </Link>
+            <Button variant="secondary" size="sm" onClick={openCustomerEdit}>
+              Edit details
+            </Button>
             <button
               type="button"
               onClick={() => void eraseCustomer()}
@@ -578,6 +622,67 @@ export function AdminCustomerFile() {
           </button>
         ))}
       </div>
+
+      {tab === 'invoices' ? (
+        <section className="border border-line bg-panel/20">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
+            <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+              Invoices & payments
+            </h2>
+            <Badge tone="neutral">{file.invoices.length} invoices</Badge>
+          </div>
+          {file.invoices.length === 0 ? (
+            <div className="p-4">
+              <EmptyState title="No invoices yet" description="Invoices addressed to this email appear here with every recorded payment." />
+            </div>
+          ) : (
+            <div className="divide-y divide-line">
+              {file.invoices.map((invoice) => (
+                <article key={invoice.id} className="p-4">
+                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-center">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Link to={`/admin/invoices/${invoice.id}`} className="font-mono text-[9px] text-cold hover:text-fg">
+                          {invoice.ref}
+                        </Link>
+                        <Badge tone={invoice.totals.balance > 0 ? 'warn' : 'success'}>{invoice.totals.state}</Badge>
+                      </div>
+                      <p className="mt-1 text-[12px] text-fg">{invoice.service || 'Service invoice'}</p>
+                      <p className="text-[10px] text-fg-faint">
+                        Issued {formatDate(invoice.issueDate)} · due {formatDate(invoice.dueDate)} · {invoice.payments.length} payment{invoice.payments.length === 1 ? '' : 's'}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-mono text-[12px] text-fg">{formatMoney(invoice.totals.total)}</p>
+                      <p className={invoice.totals.balance > 0 ? 'text-[10px] text-heat' : 'text-[10px] text-success'}>
+                        {formatMoney(invoice.totals.balance)} {invoice.totals.balance > 0 ? 'due' : 'settled'}
+                      </p>
+                    </div>
+                    <ButtonAnchor
+                      href={`/api/v1/admin/invoices/${invoice.id}/pdf`}
+                      download
+                      variant="quiet"
+                      size="sm"
+                    >
+                      PDF
+                    </ButtonAnchor>
+                  </div>
+                  {invoice.payments.length ? (
+                    <div className="mt-3 border-t border-line/60 pt-2">
+                      {invoice.payments.map((payment) => (
+                        <p key={payment.id} className="flex flex-wrap justify-between gap-2 py-1 text-[10px] text-fg-dim">
+                          <span>{formatDate(payment.receivedAt)} · {payment.method}{payment.reference ? ` · ${payment.reference}` : ''}</span>
+                          <span className="font-mono text-fg">{formatMoney(payment.amount)}</span>
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
 
       {tab === 'sites' ? (
         <section className="border border-line bg-panel/20">
@@ -1506,6 +1611,28 @@ export function AdminCustomerFile() {
             </form>
           </div>
         ) : null}
+      </Modal>
+
+      <Modal
+        open={customerEditOpen}
+        onClose={() => setCustomerEditOpen(false)}
+        title="Edit customer details"
+        description="These details appear on invoices, job cards, emails and portal records."
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setCustomerEditOpen(false)}>Cancel</Button>
+            <Button loading={busy} onClick={() => void saveCustomerDetails()} icon="check">Save details</Button>
+          </div>
+        }
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input label="Customer name" required value={customerForm.name} onChange={(event) => setCustomerForm({ ...customerForm, name: event.target.value })} />
+          <Input label="Mobile number" type="tel" value={customerForm.phone} onChange={(event) => setCustomerForm({ ...customerForm, phone: event.target.value })} />
+          <Input label="Email" type="email" required value={customerForm.email} onChange={(event) => setCustomerForm({ ...customerForm, email: event.target.value })} />
+          <div className="sm:col-span-2">
+            <Textarea label="Service address" rows={2} value={customerForm.address} onChange={(event) => setCustomerForm({ ...customerForm, address: event.target.value })} />
+          </div>
+        </div>
       </Modal>
     </div>
   )
