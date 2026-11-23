@@ -579,10 +579,19 @@ export const adminApi = {
       method: 'POST',
       body: JSON.stringify(input),
     }).then((payload) => payload.data),
-  patchEquipment: (id: string, equipmentId: string, input: Partial<EquipmentInput>) =>
+  patchEquipment: (
+    id: string,
+    equipmentId: string,
+    input: Partial<EquipmentInput>,
+    version?: string,
+  ) =>
     request<{ data: EquipmentRecord }>(
       `/admin/customers/${encodeURIComponent(id)}/equipment/${encodeURIComponent(equipmentId)}`,
-      { method: 'PATCH', body: JSON.stringify(input) },
+      {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+        ...(version ? { headers: { 'If-Match': version } } : {}),
+      },
     ).then((payload) => payload.data),
   deleteEquipment: (id: string, equipmentId: string) =>
     request<{ data: { deleted: string } }>(
@@ -594,10 +603,19 @@ export const adminApi = {
       `/admin/customers/${encodeURIComponent(id)}/quotations`,
       { method: 'POST', body: JSON.stringify(input) },
     ).then((payload) => payload.data),
-  patchQuotation: (id: string, quotationId: string, input: Record<string, unknown>) =>
+  patchQuotation: (
+    id: string,
+    quotationId: string,
+    input: Record<string, unknown>,
+    version?: string,
+  ) =>
     request<{ data: QuotationRecord & { totals: QuotationTotals } }>(
       `/admin/customers/${encodeURIComponent(id)}/quotations/${encodeURIComponent(quotationId)}`,
-      { method: 'PATCH', body: JSON.stringify(input) },
+      {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+        ...(version ? { headers: { 'If-Match': version } } : {}),
+      },
     ).then((payload) => payload.data),
   deleteQuotation: (id: string, quotationId: string) =>
     request<{ data: { deleted: string } }>(
@@ -609,10 +627,14 @@ export const adminApi = {
       method: 'POST',
       body: JSON.stringify(input),
     }).then((payload) => payload.data),
-  patchAmc: (id: string, contractId: string, input: Partial<AmcInput>) =>
+  patchAmc: (id: string, contractId: string, input: Partial<AmcInput>, version?: string) =>
     request<{ data: AmcContract }>(
       `/admin/customers/${encodeURIComponent(id)}/amc/${encodeURIComponent(contractId)}`,
-      { method: 'PATCH', body: JSON.stringify(input) },
+      {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+        ...(version ? { headers: { 'If-Match': version } } : {}),
+      },
     ).then((payload) => payload.data),
   deleteAmc: (id: string, contractId: string) =>
     request<{ data: { deleted: string } }>(

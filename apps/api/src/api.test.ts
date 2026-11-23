@@ -209,6 +209,13 @@ describe('lead → invoice → customer portal', () => {
       .send({ name: 'Test cassette v2' })
       .expect(200)
     expect(equipmentEdited.body.data.name).toBe('Test cassette v2')
+    await adminHeaders(
+      admin
+        .patch(`/api/v1/admin/customers/${customer.id}/equipment/${equipmentId}`)
+        .set('If-Match', equipment.body.data.updatedAt),
+    )
+      .send({ name: 'Stale write' })
+      .expect(412)
 
     const quote = await adminHeaders(
       admin.post(`/api/v1/admin/customers/${customer.id}/quotations`),

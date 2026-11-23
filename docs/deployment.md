@@ -41,6 +41,9 @@ cookies `SameSite=Strict`. If they must be separate origins, set
 | `PUBLIC_BRAND_NAME`                    | recommended | Brand name used in the 2FA email shell                                                                                                                      |
 | `ADMIN_NOTIFY_EMAIL`                   | recommended | Desk inbox for leads, reminders, digests                                                                                                                    |
 | `UPLOAD_ROOT`                          | no          | Defaults to the repo `uploads/` directory                                                                                                                   |
+| `DATABASE_URL`                         | multi       | PostgreSQL connection string; enables shared sessions, rate counters, jobs state and records                                                               |
+| `DATABASE_POOL_SIZE`                   | no          | PostgreSQL pool size, default 10                                                                                                                            |
+| `JOBS_ENABLED`                         | no          | Set `false` on extra workers; jobs also use a shared lease                                                                                                  |
 | `AUDIT_RETENTION_DAYS`                 | no          | Default 365                                                                                                                                                 |
 | `EMAIL_LOG_RETENTION_DAYS`             | no          | Default 180                                                                                                                                                 |
 
@@ -150,16 +153,17 @@ Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
 Dependabot is configured for weekly minor/patch updates. Majors are explicit
 changes because Vite, React Router and Tiptap have breaking migrations.
 
-## Scaling caveat
+## Multi-instance deployment
 
-Sessions, rate-limit counters, background jobs and audit/email stores are
-process-local. Run **one** API instance until they are moved to a shared store
-(Redis/Postgres). If more than one instance is required:
+Single-instance is still the default when `DATABASE_URL` is unset. For more than
+one API worker, set `DATABASE_URL` to PostgreSQL. Every JSON store then uses the
+shared `hvac_json_store` table with row-locked transactions; sessions, portal
+sessions, rate-limit counters, job state and business records are shared.
 
-- move sessions and rate limits to Redis,
-- move the JSON stores to a database,
-- run the job scheduler on a single leader (`startJobs` only on one instance),
-- move backups to object storage.
+Set `JOBS_ENABLED=false` on extra workers if you want a dedicated scheduler.
+Jobs also take a shared lease, so a duplicate worker skips a cycle rather than
+sending the same reminder twice. Use `pg_dump` for database backups; the
+`data/backups` JSON copy is for the single-instance file-backed mode.
 
 ## Security checklist
 
@@ -176,5 +180,6 @@ process-local. Run **one** API instance until they are moved to a shared store
 - [x] Async route errors reach the error middleware.
 - [x] Audit log, data health, export, retention, customer erasure.
 - [x] Email two-factor OTP for staff; no SMS provider exists.
+- [x] Multi-instance shared PostgreSQL store option with row-locked mutations and shared rate counters.
 - [x] Server-side rendering with per-route meta/JSON-LD and hydration.
 - [ ] Move the JSON stores to an encrypted database before multi-instance scale.

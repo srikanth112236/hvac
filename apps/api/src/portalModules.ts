@@ -31,6 +31,7 @@ import { requireAdmin, requireAdminMutation, requirePermission } from './auth.js
 import { ADMIN_NOTIFY_EMAIL, PUBLIC_SITE_URL } from './config.js'
 import { invoiceStore, toInvoiceView } from './business.js'
 import { readSiteContent } from './content.js'
+import { ifMatchSatisfied } from './concurrency.js'
 import {
   customerWantsEmail,
   preferenceStore,
@@ -981,6 +982,19 @@ portalAdminRouter.patch('/customers/:id/equipment/:equipmentId', async (req, res
     res.status(400).json({ error: { code: 'validation_error', message: 'Check the equipment.' } })
     return
   }
+  const currentEquipment = (await equipmentStore.read()).find(
+    (item) => item.id === req.params.equipmentId && item.customerId === req.params.id,
+  )
+  if (!currentEquipment) {
+    res.status(404).json({ error: { code: 'not_found', message: 'Equipment not found.' } })
+    return
+  }
+  if (!ifMatchSatisfied(req, currentEquipment.updatedAt)) {
+    res.status(412).json({
+      error: { code: 'stale_record', message: 'This equipment changed in another session. Reload and apply your edit again.' },
+    })
+    return
+  }
   let saved: EquipmentRecord | undefined
   await equipmentStore.mutate((items) =>
     items.map((item) => {
@@ -1094,6 +1108,19 @@ portalAdminRouter.patch('/customers/:id/quotations/:quotationId', async (req, re
     res.status(400).json({ error: { code: 'validation_error', message: 'Check the quotation.' } })
     return
   }
+  const currentQuotation = (await quotationStore.read()).find(
+    (quotation) => quotation.id === req.params.quotationId && quotation.customerId === req.params.id,
+  )
+  if (!currentQuotation) {
+    res.status(404).json({ error: { code: 'not_found', message: 'Quotation not found.' } })
+    return
+  }
+  if (!ifMatchSatisfied(req, currentQuotation.updatedAt)) {
+    res.status(412).json({
+      error: { code: 'stale_record', message: 'This quotation changed in another session. Reload and apply your edit again.' },
+    })
+    return
+  }
   let saved: QuotationRecord | undefined
   let notifyCustomer: QuotationRecord | undefined
   await quotationStore.mutate((quotations) =>
@@ -1196,6 +1223,19 @@ portalAdminRouter.patch('/customers/:id/amc/:contractId', async (req, res) => {
   const parsed = amcPatchSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({ error: { code: 'validation_error', message: 'Check the contract.' } })
+    return
+  }
+  const currentContract = (await amcStore.read()).find(
+    (contract) => contract.id === req.params.contractId && contract.customerId === req.params.id,
+  )
+  if (!currentContract) {
+    res.status(404).json({ error: { code: 'not_found', message: 'Contract not found.' } })
+    return
+  }
+  if (!ifMatchSatisfied(req, currentContract.updatedAt)) {
+    res.status(412).json({
+      error: { code: 'stale_record', message: 'This contract changed in another session. Reload and apply your edit again.' },
+    })
     return
   }
   let saved: AmcContract | undefined

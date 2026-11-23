@@ -63,7 +63,8 @@ development the floating switcher also flips it live; the choice is stored in
   ETag/304, **server-rendered public HTML with per-route meta/JSON-LD and
   hydration**, optional prerendered fallback, same-origin sitemap/robots/feed,
   background jobs (reminders, AMC windows, digest, backups, retention), encrypted
-  JSON stores, rate limiting, CSP/consent, audit trail.
+  JSON stores, record-level `If-Match` on content/equipment/AMC/quotation edits,
+  rate limiting, CSP/consent, audit trail.
 
 ## Security
 
@@ -79,6 +80,7 @@ ALLOWED_ORIGINS=
 PUBLIC_SITE_URL=
 RESEND_API_KEY=            # or MAIL_WEBHOOK_URL; required for production registration/mail
 PUBLIC_BRAND_NAME=         # optional; used in the 2FA email shell
+DATABASE_URL=              # optional: shared PostgreSQL for multiple API instances
 ```
 
 Email is the only notification channel. Admin two-factor sends a six-digit code
@@ -110,4 +112,4 @@ npm run verify      # typecheck + lint + test + build + audit
 - Public routes are server-rendered for crawlers and hydrated on the client; `/admin` and `/portal` remain client-only shells. The first response carries a single `hvac-bootstrap` JSON block with content and theme, followed by hydration. Rebuild (`npm run build`) after code changes; `build:prerender` is optional and only creates static fallbacks.
 - `?theme=foundry|atelier` forces the server-rendered theme and is verified for every public route by `npm run test:ssr`.
 - Admin 2FA is email OTP only. Portal accounts use verified email + password and admin approval; no SMS is sent anywhere.
-- One API instance is assumed until sessions, rate limits and jobs move to a shared store.
+- One API instance is the default. Set `DATABASE_URL` for PostgreSQL-backed shared sessions, rate counters, jobs state and records; extra workers can set `JOBS_ENABLED=false` and jobs take a lease.

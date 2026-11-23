@@ -1,20 +1,45 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { Pool, type PoolClient } from 'pg'
 
 /**
- * Small JSON-backed store for the demo. Reads are cached in memory; writes are
- * serialised so two admin saves cannot interleave. Writes go to a temporary
- * file and are renamed into place so a crash cannot leave truncated JSON.
+ * Storage is single-file JSON by default, with an optional PostgreSQL adapter
+ * for multi-instance deployments. Set DATABASE_URL and every store (sessions,
+ * rate counters, business records, jobs state) reads and mutates through the
+ * shared `hvac_json_store` table under a row lock.
  *
- * When DATA_ENCRYPTION_KEY is set, every file is AES-256-GCM encrypted and the
- * on-disk content starts with `ENC1:`. A missing key on an encrypted file is a
- * hard error — never a silent reset to seed data.
+ * When DATA_ENCRYPTION_KEY is set, the payload is AES-256-GCM encrypted before
+ * it reaches disk or PostgreSQL. A missing key on encrypted data is a hard
+ * error — never a silent reset to seed data.
  */
 const ENC_PREFIX = 'ENC1:'
 const KEY = process.env.DATA_ENCRYPTION_KEY
   ? createHash('sha256').update(process.env.DATA_ENCRYPTION_KEY, 'utf8').digest()
   : null
+const POOL = process.env.DATABASE_URL
+  ? new Pool({
+      connectionString: process.env.DATABASE_URL,
+      max: Number.parseInt(process.env.DATABASE_POOL_SIZE ?? '10', 10),
+    })
+  : null
+let schemaReady: Promise<void> | null = null
+
+function ensureSchema(client: Pool | PoolClient): Promise<void> {
+  if (!schemaReady) {
+    schemaReady = client
+      .query(
+        `CREATE TABLE IF NOT EXISTS hvac_json_store (
+           name text PRIMARY KEY,
+           payload text NOT NULL,
+           updated_at timestamptz NOT NULL DEFAULT now()
+         )`,
+      )
+      .then(() => undefined)
+  }
+  return schemaReady
+}
+
 
 export function isEncryptedText(value: string): boolean {
   return value.startsWith(ENC_PREFIX)
@@ -72,7 +97,62 @@ export interface JsonStore<T> {
   mutate: (recipe: (current: T) => T | Promise<T>) => Promise<T>
 }
 
+function createPostgresStore<T>(fileName: string, fallback: () => T): JsonStore<T> {
+  const pool = POOL as Pool
+  async function read(): Promise<T> {
+    await ensureSchema(pool)
+    const result = await pool.query<{ payload: string }>(
+      'SELECT payload FROM hvac_json_store WHERE name = $1',
+      [fileName],
+    )
+    if (!result.rows[0]) return fallback()
+    return JSON.parse(decryptText(result.rows[0].payload)) as T
+  }
+
+  async function write(next: T): Promise<void> {
+    await ensureSchema(pool)
+    await pool.query(
+      `INSERT INTO hvac_json_store (name, payload, updated_at)
+       VALUES ($1, $2, now())
+       ON CONFLICT (name) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`,
+      [fileName, encryptText(JSON.stringify(next))],
+    )
+  }
+
+  async function mutate(recipe: (current: T) => T | Promise<T>): Promise<T> {
+    const client = await pool.connect()
+    try {
+      await ensureSchema(client)
+      await client.query('BEGIN')
+      const result = await client.query<{ payload: string }>(
+        'SELECT payload FROM hvac_json_store WHERE name = $1 FOR UPDATE',
+        [fileName],
+      )
+      const current = result.rows[0]
+        ? (JSON.parse(decryptText(result.rows[0].payload)) as T)
+        : fallback()
+      const next = await recipe(current)
+      await client.query(
+        `INSERT INTO hvac_json_store (name, payload, updated_at)
+         VALUES ($1, $2, now())
+         ON CONFLICT (name) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`,
+        [fileName, encryptText(JSON.stringify(next))],
+      )
+      await client.query('COMMIT')
+      return next
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined)
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  return { read, write, mutate }
+}
+
 export function createStore<T>(fileName: string, fallback: () => T): JsonStore<T> {
+  if (POOL) return createPostgresStore(fileName, fallback)
   const file = path.resolve(DATA_DIR, fileName)
   let cache: T | null = null
   let chain: Promise<void> = Promise.resolve()

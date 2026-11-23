@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { copyFile, mkdir, readdir, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { pruneAuditLog } from './audit.js'
@@ -32,6 +33,12 @@ const stateStore = createStore<JobState>('job-state.json', () => ({
   lastDigestDate: null,
   lastBackupDate: null,
 }))
+const lockStore = createStore<{ owner: string; until: number }>('job-lock.json', () => ({
+  owner: '',
+  until: 0,
+}))
+const instanceId = randomUUID()
+const LOCK_MS = 4 * 60 * 1000
 
 const DAY = 86_400_000
 const BACKUP_ROOT = path.join(DATA_DIR, 'backups')
@@ -244,6 +251,22 @@ async function tick(): Promise<void> {
   if (running) return
   running = true
   const now = Date.now()
+  let lock: { owner: string; until: number }
+  try {
+    lock = await lockStore.mutate((current) =>
+      current.until > now && current.owner !== instanceId
+        ? current
+        : { owner: instanceId, until: now + LOCK_MS },
+    )
+  } catch (error) {
+    console.error('[hvac-api] background job lease failed', error)
+    running = false
+    return
+  }
+  if (lock.owner !== instanceId) {
+    running = false
+    return
+  }
   try {
     await runReminderNotifications(now)
     await runAmcReminders(now)
@@ -253,16 +276,25 @@ async function tick(): Promise<void> {
   } catch (error) {
     console.error('[hvac-api] background job failed', error)
   } finally {
+    await lockStore
+      .mutate((current) =>
+        current.owner === instanceId ? { owner: '', until: 0 } : current,
+      )
+      .catch(() => undefined)
     running = false
   }
 }
 
 export function startJobs(): void {
+  if (process.env.JOBS_ENABLED === 'false') {
+    console.log('[hvac-api] background jobs disabled for this instance')
+    return
+  }
   const first = setTimeout(() => void tick(), 5_000)
   first.unref()
   const timer = setInterval(() => void tick(), 5 * 60 * 1000)
   timer.unref()
-  console.log('[hvac-api] background jobs started (reminders, AMC, digest, backup)')
+  console.log('[hvac-api] background jobs started (lease-guarded reminders, AMC, digest, backup)')
 }
 
 export async function runJobsNow(): Promise<void> {

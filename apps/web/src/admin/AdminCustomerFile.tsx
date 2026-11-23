@@ -218,7 +218,12 @@ export function AdminCustomerFile() {
         siteId: equipmentForm.siteId || null,
       }
       if (equipmentEditing) {
-        await adminApi.patchEquipment(customerId, equipmentEditing.id, payload)
+        await adminApi.patchEquipment(
+          customerId,
+          equipmentEditing.id,
+          payload,
+          equipmentEditing.updatedAt,
+        )
       } else {
         await adminApi.createEquipment(customerId, payload)
       }
@@ -253,14 +258,19 @@ export function AdminCustomerFile() {
     }
     await run(async () => {
       if (quoteEditing) {
-        await adminApi.patchQuotation(customerId, quoteEditing.id, {
-          title: quoteForm.title,
-          service: quoteForm.service,
-          status: quoteForm.status,
-          validUntil: quoteForm.validUntil,
-          lines,
-          notes: quoteForm.notes,
-        })
+        await adminApi.patchQuotation(
+          customerId,
+          quoteEditing.id,
+          {
+            title: quoteForm.title,
+            service: quoteForm.service,
+            status: quoteForm.status,
+            validUntil: quoteForm.validUntil,
+            lines,
+            notes: quoteForm.notes,
+          },
+          quoteEditing.updatedAt,
+        )
       } else {
         await adminApi.createQuotation(customerId, {
           title: quoteForm.title,
@@ -311,7 +321,7 @@ export function AdminCustomerFile() {
         equipmentIds: amcForm.equipmentIds,
       }
       if (amcEditing) {
-        await adminApi.patchAmc(customerId, amcEditing.id, payload)
+        await adminApi.patchAmc(customerId, amcEditing.id, payload, amcEditing.updatedAt)
       } else {
         await adminApi.createAmc(customerId, payload)
       }

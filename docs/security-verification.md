@@ -32,6 +32,10 @@ checks, build verification. **Not** a formal penetration test.
 | 20 | AMC visits account-level | Appointments carry `amcContractId`; dispatch links a visit to a contract; the portal shows each contract's next visit | Test creates an appointment with `amcContractId`; portal file returns the linked visit and the AMC card filters by contract |
 | 21 | Delete-and-recreate editing | Equipment, AMC contracts and quotation lines have PATCH APIs and in-place admin edit forms | Integration test patches equipment name, quotation lines/total and AMC visit count; UI opens the same records in edit modals |
 
+| 22  | Same-field stale edits         | `If-Match` against record `updatedAt` on equipment, AMC and quotation PATCH; shared-store `mutate` would not save stale version | Integration test patches equipment then retries with the old `updatedAt`; receives `412` |
+| 23  | Single API instance            | Optional PostgreSQL `hvac_json_store` for sessions, rate counters, jobs state and records; job lease; `JOBS_ENABLED` worker switch | Code path added and typechecked; live PostgreSQL validation requires `DATABASE_URL` and is documented |
+| 24  | Moderate advisories reported   | Current lockfile has React Router 7.18, Vite 8.3, Zod 4.6 and no Tiptap; audit rerun | `npm audit --json` reports **0** total advisories |
+
 Additional checks:
 
 | Check                                  | Result                                                                                            |
