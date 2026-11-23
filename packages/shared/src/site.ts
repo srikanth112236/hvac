@@ -1053,12 +1053,45 @@ export const adminLeadCreateSchema = z.object({
 
 export type ReminderStatus = 'open' | 'done'
 
+export const REMINDER_PRIORITY_VALUES = ['low', 'normal', 'high', 'urgent'] as const
+export type ReminderPriority = (typeof REMINDER_PRIORITY_VALUES)[number]
+export const reminderPriorityLabel: Record<ReminderPriority, string> = {
+  low: 'Low',
+  normal: 'Normal',
+  high: 'High',
+  urgent: 'Urgent',
+}
+
+export const REMINDER_CATEGORY_VALUES = [
+  'follow-up',
+  'payment',
+  'maintenance',
+  'quotation',
+  'site-visit',
+  'parts',
+  'renewal',
+  'other',
+] as const
+export type ReminderCategory = (typeof REMINDER_CATEGORY_VALUES)[number]
+export const reminderCategoryLabel: Record<ReminderCategory, string> = {
+  'follow-up': 'Follow-up',
+  payment: 'Payment',
+  maintenance: 'Maintenance',
+  quotation: 'Quotation',
+  'site-visit': 'Site visit',
+  parts: 'Parts',
+  renewal: 'Renewal',
+  other: 'General',
+}
+
 export interface ReminderRecord {
   id: string
   title: string
   body: string
   dueAt: string
   status: ReminderStatus
+  priority?: ReminderPriority
+  category?: ReminderCategory
   leadRef: string | null
   invoiceRef?: string | null
   createdAt: string
@@ -1070,11 +1103,16 @@ export const reminderInputSchema = z.object({
   body: z.string().trim().max(1000).default(''),
   dueAt: z.string().trim().min(4).max(40),
   leadRef: z.string().trim().max(40).nullable().optional(),
+  priority: z.enum(REMINDER_PRIORITY_VALUES).optional(),
+  category: z.enum(REMINDER_CATEGORY_VALUES).optional(),
 })
 
 export const reminderPatchSchema = z.object({
   title: z.string().trim().min(2).max(160).optional(),
   body: z.string().trim().max(1000).optional(),
   dueAt: z.string().trim().min(4).max(40).optional(),
+  priority: z.enum(REMINDER_PRIORITY_VALUES).optional(),
+  category: z.enum(REMINDER_CATEGORY_VALUES).optional(),
+  leadRef: z.string().trim().max(40).nullable().optional(),
   status: z.enum(['open', 'done']).optional(),
 })

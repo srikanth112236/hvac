@@ -471,6 +471,8 @@ businessRouter.post('/invoices/:id/remind', async (req, res) => {
     body: `${invoice.customerName} · ${money(totals.balance)} due${totals.daysOverdue ? ` · ${totals.daysOverdue} days overdue` : ''}`,
     dueAt: due.toISOString(),
     status: 'open',
+    priority: 'high',
+    category: 'payment',
     leadRef: invoice.leadRef,
     invoiceRef: invoice.ref,
     createdAt: nowIso(),

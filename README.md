@@ -49,7 +49,8 @@ development the floating switcher also flips it live; the choice is stored in
   (separate full diary board with scheduling, status, engineer and AMC links),
   **jobs with checklists, parts, photos and signatures**, **quotations linked to
   customers, leads and services**, invoices, expenses,
-  team/payroll, reminders, newsletters, coupons, content studio, revisions,
+  team/payroll, **priority reminders with overdue/urgent queues, filters and
+  snooze**, newsletters, coupons, content studio, revisions,
   journal, media, settings, **global search (Ctrl K), CSV exports**, **RBAC users,
   permissions matrix**, **email two-factor authentication**, audit log, data
   health, GDPR erasure, backup export. Expenses include period/category/method
