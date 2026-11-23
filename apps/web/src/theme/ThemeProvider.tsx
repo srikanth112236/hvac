@@ -41,8 +41,22 @@ function applyTheme(theme: Theme) {
   if (meta && canvas) meta.setAttribute('content', `rgb(${canvas})`)
 }
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(readInitialTheme)
+export function ThemeProvider({
+  children,
+  initialTheme,
+}: {
+  children: ReactNode
+  initialTheme?: Theme
+}) {
+  const [theme, setThemeState] = useState<Theme>(initialTheme ?? readInitialTheme)
+
+  // The server rendered one specific theme. Keep that theme through hydration,
+  // then adopt a saved/forced preference that was not available to the server.
+  useEffect(() => {
+    if (!initialTheme) return
+    const preferred = readInitialTheme()
+    if (preferred !== initialTheme) setThemeState(preferred)
+  }, [initialTheme])
 
   useEffect(() => {
     applyTheme(theme)

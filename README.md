@@ -32,12 +32,12 @@ Port 5175 is used because 5173 was occupied on the development machine. Change
 development the floating switcher also flips it live; the choice is stored in
 `localStorage` and can be forced with `?theme=atelier`.
 
-| | Foundry | Atelier |
-|---|---|---|
-| Palette | ink `#0A0D10`, frost cyan, copper ember | bone `#F5F2EC`, deep teal, burnt copper |
-| Display | Clash Display | Instrument Serif |
-| Body / data | Satoshi / JetBrains Mono | Hanken Grotesk / IBM Plex Mono |
-| Geometry | 2px controls, blueprint grid, grain | square controls, rules, no grid |
+|             | Foundry                                 | Atelier                                 |
+| ----------- | --------------------------------------- | --------------------------------------- |
+| Palette     | ink `#0A0D10`, frost cyan, copper ember | bone `#F5F2EC`, deep teal, burnt copper |
+| Display     | Clash Display                           | Instrument Serif                        |
+| Body / data | Satoshi / JetBrains Mono                | Hanken Grotesk / IBM Plex Mono          |
+| Geometry    | 2px controls, blueprint grid, grain     | square controls, rules, no grid         |
 
 ## What is implemented
 
@@ -90,6 +90,7 @@ key. `npm run audit` gates high/critical advisories.
 npm run typecheck
 npm run lint
 npm run test        # Vitest + Supertest (API)
+npm run test:ssr    # production SSR + hydration: every public route × both themes
 npm run test:e2e    # Playwright smoke (needs a browser; dev server auto-start)
 npm run build
 npm run audit
@@ -101,6 +102,7 @@ npm run verify      # typecheck + lint + test + build + audit
 - Fonts are self-hosted in `apps/web/public/fonts`; `scripts/fetch-fonts.mjs` regenerates them and `src/styles/fonts.css`.
 - Lenis smooth scroll is disabled for coarse pointers and `prefers-reduced-motion`.
 - GSAP/ScrollTrigger and three.js are client-only.
-- Public routes are server-rendered for crawlers and hydrated on the client; `/admin` and `/portal` remain client-only shells. Rebuild (`npm run build`) after code changes; `build:prerender` is optional and only creates static fallbacks.
+- Public routes are server-rendered for crawlers and hydrated on the client; `/admin` and `/portal` remain client-only shells. The first response carries a single `hvac-bootstrap` JSON block with content and theme, followed by hydration. Rebuild (`npm run build`) after code changes; `build:prerender` is optional and only creates static fallbacks.
+- `?theme=foundry|atelier` forces the server-rendered theme and is verified for every public route by `npm run test:ssr`.
 - Admin 2FA is email OTP only. Portal accounts use verified email + password and admin approval; no SMS is sent anywhere.
 - One API instance is assumed until sessions, rate limits and jobs move to a shared store.

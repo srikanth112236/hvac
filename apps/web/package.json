@@ -5,13 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build && npm run build:ssr",
-    "build:ssr": "vite build --ssr src/entry-server.tsx --outDir dist/server",
+    "build": "tsc --noEmit && npm run build:client && npm run build:server",
+    "build:client": "vite build",
+    "build:server": "vite build --ssr src/entry-server.tsx --outDir dist/server",
+    "build:ssr": "npm run build:server",
     "build:prerender": "npm run build && npm run prerender",
     "prerender": "node scripts/prerender.mjs",
     "serve": "node server.mjs",
     "preview": "vite preview --port 4173 --strictPort",
     "typecheck": "tsc --noEmit",
+    "test:ssr": "node scripts/ssr-hydration.mjs",
     "fonts": "node scripts/fetch-fonts.mjs"
   },
   "dependencies": {

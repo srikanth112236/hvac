@@ -131,6 +131,13 @@ try {
   console.warn('[hvac-web] SSR bundle missing; using static/prerendered fallback', error.message)
 }
 
+const DEFAULT_THEME =
+  ssr?.defaultTheme === 'atelier' || ssr?.defaultTheme === 'foundry'
+    ? ssr.defaultTheme
+    : process.env.VITE_THEME === 'atelier'
+      ? 'atelier'
+      : 'foundry'
+
 let contentCache = { at: 0, value: null }
 async function getContent() {
   if (Date.now() - contentCache.at < 10_000) return contentCache.value
@@ -209,6 +216,27 @@ function escapeAttr(value) {
     .replace(/>/g, '&gt;')
 }
 
+function themeDocument(html, theme) {
+  const themed = html.replace(/<html([^>]*)>/i, (_match, attrs) => {
+    let next = String(attrs)
+      .replace(/\sdata-theme="[^"]*"/i, '')
+      .replace(/\sclass="([^"]*)"/i, (_classMatch, classes) => {
+        const rest = classes
+          .split(/\s+/)
+          .filter((entry) => entry && entry !== 'theme-foundry' && entry !== 'theme-atelier')
+          .join(' ')
+        return ` class="${rest ? `${rest} ` : ''}theme-${theme}"`
+      })
+    if (!/\sclass="/i.test(next)) next += ` class="theme-${theme}"`
+    return `<html${next} data-theme="${theme}">`
+  })
+  const canvas = theme === 'atelier' ? '#F5F2EC' : '#0A0D10'
+  return themed.replace(
+    /<meta\s+name="theme-color"\s+content="[^"]*"\s*\/?>/i,
+    `<meta name="theme-color" content="${canvas}" />`,
+  )
+}
+
 function stripSeoTags(html) {
   return html
     .replace(/<title>[\s\S]*?<\/title>/i, '')
@@ -245,16 +273,12 @@ function seoTags(seo) {
   ].join('\n    ')
 }
 
-function inject(html, body, seo, content) {
-  const safeContent = content ? JSON.stringify(content).replace(/</g, '\\u003c') : null
-  let output = stripSeoTags(html)
+function inject(html, body, seo, content, theme) {
+  const safeBootstrap = JSON.stringify({ content: content ?? null, theme }).replace(/</g, '\\u003c')
+  let output = themeDocument(stripSeoTags(html), theme)
   output = output.replace(
     '<div id="root"></div>',
-    `<div id="root">${body}</div>${
-      safeContent
-        ? `<script id="hvac-initial-content" type="application/json">${safeContent}</script>`
-        : ''
-    }`,
+    `<div id="root">${body}</div><script id="hvac-bootstrap" type="application/json">${safeBootstrap}</script>`,
   )
   output = output.replace('</head>', `    ${seoTags(seo)}\n  </head>`)
   return output
@@ -262,6 +286,12 @@ function inject(html, body, seo, content) {
 
 app.get('*', async (req, res) => {
   const pathname = req.path !== '/' ? req.path.replace(/\/+$/, '') || '/' : '/'
+  const theme =
+    req.query.theme === 'atelier'
+      ? 'atelier'
+      : req.query.theme === 'foundry'
+        ? 'foundry'
+        : DEFAULT_THEME
   const redirect = LEGACY_REDIRECTS.get(pathname)
   if (redirect) {
     res.redirect(301, redirect)
@@ -280,9 +310,12 @@ app.get('*', async (req, res) => {
   if (spa) {
     res.setHeader('X-Robots-Tag', 'noindex, nofollow')
     res.setHeader('x-render-mode', 'spa')
-    const html = template.replace(
-      /<meta\s+name="robots"[^>]*>/i,
-      '<meta name="robots" content="noindex, nofollow" />',
+    const html = themeDocument(
+      template.replace(
+        /<meta\s+name="robots"[^>]*>/i,
+        '<meta name="robots" content="noindex, nofollow" />',
+      ),
+      theme,
     )
     res.send(html)
     return
@@ -300,22 +333,22 @@ app.get('*', async (req, res) => {
     try {
       const html = await readFile(candidate, 'utf8')
       res.status(known ? 200 : 404).setHeader('x-render-mode', 'static')
-      res.send(html)
+      res.send(themeDocument(html, theme))
     } catch {
-      res.status(known ? 200 : 404).send(template)
+      res.status(known ? 200 : 404).send(themeDocument(template, theme))
     }
     return
   }
 
   try {
-    const result = ssr.render(pathname, content ?? undefined)
+    const result = ssr.render(pathname, content ?? undefined, theme)
     res.status(known ? 200 : 404)
     res.setHeader('x-render-mode', 'ssr')
-    res.send(inject(template, result.html, result.seo, content))
+    res.send(inject(template, result.html, result.seo, content, theme))
   } catch (error) {
     console.error('[hvac-web] SSR render failed', error)
     res.setHeader('x-render-mode', 'fallback')
-    res.send(template)
+    res.send(themeDocument(template, theme))
   }
 })
 

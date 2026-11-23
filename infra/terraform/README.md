@@ -36,7 +36,8 @@ The App Service expects a deployment package that contains the monorepo
 
 ```bash
 npm ci
-npm run build                  # client assets + dist/server SSR entry
+npm run build                  # build:client + build:server (SSR entry)
+npm run test:ssr               # optional production hydration audit
 # npm run build:prerender      # optional static fallbacks for hosts without Node
 # package the repository, then deploy to the API and web App Services
 ```

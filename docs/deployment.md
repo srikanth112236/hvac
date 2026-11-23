@@ -26,23 +26,23 @@ cookies `SameSite=Strict`. If they must be separate origins, set
 
 ## Required environment
 
-| Variable | Required | Notes |
-|---|---|---|
-| `NODE_ENV` | production | Enables production checks |
-| `PORT` | no (4000) | API listener |
-| `ADMIN_EMAIL` | **yes** | Owner login |
-| `ADMIN_PASSWORD` | **yes** | 12+ characters; production refuses to boot without it |
-| `DATA_ENCRYPTION_KEY` | **yes** | 32+ characters; AES-256-GCM key for the JSON stores. Keep it in the secret manager — losing it makes existing data unreadable, and changing it fails closed |
-| `ALLOWED_ORIGINS` | **yes** | Comma-separated exact origins (`https://client.com`) |
-| `PUBLIC_SITE_URL` | **yes** | Absolute web origin used in reset links |
-| `BUSINESS_TIMEZONE` | no | IANA zone, default `America/Chicago` |
-| `RESEND_API_KEY` or `MAIL_WEBHOOK_URL` | for mail | Without one, sends are logged as skipped |
-| `MAIL_FROM` | recommended | e.g. `Client HVAC <no-reply@client.com>` |
-| `PUBLIC_BRAND_NAME` | recommended | Brand name used in the 2FA email shell |
-| `ADMIN_NOTIFY_EMAIL` | recommended | Desk inbox for leads, reminders, digests |
-| `UPLOAD_ROOT` | no | Defaults to the repo `uploads/` directory |
-| `AUDIT_RETENTION_DAYS` | no | Default 365 |
-| `EMAIL_LOG_RETENTION_DAYS` | no | Default 180 |
+| Variable                               | Required    | Notes                                                                                                                                                       |
+| -------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`                             | production  | Enables production checks                                                                                                                                   |
+| `PORT`                                 | no (4000)   | API listener                                                                                                                                                |
+| `ADMIN_EMAIL`                          | **yes**     | Owner login                                                                                                                                                 |
+| `ADMIN_PASSWORD`                       | **yes**     | 12+ characters; production refuses to boot without it                                                                                                       |
+| `DATA_ENCRYPTION_KEY`                  | **yes**     | 32+ characters; AES-256-GCM key for the JSON stores. Keep it in the secret manager — losing it makes existing data unreadable, and changing it fails closed |
+| `ALLOWED_ORIGINS`                      | **yes**     | Comma-separated exact origins (`https://client.com`)                                                                                                        |
+| `PUBLIC_SITE_URL`                      | **yes**     | Absolute web origin used in reset links                                                                                                                     |
+| `BUSINESS_TIMEZONE`                    | no          | IANA zone, default `America/Chicago`                                                                                                                        |
+| `RESEND_API_KEY` or `MAIL_WEBHOOK_URL` | for mail    | Without one, sends are logged as skipped                                                                                                                    |
+| `MAIL_FROM`                            | recommended | e.g. `Client HVAC <no-reply@client.com>`                                                                                                                    |
+| `PUBLIC_BRAND_NAME`                    | recommended | Brand name used in the 2FA email shell                                                                                                                      |
+| `ADMIN_NOTIFY_EMAIL`                   | recommended | Desk inbox for leads, reminders, digests                                                                                                                    |
+| `UPLOAD_ROOT`                          | no          | Defaults to the repo `uploads/` directory                                                                                                                   |
+| `AUDIT_RETENTION_DAYS`                 | no          | Default 365                                                                                                                                                 |
+| `EMAIL_LOG_RETENTION_DAYS`             | no          | Default 180                                                                                                                                                 |
 
 ### Staff 2FA recovery
 
@@ -55,6 +55,7 @@ allows a fresh sign-in. Restrict server access to the same people who hold
 routine reset.
 
 Front-end build variables:
+
 ```env
 VITE_THEME=foundry|atelier
 VITE_API_URL=/api/v1
@@ -68,10 +69,12 @@ npm ci
 npm run typecheck
 npm run lint
 npm run test
-npm run build          # client bundle + dist/server SSR entry
+npm run build          # build:client + build:server (SSR entry)
+npm run test:ssr       # 45 public routes × foundry/atelier hydration audit
 ```
 
-Run the web host against the build and the API:
+`npm run build:client` writes the browser bundle; `npm run build:server` writes
+`dist/server/entry-server.js`. Run the web host against the build and API:
 
 ```bash
 API_ORIGIN=http://127.0.0.1:4000 npm run serve:web
@@ -82,6 +85,9 @@ API_ORIGIN=http://127.0.0.1:4000 npm run serve:web
 routes with the live content feed, proxies `/api`, `/uploads`, `/sitemap.xml`,
 `/robots.txt`, `/llms.txt` and `/feed.xml` to the API, and serves `/admin` and
 `/portal` as client shells. SSR HTML is `no-cache`; hashed assets are immutable.
+The first response includes `<script id="hvac-bootstrap" type="application/json">`
+with the serialised content and theme; `main.tsx` hydrates from that exact
+payload. `?theme=foundry|atelier` forces the server-rendered theme.
 `/admin`, `/portal`, the styleguide and 404 responses send `X-Robots-Tag:
 noindex, nofollow`. The SSR bundle and `index.template.html` are blocked from
 static serving.

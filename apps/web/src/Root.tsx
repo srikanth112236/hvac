@@ -3,7 +3,7 @@ import type { SiteContent } from '@hvac/shared'
 import { useSiteContent, SiteContentProvider } from '@/content/SiteContentProvider'
 import { BrandProvider, type BrandOverrides } from '@/brand/BrandProvider'
 import { ToastProvider } from '@/components/ui'
-import { ThemeProvider } from '@/theme/ThemeProvider'
+import { ThemeProvider, type Theme } from '@/theme/ThemeProvider'
 
 function BrandFromContent({ children }: { children: ReactNode }) {
   const { content } = useSiteContent()
@@ -30,12 +30,14 @@ function BrandFromContent({ children }: { children: ReactNode }) {
 export function Root({
   children,
   initialContent,
+  initialTheme,
 }: {
   children: ReactNode
   initialContent?: SiteContent
+  initialTheme?: Theme
 }) {
   return (
-    <ThemeProvider>
+    <ThemeProvider initialTheme={initialTheme}>
       <SiteContentProvider initialContent={initialContent}>
         <BrandFromContent>
           <ToastProvider>{children}</ToastProvider>

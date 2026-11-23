@@ -7,42 +7,44 @@ checks, build verification. **Not** a formal penetration test.
 
 ## Results
 
-| # | Finding | Control | Test result |
-|---|---|---|---|
-| 1 | Portal email ownership takeover | Production registration creates `unverified`, emails a hashed 24 h token; verification moves it to `pending`; admin approval then `active`; no session before active | Register → `201 status:unverified`; verify → `200`, stored `pending`; token reuse → `400`; login → `403 pending_approval` |
-| 2 | Default production credentials | `assertProductionConfig()` fails closed | Production start without env exited with an explicit error |
-| 3 | Public content leaks | `publicSiteContent()` blanks bank fields, filters unpublished records | Public `accountNumber`/`bankName` empty; drafts absent; admin endpoint still full |
-| 4 | Public endpoints unthrottled | Per-route + global limiter | 320 rapid requests → 287 × `200`, 33 × `429` |
-| 5 | Newsletter stored XSS | `sanitize-html` allowlist + sandboxed iframe preview | `<script>`, `onclick`, `onerror`, `javascript:` removed from test payload |
-| 6 | Upload MIME/extension spoofing | Magic-byte detection, signature-derived extension, batch validation | HTML disguised as `image/png` → `400 invalid_image`, no file/directory written |
-| 7 | No CSP / consent | Build-time meta CSP, `_headers`, consent banner, opt-in GA4 | CSP present in `dist/index.html`; banner shown; “Essential only” persists and hides it; no tag loaded without opt-in |
-| 8 | PII retention/export/delete | Erasure endpoint + UI, retention jobs, export, backups excluding sessions | Erase returned counts and removed customer/site/quote; `/admin/export` downloads a bundle; `/admin/data-health` reports 0 issues |
-| 9 | Async handler failures | `express-async-errors` before route registration | Forced async throw → JSON `500`; process remained healthy |
-| 10 | Plaintext PII at rest | AES-256-GCM store encryption; production requires a 32+ char key | Fresh production boot wrote `ENC1:` files; restart with the correct key read them; a wrong key refused to start |
-| 11 | Single shared admin account | Multi-user RBAC with write-role enforcement | Viewer can read metrics, gets `403` on writes and user management; disable revokes the session |
-| 12 | Dependency advisories | Zod 4, React Router 7, Vite 8, unused Tiptap removed | `npm audit` reports 0 vulnerabilities |
-| 13 | No second factor for staff | Email OTP 2FA, hashed codes, expiry, attempt/resend caps; no SMS channel | Enable → mail captured → confirm; login → `requires2fa` with no cookie; wrong code `401`; correct code issues a session; test suite covers the flow |
-| 14 | Client-only HTML for crawlers | True SSR with live content, server-generated title/canonical/OG/JSON-LD, hydration | `x-render-mode: ssr`; one canonical, one description, one JSON-LD block; route title changes; unknown service returns `404`; browser hydration produced no React errors |
+| #   | Finding                         | Control                                                                                                                                                              | Test result                                                                                                                                                                                              |
+| --- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Portal email ownership takeover | Production registration creates `unverified`, emails a hashed 24 h token; verification moves it to `pending`; admin approval then `active`; no session before active | Register → `201 status:unverified`; verify → `200`, stored `pending`; token reuse → `400`; login → `403 pending_approval`                                                                                |
+| 2   | Default production credentials  | `assertProductionConfig()` fails closed                                                                                                                              | Production start without env exited with an explicit error                                                                                                                                               |
+| 3   | Public content leaks            | `publicSiteContent()` blanks bank fields, filters unpublished records                                                                                                | Public `accountNumber`/`bankName` empty; drafts absent; admin endpoint still full                                                                                                                        |
+| 4   | Public endpoints unthrottled    | Per-route + global limiter                                                                                                                                           | 320 rapid requests → 287 × `200`, 33 × `429`                                                                                                                                                             |
+| 5   | Newsletter stored XSS           | `sanitize-html` allowlist + sandboxed iframe preview                                                                                                                 | `<script>`, `onclick`, `onerror`, `javascript:` removed from test payload                                                                                                                                |
+| 6   | Upload MIME/extension spoofing  | Magic-byte detection, signature-derived extension, batch validation                                                                                                  | HTML disguised as `image/png` → `400 invalid_image`, no file/directory written                                                                                                                           |
+| 7   | No CSP / consent                | Build-time meta CSP, `_headers`, consent banner, opt-in GA4                                                                                                          | CSP present in `dist/index.html`; banner shown; “Essential only” persists and hides it; no tag loaded without opt-in                                                                                     |
+| 8   | PII retention/export/delete     | Erasure endpoint + UI, retention jobs, export, backups excluding sessions                                                                                            | Erase returned counts and removed customer/site/quote; `/admin/export` downloads a bundle; `/admin/data-health` reports 0 issues                                                                         |
+| 9   | Async handler failures          | `express-async-errors` before route registration                                                                                                                     | Forced async throw → JSON `500`; process remained healthy                                                                                                                                                |
+| 10  | Plaintext PII at rest           | AES-256-GCM store encryption; production requires a 32+ char key                                                                                                     | Fresh production boot wrote `ENC1:` files; restart with the correct key read them; a wrong key refused to start                                                                                          |
+| 11  | Single shared admin account     | Multi-user RBAC with write-role enforcement                                                                                                                          | Viewer can read metrics, gets `403` on writes and user management; disable revokes the session                                                                                                           |
+| 12  | Dependency advisories           | Zod 4, React Router 7, Vite 8, unused Tiptap removed                                                                                                                 | `npm audit` reports 0 vulnerabilities                                                                                                                                                                    |
+| 13  | No second factor for staff      | Email OTP 2FA, hashed codes, expiry, attempt/resend caps; no SMS channel                                                                                             | Enable → mail captured → confirm; login → `requires2fa` with no cookie; wrong code `401`; correct code issues a session; test suite covers the flow                                                      |
+| 14  | Client-only HTML for crawlers   | True SSR with live content, serialised content/theme bootstrap, server-generated title/canonical/OG/JSON-LD, hydration                                               | `x-render-mode: ssr`; one canonical, one description, one JSON-LD block; route title changes; unknown service returns `404`; `npm run test:ssr` passes 90/90 route×theme checks with no hydration errors |
+| 15  | Theme mismatch on SSR           | Server validates `?theme=foundry                                                                                                                                     | atelier`, injects matching `<html data-theme>`/classes and bootstrap theme; client hydrates that theme before adopting a stored preference                                                               | Both themes verified on all 45 public routes; hydrated `data-theme`/class matched the server response |
 
 Additional checks:
 
-| Check | Result |
-|---|---|
-| `GET /api/v1/media` (public listing) | `404` — removed; admin listing remains |
-| ETag / 304 on `/api/v1/content` | `304` with matching `If-None-Match` |
-| Business timezone | Date-only `2026-12-05` afternoon → `2026-12-05T18:00:00.000Z` (America/Chicago) |
-| `GET /api/v1/ready` | `200`, content readable, data directory writable |
-| Request logging | `x-request-id` + one JSON line per request |
-| `npm run typecheck` | Pass |
-| `npm run lint` | Pass |
-| `npm run test` | 13 API/unit tests pass (including email OTP login and RBAC) |
-| `npm run build` | Pass (client + SSR entry) |
-| `npm run audit` (`--audit-level=high`) | Exit 0; **0 vulnerabilities** |
-| SSR verification | `x-render-mode: ssr`; title/canonical/JSON-LD present; browser hydration produced no React errors |
-| Portal/admin shells | `x-render-mode: spa`, `X-Robots-Tag: noindex, nofollow` |
-| SSR bundle exposure | `/server/entry-server.js` returns `404` |
-| Vite dev + preview | `200`; API proxy `200` |
-| Test data after run | Removed; stores returned to seed/empty state |
+| Check                                  | Result                                                                                            |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `GET /api/v1/media` (public listing)   | `404` — removed; admin listing remains                                                            |
+| ETag / 304 on `/api/v1/content`        | `304` with matching `If-None-Match`                                                               |
+| Business timezone                      | Date-only `2026-12-05` afternoon → `2026-12-05T18:00:00.000Z` (America/Chicago)                   |
+| `GET /api/v1/ready`                    | `200`, content readable, data directory writable                                                  |
+| Request logging                        | `x-request-id` + one JSON line per request                                                        |
+| `npm run typecheck`                    | Pass                                                                                              |
+| `npm run lint`                         | Pass                                                                                              |
+| `npm run test`                         | 13 API/unit tests pass (including email OTP login and RBAC)                                       |
+| `npm run build`                        | Pass (client + SSR entry)                                                                         |
+| `npm run audit` (`--audit-level=high`) | Exit 0; **0 vulnerabilities**                                                                     |
+| SSR verification                       | `x-render-mode: ssr`; title/canonical/JSON-LD present; serialised content/theme bootstrap present |
+| SSR hydration `npm run test:ssr`       | 90/90 checks pass: 45 sitemap routes × foundry/atelier, no hydration/server-mismatch errors       |
+| Portal/admin shells                    | `x-render-mode: spa`, `X-Robots-Tag: noindex, nofollow`                                           |
+| SSR bundle exposure                    | `/server/entry-server.js` returns `404`                                                           |
+| Vite dev + preview                     | `200`; API proxy `200`                                                                            |
+| Test data after run                    | Removed; stores returned to seed/empty state                                                      |
 
 ## Remaining risks
 
