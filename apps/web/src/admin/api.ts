@@ -21,6 +21,9 @@ import type {
   InvoiceWithTotals,
   JobReport,
   JobReportInput,
+  JobInput,
+  JobPatch,
+  JobRecord,
   PayrollInput,
   PayrollPatch,
   PayrollRecord,
@@ -331,7 +334,10 @@ export const adminApi = {
     }).then((payload) => payload.data),
 
   leads: (query = '') =>
-    request<{ data: AdminLead[]; meta: { count: number; total: number } }>(`/admin/leads${query}`),
+    request<{
+      data: AdminLead[]
+      meta: { count: number; total: number; page: number; pageSize: number; pages: number }
+    }>(`/admin/leads${query}`),
   patchLead: (
     ref: string,
     patch: {
@@ -656,6 +662,36 @@ export const adminApi = {
       `/admin/customers/${encodeURIComponent(id)}/reports/${encodeURIComponent(reportId)}`,
       { method: 'DELETE' },
     ),
+  jobs: (query = '') =>
+    request<{
+      data: JobRecord[]
+      meta: {
+        total: number
+        page: number
+        pageSize: number
+        pages: number
+        byStatus: Record<string, number>
+      }
+    }>(`/admin/jobs${query}`),
+  createJob: (input: JobInput) =>
+    request<{ data: JobRecord }>('/admin/jobs', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }).then((payload) => payload.data),
+  patchJob: (id: string, input: JobPatch, version?: string) =>
+    request<{ data: JobRecord }>(`/admin/jobs/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+      ...(version ? { headers: { 'If-Match': version } } : {}),
+    }).then((payload) => payload.data),
+  deleteJob: (id: string) =>
+    request<{ data: { deleted: string } }>(`/admin/jobs/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }),
+  runAmcSchedule: () =>
+    request<{ data: { created: number } }>('/admin/amc/auto-schedule', {
+      method: 'POST',
+    }).then((payload) => payload.data),
   replySupportTicket: (id: string, body: string) =>
     request<{ data: SupportTicket }>(`/admin/support-tickets/${encodeURIComponent(id)}/messages`, {
       method: 'POST',

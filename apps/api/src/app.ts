@@ -12,6 +12,7 @@ import { allowedOrigins, IS_PROD, mailerConfigured } from './config.js'
 import { businessRouter } from './business.js'
 import { contentRouter, readSiteContent } from './content.js'
 import { leadsRouter } from './leads.js'
+import { jobsRouter } from './jobStore.js'
 import { marketingRouter } from './marketing.js'
 import { mediaRouter, UPLOAD_ROOT } from './media.js'
 import { newsletterSignupsRouter } from './newsletterSignups.js'
@@ -92,6 +93,7 @@ app.use('/api/v1', authRouter)
 app.use('/api/v1', portalAuthRouter)
 app.use('/api/v1', portalRouter)
 app.use('/api/v1', portalFileRouter)
+app.use('/api/v1', jobsRouter)
 app.use('/api/v1/admin', auditAdmin)
 app.use('/api/v1/admin', adminUsersRouter)
 app.use('/api/v1/admin', adminRouter)
@@ -154,12 +156,7 @@ app.use((_req, res) => {
 })
 
 app.use(
-  (
-    error: unknown,
-    _req: express.Request,
-    res: express.Response,
-    _next: express.NextFunction,
-  ) => {
+  (error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     const candidate = error as { code?: string; message?: string }
     const tooLarge = candidate?.code === 'LIMIT_FILE_SIZE'
     const tooMany = candidate?.code === 'LIMIT_FILE_COUNT'

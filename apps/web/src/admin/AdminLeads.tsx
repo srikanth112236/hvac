@@ -35,14 +35,27 @@ export function AdminLeads() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [meta, setMeta] = useState<{
+    total: number
+    pages: number
+    count: number
+    pageSize: number
+  } | null>(null)
   const [selected, setSelected] = useState<AdminLead | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [dragging, setDragging] = useState<string | null>(null)
 
   const load = async () => {
     try {
-      const payload = await adminApi.leads()
+      const payload = await adminApi.leads(`?page=${page}&pageSize=40`)
       setLeads(payload.data)
+      setMeta({
+        total: payload.meta.total,
+        pages: payload.meta.pages,
+        count: payload.meta.count,
+        pageSize: payload.meta.pageSize,
+      })
       setError('')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not load leads.')
@@ -52,6 +65,12 @@ export function AdminLeads() {
   }
 
   useLiveRefresh(load)
+
+  useEffect(() => {
+    void load()
+    // Reload when the pagination page changes; the live refresh handles the rest.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page])
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -66,7 +85,9 @@ export function AdminLeads() {
   const moveLead = async (ref: string, status: string) => {
     const previous = leads
     setLeads((current) =>
-      current.map((lead) => (lead.ref === ref ? { ...lead, status: status as AdminLead['status'] } : lead)),
+      current.map((lead) =>
+        lead.ref === ref ? { ...lead, status: status as AdminLead['status'] } : lead,
+      ),
     )
     try {
       const updated = await adminApi.patchLead(ref, { status })
@@ -104,7 +125,10 @@ export function AdminLeads() {
                 aria-label="Search leads"
                 placeholder="Search name, ref, service…"
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => {
+                  setQuery(event.target.value)
+                  setPage(1)
+                }}
               />
             </div>
             <Button icon="plus" onClick={() => setCreateOpen(true)}>
@@ -234,7 +258,9 @@ export function AdminLeads() {
                             {lead.followUpAt ? (
                               <div
                                 className={`mt-2 flex items-center gap-1.5 border-t pt-2 font-mono text-[8px] uppercase tracking-[0.06em] ${
-                                  overdue ? 'border-heat/20 text-heat' : 'border-line/60 text-fg-faint'
+                                  overdue
+                                    ? 'border-heat/20 text-heat'
+                                    : 'border-line/60 text-fg-faint'
                                 }`}
                               >
                                 <Icon name="calendar" size={10} />
@@ -279,6 +305,32 @@ export function AdminLeads() {
         </div>
       )}
 
+      {meta && meta.pages > 1 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border border-line px-4 py-3">
+          <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint">
+            Page {page} of {meta.pages} · {meta.count} matching · {meta.total} total
+          </span>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={page <= 1}
+              onClick={() => setPage((value) => Math.max(1, value - 1))}
+            >
+              Previous
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={page >= meta.pages}
+              onClick={() => setPage((value) => value + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       <LeadDrawer
         lead={selected}
         onClose={() => setSelected(null)}
@@ -295,7 +347,11 @@ export function AdminLeads() {
         onCreated={(lead) => {
           setLeads((current) => [lead, ...current])
           setCreateOpen(false)
-          toast({ title: 'Lead created', description: `${lead.ref} · ${lead.name}`, tone: 'success' })
+          toast({
+            title: 'Lead created',
+            description: `${lead.ref} · ${lead.name}`,
+            tone: 'success',
+          })
         }}
       />
     </div>
@@ -390,7 +446,10 @@ function LeadDrawer({
               <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-fg-faint">
                 Phone
               </span>
-              <a href={`tel:${lead.phone}`} className="mt-1 block font-mono text-[11px] text-fg hover:text-cold">
+              <a
+                href={`tel:${lead.phone}`}
+                className="mt-1 block font-mono text-[11px] text-fg hover:text-cold"
+              >
                 {lead.phone}
               </a>
             </div>
@@ -406,7 +465,9 @@ function LeadDrawer({
               </a>
             </div>
             <div>
-              <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-fg-faint">City</span>
+              <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-fg-faint">
+                City
+              </span>
               <p className="mt-1 text-[11px] text-fg-dim">{lead.city ?? '—'}</p>
             </div>
             <div>
@@ -471,7 +532,12 @@ function LeadDrawer({
 
           {error ? <InlineError message={error} /> : null}
 
-          <Button onClick={() => void save()} disabled={pending} full icon={pending ? 'clock' : 'check'}>
+          <Button
+            onClick={() => void save()}
+            disabled={pending}
+            full
+            icon={pending ? 'clock' : 'check'}
+          >
             {pending ? 'Saving…' : 'Save lead'}
           </Button>
 
@@ -570,7 +636,11 @@ function CreateLeadModal({
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={() => void submit()} disabled={pending} icon={pending ? 'clock' : 'plus'}>
+          <Button
+            onClick={() => void submit()}
+            disabled={pending}
+            icon={pending ? 'clock' : 'plus'}
+          >
             {pending ? 'Creating…' : 'Create lead'}
           </Button>
         </>
@@ -578,7 +648,12 @@ function CreateLeadModal({
     >
       <div className="flex flex-col gap-4">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Input label="Name" value={name} onChange={(event) => setName(event.target.value)} required />
+          <Input
+            label="Name"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            required
+          />
           <Input
             label="Phone"
             type="tel"

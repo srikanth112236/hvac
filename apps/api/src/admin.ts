@@ -36,12 +36,14 @@ import { reminderStore } from './reminders.js'
 import { mailerStatus, readEmailLog } from './mailer.js'
 import { readAuditLog } from './audit.js'
 import { DATA_VERSION } from './migrations.js'
+import { runAmcVisitScheduling } from './jobs.js'
 import { mediaStore } from './media.js'
 import { couponStore, newsletterStore } from './marketing.js'
 import { signupStore } from './newsletterSignups.js'
 import { appointmentStore } from './portal.js'
 import { customerStore } from './portalAuth.js'
 import { preferenceStore } from './customerPreferences.js'
+import { jobStore } from './jobStore.js'
 import {
   amcStore,
   equipmentStore,
@@ -93,6 +95,11 @@ adminRouter.get('/billing', async (_req, res) => {
   res.json({ data: content.brand.billing })
 })
 
+adminRouter.post('/amc/auto-schedule', async (_req, res) => {
+  const created = await runAmcVisitScheduling()
+  res.json({ data: { created } })
+})
+
 adminRouter.get('/audit', requireRole('owner', 'admin'), async (req, res) => {
   const requested = Number.parseInt(String(req.query.limit ?? '50'), 10)
   const limit = Number.isFinite(requested) ? requested : 50
@@ -119,6 +126,7 @@ adminRouter.get('/export', requireRole('owner', 'admin'), async (_req, res) => {
     quotations,
     amc,
     reports,
+    jobs,
     tickets,
     preferences,
     audit,
@@ -142,6 +150,7 @@ adminRouter.get('/export', requireRole('owner', 'admin'), async (_req, res) => {
     quotationStore.read(),
     amcStore.read(),
     reportStore.read(),
+    jobStore.read(),
     ticketStore.read(),
     preferenceStore.read(),
     readAuditLog(1000),
@@ -173,6 +182,7 @@ adminRouter.get('/export', requireRole('owner', 'admin'), async (_req, res) => {
       'quotations.json': quotations,
       'amc-contracts.json': amc,
       'job-reports.json': reports,
+      'jobs.json': jobs,
       'support-tickets.json': tickets,
       'customer-preferences.json': preferences,
       'audit-log.json': audit,
@@ -367,6 +377,7 @@ adminRouter.get('/data-health', requireRole('owner', 'admin'), async (_req, res)
     quotations,
     amc,
     reports,
+    jobs,
     tickets,
   ] = await Promise.all([
     customerStore.read(),
@@ -378,6 +389,7 @@ adminRouter.get('/data-health', requireRole('owner', 'admin'), async (_req, res)
     quotationStore.read(),
     amcStore.read(),
     reportStore.read(),
+    jobStore.read(),
     ticketStore.read(),
   ])
 
@@ -395,6 +407,16 @@ adminRouter.get('/data-health', requireRole('owner', 'admin'), async (_req, res)
       issues.push(`Report ${entry.id} references a missing customer.`)
     if (entry.equipmentId && !equipmentIds.has(entry.equipmentId)) {
       issues.push(`Report ${entry.id} references missing equipment.`)
+    }
+  }
+  for (const job of jobs) {
+    if (!customerIds.has(job.customerId)) {
+      issues.push(`Job ${job.ref} references a missing customer.`)
+    }
+    for (const equipmentId of job.equipmentIds) {
+      if (!equipmentIds.has(equipmentId)) {
+        issues.push(`Job ${job.ref} references missing equipment ${equipmentId}.`)
+      }
     }
   }
   for (const entry of appointments) {
@@ -438,6 +460,7 @@ adminRouter.get('/data-health', requireRole('owner', 'admin'), async (_req, res)
         quotations: quotations.length,
         amc: amc.length,
         reports: reports.length,
+        jobs: jobs.length,
         tickets: tickets.length,
       },
       issues: issues.slice(0, 100),
@@ -617,10 +640,22 @@ adminRouter.get('/leads', async (req, res) => {
     }
     return true
   })
+  const page = Math.max(1, Number.parseInt(String(req.query.page ?? '1'), 10) || 1)
+  const pageSize = Math.min(
+    100,
+    Math.max(1, Number.parseInt(String(req.query.pageSize ?? '40'), 10) || 40),
+  )
+  const sorted = filtered.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
 
   res.json({
-    data: filtered.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
-    meta: { count: filtered.length, total: leads.length },
+    data: sorted.slice((page - 1) * pageSize, page * pageSize),
+    meta: {
+      count: filtered.length,
+      total: leads.length,
+      page,
+      pageSize,
+      pages: Math.max(1, Math.ceil(filtered.length / pageSize)),
+    },
   })
 })
 

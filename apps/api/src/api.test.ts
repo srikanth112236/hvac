@@ -188,6 +188,34 @@ describe('lead → invoice → customer portal', () => {
       .send({ status: 'active' })
       .expect(200)
 
+    const job = await adminHeaders(admin.post('/api/v1/admin/jobs'))
+      .send({
+        customerId: customer.id,
+        customerName: 'Portal Test',
+        customerEmail: 'portal-test@example.com',
+        address: '1 Test Way, Dallas',
+        title: 'Checklist job',
+        service: 'Cassette service',
+        status: 'scheduled',
+        technician: 'Test Engineer',
+      })
+      .expect(201)
+    const jobId = job.body.data.id
+    const patchedJob = await adminHeaders(admin.patch(`/api/v1/admin/jobs/${jobId}`))
+      .send({
+        checklist: [{ label: 'Filter cleaned', done: true, note: '' }],
+        parts: [{ name: 'Filter', quantity: 2, unitPrice: 25, note: '' }],
+      })
+      .expect(200)
+    expect(patchedJob.body.data.parts[0].name).toBe('Filter')
+    await admin
+      .patch(`/api/v1/admin/jobs/${jobId}`)
+      .set('Origin', ORIGIN)
+      .set('X-Admin-Request', '1')
+      .set('If-Match', job.body.data.updatedAt)
+      .send({ title: 'Stale job' })
+      .expect(412)
+
     const equipment = await adminHeaders(
       admin.post(`/api/v1/admin/customers/${customer.id}/equipment`),
     )
@@ -236,7 +264,9 @@ describe('lead → invoice → customer portal', () => {
       admin.patch(`/api/v1/admin/customers/${customer.id}/quotations/${quoteId}`),
     )
       .send({
-        lines: [{ description: 'Revised cassette service', quantity: 1, unitPrice: 1300, taxPercent: 0 }],
+        lines: [
+          { description: 'Revised cassette service', quantity: 1, unitPrice: 1300, taxPercent: 0 },
+        ],
       })
       .expect(200)
     expect(quoteEdited.body.data.totals.total).toBe(1300)
@@ -254,6 +284,14 @@ describe('lead → invoice → customer portal', () => {
       })
       .expect(201)
     const amcId = amc.body.data.id
+    const autoScheduled = await (
+      await import('./jobs.js')
+    ).runAmcVisitScheduling(Date.parse('2026-01-01'))
+    expect(autoScheduled).toBeGreaterThanOrEqual(1)
+    const autoJobs = await admin.get('/api/v1/admin/jobs?q=AMC').expect(200)
+    expect(
+      autoJobs.body.data.some((job: { amcContractId: string }) => job.amcContractId === amcId),
+    ).toBe(true)
     const amcEdited = await adminHeaders(
       admin.patch(`/api/v1/admin/customers/${customer.id}/amc/${amcId}`),
     )
@@ -325,9 +363,7 @@ describe('lead → invoice → customer portal', () => {
     expect(portalInvoicePdf.headers['content-type']).toContain('application/pdf')
     expect(portalInvoicePdf.body.subarray(0, 4).toString()).toBe('%PDF')
 
-    const portalQuotePdf = await portal
-      .get(`/api/v1/portal/quotations/${quoteId}/pdf`)
-      .expect(200)
+    const portalQuotePdf = await portal.get(`/api/v1/portal/quotations/${quoteId}/pdf`).expect(200)
     expect(portalQuotePdf.headers['content-type']).toContain('application/pdf')
     expect(portalQuotePdf.body.subarray(0, 4).toString()).toBe('%PDF')
 
@@ -355,8 +391,7 @@ describe('lead → invoice → customer portal', () => {
     expect(preferences.body.data.emailMarketing).toBe(true)
 
     const billingEmailsBefore = outbound.filter(
-      (message) =>
-        message.kind === 'invoice-issued' && message.to === 'portal-test@example.com',
+      (message) => message.kind === 'invoice-issued' && message.to === 'portal-test@example.com',
     ).length
     await adminHeaders(admin.post('/api/v1/admin/invoices'))
       .send({
@@ -379,8 +414,7 @@ describe('lead → invoice → customer portal', () => {
     await new Promise((resolve) => setTimeout(resolve, 200))
     expect(
       outbound.filter(
-        (message) =>
-          message.kind === 'invoice-issued' && message.to === 'portal-test@example.com',
+        (message) => message.kind === 'invoice-issued' && message.to === 'portal-test@example.com',
       ).length,
     ).toBe(billingEmailsBefore)
 
@@ -427,6 +461,11 @@ describe('lead → invoice → customer portal', () => {
     expect(csv.headers['content-type']).toContain('text/csv')
     expect(csv.text).toContain('INV-')
     expect(csv.text).toContain('Portal Test')
+
+    const leadPage = await admin.get('/api/v1/admin/leads?page=1&pageSize=1').expect(200)
+    expect(leadPage.body.data.length).toBeLessThanOrEqual(1)
+    expect(leadPage.body.meta.page).toBe(1)
+    expect(leadPage.body.meta.pages).toBeGreaterThanOrEqual(1)
   })
 })
 

@@ -12,6 +12,7 @@ const nav: { label: string; to: string; icon: IconName; end?: boolean }[] = [
   { label: 'Leads', to: '/admin/leads', icon: 'airflow' },
   { label: 'Customers', to: '/admin/customers', icon: 'thermostat' },
   { label: 'Dispatch', to: '/admin/dispatch', icon: 'calendar' },
+  { label: 'Jobs', to: '/admin/jobs', icon: 'wrench' },
   { label: 'Invoices', to: '/admin/invoices', icon: 'coil' },
   { label: 'Expenses', to: '/admin/expenses', icon: 'refrigerant' },
   { label: 'Team & payroll', to: '/admin/team', icon: 'wrench' },

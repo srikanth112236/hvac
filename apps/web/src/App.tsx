@@ -24,27 +24,50 @@ import { WorkPage } from '@/routes/WorkPage'
 import { Styleguide } from '@/routes/Styleguide'
 import { PortalPage } from '@/portal/PortalPage'
 
-const AdminLayout = lazy(() => import('@/admin/AdminLayout').then((module) => ({ default: module.AdminLayout })))
-const AdminOverview = lazy(() => import('@/admin/AdminOverview').then((module) => ({ default: module.AdminOverview })))
-const AdminLeads = lazy(() => import('@/admin/AdminLeads').then((module) => ({ default: module.AdminLeads })))
-const AdminReminders = lazy(() => import('@/admin/AdminReminders').then((module) => ({ default: module.AdminReminders })))
-const AdminInvoices = lazy(() => import('@/admin/AdminInvoices').then((module) => ({ default: module.AdminInvoices })))
+const AdminLayout = lazy(() =>
+  import('@/admin/AdminLayout').then((module) => ({ default: module.AdminLayout })),
+)
+const AdminOverview = lazy(() =>
+  import('@/admin/AdminOverview').then((module) => ({ default: module.AdminOverview })),
+)
+const AdminLeads = lazy(() =>
+  import('@/admin/AdminLeads').then((module) => ({ default: module.AdminLeads })),
+)
+const AdminReminders = lazy(() =>
+  import('@/admin/AdminReminders').then((module) => ({ default: module.AdminReminders })),
+)
+const AdminInvoices = lazy(() =>
+  import('@/admin/AdminInvoices').then((module) => ({ default: module.AdminInvoices })),
+)
 const AdminInvoiceDetail = lazy(() =>
   import('@/admin/AdminInvoiceDetail').then((module) => ({ default: module.AdminInvoiceDetail })),
 )
-const AdminExpenses = lazy(() => import('@/admin/AdminExpenses').then((module) => ({ default: module.AdminExpenses })))
-const AdminTeam = lazy(() => import('@/admin/AdminTeam').then((module) => ({ default: module.AdminTeam })))
-const AdminContent = lazy(() => import('@/admin/AdminContent').then((module) => ({ default: module.AdminContent })))
+const AdminExpenses = lazy(() =>
+  import('@/admin/AdminExpenses').then((module) => ({ default: module.AdminExpenses })),
+)
+const AdminTeam = lazy(() =>
+  import('@/admin/AdminTeam').then((module) => ({ default: module.AdminTeam })),
+)
+const AdminContent = lazy(() =>
+  import('@/admin/AdminContent').then((module) => ({ default: module.AdminContent })),
+)
 const AdminRevisions = lazy(() =>
   import('@/admin/AdminRevisions').then((module) => ({ default: module.AdminRevisions })),
 )
-const AdminBlog = lazy(() => import('@/admin/AdminBlog').then((module) => ({ default: module.AdminBlog })))
-const AdminSettings = lazy(() => import('@/admin/AdminSettings').then((module) => ({ default: module.AdminSettings })))
+const AdminBlog = lazy(() =>
+  import('@/admin/AdminBlog').then((module) => ({ default: module.AdminBlog })),
+)
+const AdminSettings = lazy(() =>
+  import('@/admin/AdminSettings').then((module) => ({ default: module.AdminSettings })),
+)
 const AdminCustomers = lazy(() =>
   import('@/admin/AdminCustomers').then((module) => ({ default: module.AdminCustomers })),
 )
 const AdminDispatch = lazy(() =>
   import('@/admin/AdminDispatch').then((module) => ({ default: module.AdminDispatch })),
+)
+const AdminJobs = lazy(() =>
+  import('@/admin/AdminJobs').then((module) => ({ default: module.AdminJobs })),
 )
 const AdminCustomerFile = lazy(() =>
   import('@/admin/AdminCustomerFile').then((module) => ({ default: module.AdminCustomerFile })),
@@ -120,6 +143,7 @@ export function App() {
           <Route path="customers" element={<AdminCustomers />} />
           <Route path="customers/:customerId" element={<AdminCustomerFile />} />
           <Route path="dispatch" element={<AdminDispatch />} />
+          <Route path="jobs" element={<AdminJobs />} />
           <Route path="newsletters" element={<AdminNewsletters />} />
           <Route path="coupons" element={<AdminCoupons />} />
           <Route path="reminders" element={<AdminReminders />} />
@@ -133,9 +157,7 @@ export function App() {
           <Route path="products" element={<Navigate to="/admin/content" replace />} />
           <Route path="settings" element={<AdminSettings />} />
         </Route>
-        {import.meta.env.DEV ? (
-          <Route path="/__styleguide" element={<Styleguide />} />
-        ) : null}
+        {import.meta.env.DEV ? <Route path="/__styleguide" element={<Styleguide />} /> : null}
         <Route path="*" element={<NotFound />} />
       </Routes>
       <ThemeSwitcher />

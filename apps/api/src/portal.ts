@@ -31,6 +31,7 @@ import { BUSINESS_TIMEZONE } from './config.js'
 import { customerWantsEmail } from './customerPreferences.js'
 import { createStore } from './store.js'
 import { appointmentConfirmation, sendMail } from './mailer.js'
+import { createJob } from './jobStore.js'
 import { streamInvoicePdf } from './pdf.js'
 import { hourInZone, startOfTodayInZone, zonedTimeToUtc } from './time.js'
 
@@ -53,7 +54,7 @@ function nowIso(): string {
   return new Date().toISOString()
 }
 
-function nextAppointmentReference(appointments: AppointmentRecord[]): string {
+export function nextAppointmentReference(appointments: AppointmentRecord[]): string {
   const year = new Date().getFullYear()
   const head = `APT-${year}-`
   const highest = appointments.reduce((max, appointment) => {
@@ -86,6 +87,35 @@ async function resolveServiceName(slug: string | null | undefined): Promise<stri
   if (!slug) return 'HVAC service'
   const content = await readSiteContent()
   return content.services.find((service) => service.id === slug)?.name ?? slug
+}
+
+async function createJobForAppointment(appointment: AppointmentRecord): Promise<void> {
+  if (!appointment.customerId) return
+  try {
+    await createJob({
+      customerId: appointment.customerId,
+      customerName: appointment.customerName,
+      customerEmail: appointment.customerEmail,
+      address: appointment.address,
+      appointmentId: appointment.id,
+      amcContractId: appointment.amcContractId,
+      equipmentIds: [],
+      title: appointment.serviceName,
+      service: appointment.serviceName,
+      status: 'scheduled',
+      technician: appointment.technician,
+      scheduledAt: appointment.scheduledAt,
+      startedAt: null,
+      completedAt: null,
+      checklist: [],
+      parts: [],
+      photos: [],
+      signature: null,
+      notes: appointment.notes,
+    })
+  } catch (error) {
+    console.error('[hvac-api] could not create the job for appointment', appointment.ref, error)
+  }
 }
 
 async function notifyBooking(appointment: AppointmentRecord): Promise<void> {
@@ -140,10 +170,17 @@ async function createLead(input: {
     name: input.name,
     email: input.email,
     phone: input.phone,
-    message: input.notes || `Service visit requested through the customer portal for ${input.serviceName}.`,
+    message:
+      input.notes ||
+      `Service visit requested through the customer portal for ${input.serviceName}.`,
     serviceSlug: input.serviceSlug,
     serviceName: input.serviceName,
-    city: input.address.split(',').map((part) => part.trim()).filter(Boolean).at(-1) ?? null,
+    city:
+      input.address
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .at(-1) ?? null,
     urgency: input.window === 'emergency' ? 'emergency' : 'normal',
     plan: null,
     context: input.appointmentRef
@@ -179,9 +216,7 @@ async function buildOverview(email: string): Promise<CustomerPortalOverview> {
         appointment.customerEmail.trim().toLowerCase() === customer.email,
     )
     .sort((a, b) => Date.parse(b.scheduledAt) - Date.parse(a.scheduledAt))
-  const ownRequests = leads.filter(
-    (lead) => lead.email.trim().toLowerCase() === customer.email,
-  )
+  const ownRequests = leads.filter((lead) => lead.email.trim().toLowerCase() === customer.email)
   const upcoming = ownAppointments
     .filter(
       (appointment) =>
@@ -211,7 +246,8 @@ async function buildOverview(email: string): Promise<CustomerPortalOverview> {
       openAppointments: ownAppointments.filter(
         (appointment) => appointment.status !== 'completed' && appointment.status !== 'cancelled',
       ).length,
-      completedVisits: ownAppointments.filter((appointment) => appointment.status === 'completed').length,
+      completedVisits: ownAppointments.filter((appointment) => appointment.status === 'completed')
+        .length,
     },
   }
 }
@@ -286,7 +322,9 @@ portalRouter.post(
           (appointment.customerId === customer.id || appointment.customerEmail === customer.email),
       )
       if (!previous) {
-        res.status(404).json({ error: { code: 'not_found', message: 'That appointment was not found.' } })
+        res
+          .status(404)
+          .json({ error: { code: 'not_found', message: 'That appointment was not found.' } })
         return
       }
     }
@@ -331,10 +369,13 @@ portalRouter.post(
     })
     const appointment = saved
     if (!appointment) {
-      res.status(500).json({ error: { code: 'server_error', message: 'The visit could not be saved.' } })
+      res
+        .status(500)
+        .json({ error: { code: 'server_error', message: 'The visit could not be saved.' } })
       return
     }
     res.status(201).json({ data: appointment, lead })
+    void createJobForAppointment(appointment)
     void notifyBooking(appointment)
   },
 )
@@ -375,7 +416,10 @@ portalRouter.patch(
         validationError(res, 'Choose the new visit date.')
         return
       }
-      const parsedSchedule = parseSchedule(parsed.data.scheduledAt, parsed.data.window ?? current.window)
+      const parsedSchedule = parseSchedule(
+        parsed.data.scheduledAt,
+        parsed.data.window ?? current.window,
+      )
       if (!parsedSchedule || scheduleIsPast(parsedSchedule)) {
         validationError(res, 'Choose today or a future date for the visit.')
         return
@@ -413,12 +457,9 @@ portalRouter.patch(
 
 /* -------------------------------------------------------------------------- */
 /*  Admin customers and appointments                                          */
-/* -------------------------------------------------------------------------- */export const customersRouter = Router()
-customersRouter.use(
-  requireAdmin,
-  requirePermission('customers.write'),
-  requireAdminMutation,
-)
+/* -------------------------------------------------------------------------- */ export const customersRouter =
+  Router()
+customersRouter.use(requireAdmin, requirePermission('customers.write'), requireAdminMutation)
 
 customersRouter.get('/customers', async (_req, res) => {
   const [customers, invoices, appointments] = await Promise.all([
@@ -465,7 +506,11 @@ customersRouter.patch('/customers/:id', async (req, res) => {
     return
   }
   const existing = (await customerStore.read()).find((entry) => entry.id === req.params.id)
-  if (existing && parsed.data.status === 'active' && (existing.status ?? 'active') === 'unverified') {
+  if (
+    existing &&
+    parsed.data.status === 'active' &&
+    (existing.status ?? 'active') === 'unverified'
+  ) {
     res.status(400).json({
       error: {
         code: 'email_unverified',
@@ -494,7 +539,9 @@ customersRouter.patch('/customers/:id', async (req, res) => {
 
 customersRouter.get('/appointments', async (_req, res) => {
   const appointments = await appointmentStore.read()
-  res.json({ data: [...appointments].sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt)) })
+  res.json({
+    data: [...appointments].sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt)),
+  })
 })
 
 customersRouter.post('/appointments', async (req, res) => {
@@ -539,10 +586,13 @@ customersRouter.post('/appointments', async (req, res) => {
     return [record, ...appointments]
   })
   if (!saved) {
-    res.status(500).json({ error: { code: 'server_error', message: 'The visit could not be saved.' } })
+    res
+      .status(500)
+      .json({ error: { code: 'server_error', message: 'The visit could not be saved.' } })
     return
   }
   res.status(201).json({ data: saved })
+  void createJobForAppointment(saved)
 })
 
 customersRouter.patch('/appointments/:id', async (req, res) => {

@@ -133,16 +133,6 @@ export type ServiceCategory = (typeof SERVICE_CATEGORIES)[number]
 export const LEAD_STATUSES = ['new', 'contacted', 'site-visit', 'quoted', 'won', 'lost'] as const
 export type LeadStatus = (typeof LEAD_STATUSES)[number]
 
-export const JOB_STATUSES = [
-  'scheduled',
-  'en-route',
-  'in-progress',
-  'on-hold',
-  'completed',
-  'cancelled',
-] as const
-export type JobStatus = (typeof JOB_STATUSES)[number]
-
 export const URGENCY = ['normal', 'emergency'] as const
 export type Urgency = (typeof URGENCY)[number]
 
@@ -266,4 +256,5 @@ export * from './editorial'
 export * from './media'
 export * from './portal'
 export * from './portalModules'
+export * from './jobs'
 export * from './marketing'

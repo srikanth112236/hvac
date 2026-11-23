@@ -36,6 +36,10 @@ checks, build verification. **Not** a formal penetration test.
 | 23 | Single API instance | Optional PostgreSQL `hvac_json_store` for sessions, rate counters, jobs state and records; job lease; `JOBS_ENABLED` worker switch | Code path added and typechecked; live PostgreSQL validation requires `DATABASE_URL` and is documented |
 | 24 | Moderate advisories reported | Current lockfile has React Router 7.18, Vite 8.3, Zod 4.6 and no Tiptap; audit rerun | `npm audit --json` reports **0** total advisories |
 
+| 25 | Jobs missing | First-class `jobs.json` model: checklist, parts, photos, signature, appointment/contract/equipment links, status and technician; admin Jobs page and portal read API | API test creates a job, patches checklist/parts, rejects a stale `If-Match` with `412`; admin UI lists and edits jobs |
+| 26 | AMC visits not generated | Active contracts auto-create the next appointment and job with the contract link; background worker and admin “Generate AMC visits” both call the same scheduler | Integration test invokes auto-scheduling and finds a generated job for the contract; duplicate future visits are skipped |
+| 27 | Leads unpaginated | Server-side `page`/`pageSize` with `meta.total/pages`; kanban keeps its board structure with pagination controls | Integration test requests page size 1 and validates page metadata |
+
 Additional checks:
 
 | Check                                  | Result                                                                                            |

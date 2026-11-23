@@ -64,7 +64,13 @@ test('lead → admin invoice → customer portal journey', async ({ page, browse
   await page.goto('/admin/customers')
   await page.getByLabel('Search customers').fill(email)
   await expect(page.getByText(email)).toBeVisible()
+  const approval = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/v1/admin/customers/') &&
+      response.request().method() === 'PATCH',
+  )
   await page.getByRole('button', { name: /^Approve$/ }).click()
+  await approval
 
   await portal.getByLabel('Email').fill(email)
   await portal.getByLabel('Password').fill(password)

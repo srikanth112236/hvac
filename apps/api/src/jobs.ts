@@ -12,11 +12,13 @@ import {
 } from './config.js'
 import { readLeads } from './leads.js'
 import { pruneEmailLog, sendMail, worksDeskNotice } from './mailer.js'
-import { appointmentStore } from './portal.js'
-import { amcStore, ticketStore } from './portalModules.js'
+import { appointmentStore, nextAppointmentReference } from './portal.js'
+import { customerStore } from './portalAuth.js'
+import { amcStore, siteStore, ticketStore } from './portalModules.js'
+import { createJob } from './jobStore.js'
 import { reminderStore } from './reminders.js'
 import { createStore, DATA_DIR } from './store.js'
-import { hourInZone, startOfTodayInZone, todayInZone } from './time.js'
+import { hourInZone, startOfTodayInZone, todayInZone, zonedTimeToUtc } from './time.js'
 
 interface JobState {
   version: number
@@ -243,6 +245,119 @@ async function runRetention(): Promise<void> {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  AMC visit generation                                                      */
+/* -------------------------------------------------------------------------- */
+
+function primaryAddress(
+  sites: {
+    customerId: string
+    isPrimary: boolean
+    address: string
+    city: string
+    region: string
+    postalCode: string
+  }[],
+  customerId: string,
+  fallback: string,
+): string {
+  const site =
+    sites.find((entry) => entry.customerId === customerId && entry.isPrimary) ??
+    sites.find((entry) => entry.customerId === customerId)
+  if (!site) return fallback
+  return [site.address, site.city, site.region, site.postalCode].filter(Boolean).join(', ')
+}
+
+export async function runAmcVisitScheduling(now = Date.now()): Promise<number> {
+  const [contracts, appointments, customers, sites] = await Promise.all([
+    amcStore.read(),
+    appointmentStore.read(),
+    customerStore.read(),
+    siteStore.read(),
+  ])
+  let created = 0
+  for (const contract of contracts) {
+    if (contract.status !== 'active' || contract.visitsPerYear <= 0) continue
+    const start = Date.parse(`${contract.startDate}T00:00:00`)
+    const end = Date.parse(`${contract.endDate}T23:59:59`)
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= now) continue
+    const existing = appointments.some(
+      (appointment) =>
+        appointment.amcContractId === contract.id &&
+        appointment.status !== 'cancelled' &&
+        Date.parse(appointment.scheduledAt) >= now,
+    )
+    if (existing) continue
+    const customer = customers.find((entry) => entry.id === contract.customerId)
+    if (!customer) continue
+    const interval = Math.max(86_400_000, (end - start) / contract.visitsPerYear)
+    let visitAt = start + interval * Math.max(0, Math.floor((now - start) / interval))
+    if (visitAt < now) visitAt += interval
+    if (visitAt > end || visitAt > now + 120 * 86_400_000) continue
+    const dateOnly = new Date(visitAt).toISOString().slice(0, 10)
+    const scheduled = zonedTimeToUtc(dateOnly, 9, BUSINESS_TIMEZONE)
+    if (!scheduled) continue
+    let appointment: (typeof appointments)[number] | undefined
+    await appointmentStore.mutate((list) => {
+      const duplicate = list.some(
+        (entry) =>
+          entry.amcContractId === contract.id &&
+          entry.status !== 'cancelled' &&
+          Date.parse(entry.scheduledAt) >= now,
+      )
+      if (duplicate) return list
+      const nowIso = new Date().toISOString()
+      appointment = {
+        id: `amc-${contract.id}-${dateOnly}`,
+        ref: nextAppointmentReference(list),
+        customerId: customer.id,
+        customerName: customer.name,
+        customerEmail: customer.email,
+        customerPhone: customer.phone,
+        serviceSlug: null,
+        serviceName: `AMC visit · ${contract.plan}`,
+        address: primaryAddress(sites, customer.id, customer.address),
+        scheduledAt: scheduled.toISOString(),
+        window: 'morning',
+        status: 'scheduled',
+        notes: `Generated from ${contract.ref}.`,
+        technician: '',
+        leadRef: null,
+        rebookOf: null,
+        amcContractId: contract.id,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      }
+      return [appointment, ...list]
+    })
+    if (!appointment) continue
+    await createJob({
+      customerId: customer.id,
+      customerName: customer.name,
+      customerEmail: customer.email,
+      address: appointment.address,
+      appointmentId: appointment.id,
+      amcContractId: contract.id,
+      equipmentIds: contract.equipmentIds,
+      title: `AMC visit · ${contract.plan}`,
+      service: 'AMC maintenance',
+      status: 'scheduled',
+      technician: '',
+      scheduledAt: appointment.scheduledAt,
+      startedAt: null,
+      completedAt: null,
+      checklist: [],
+      parts: [],
+      photos: [],
+      signature: null,
+      notes: `Auto-scheduled from ${contract.ref}.`,
+    })
+    created += 1
+  }
+  if (created) console.log(`[hvac-api] auto-scheduled ${created} AMC visit(s)`)
+  return created
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Runner                                                                    */
 /* -------------------------------------------------------------------------- */
 
@@ -270,6 +385,7 @@ async function tick(): Promise<void> {
   }
   try {
     await runReminderNotifications(now)
+    await runAmcVisitScheduling(now)
     await runAmcReminders(now)
     await runDailyDigest(now)
     await runBackup(now)
