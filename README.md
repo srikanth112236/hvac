@@ -46,7 +46,8 @@ development the floating switcher also flips it live; the choice is stored in
   standalone calculator pages**.
 - Admin: overview, leads, **customer records with full contact details, invoices,
   payments and service history**, customers + full customer file, **dispatch**
-  (separate full diary board with scheduling, status, engineer and AMC links),
+  (separate full diary board with scheduling, status, engineer and AMC links,
+  customer search with data fill and technician suggestions),
   **jobs with checklists, parts, photos and signatures**, **quotations linked to
   customers, leads and services**, invoices, expenses,
   team/payroll, **priority reminders with overdue/urgent queues, filters and

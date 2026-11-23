@@ -20,6 +20,7 @@ test('reminders queue segments, filters, prioritises and completes', async ({ pa
   await page.getByLabel('Password').fill(ADMIN_PASSWORD)
   await page.getByRole('button', { name: /Open control room/i }).click()
   await expect(page).toHaveURL(/\/admin$/)
+  await expect(page.getByText('Signed in as')).toBeVisible()
 
   await page.goto('/admin/reminders')
   await expect(page.getByRole('heading', { name: 'Nothing falls between calls.' })).toBeVisible()

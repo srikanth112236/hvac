@@ -9,6 +9,7 @@ test('revision ledger has version and page-by-page workspaces', async ({ page })
   await page.getByLabel('Password').fill(ADMIN_PASSWORD)
   await page.getByRole('button', { name: /Open control room/i }).click()
   await expect(page).toHaveURL(/\/admin$/)
+  await expect(page.getByText('Signed in as')).toBeVisible()
 
   await page.goto('/admin/content/revisions')
   await expect(page.getByRole('heading', { name: 'Every change, reversible.' })).toBeVisible()

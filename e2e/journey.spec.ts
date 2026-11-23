@@ -24,6 +24,7 @@ test('lead → admin invoice → customer portal journey', async ({ page, browse
   await page.getByLabel('Password').fill(ADMIN_PASSWORD)
   await page.getByRole('button', { name: /Open control room/i }).click()
   await expect(page).toHaveURL(/\/admin$/)
+  await expect(page.getByText('Signed in as')).toBeVisible()
 
   await page.goto('/admin/invoices')
   await page.getByRole('button', { name: /New invoice/i }).click()
