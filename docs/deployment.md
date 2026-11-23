@@ -90,12 +90,13 @@ Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
 
 1. Update dependencies deliberately (`npm install <pkg>@<version> -w <workspace>`).
 2. Run `npm audit --audit-level=high` — CI fails on high or critical.
-3. Run `npm run typecheck && npm run lint && npm run build`.
-4. Back up `apps/api/data` before deploying.
-5. Deploy the API first (migrations are forward-only and idempotent), then the web
+3. Run `npm run typecheck && npm run lint && npm run test && npm run build`.
+4. Run `npm run test:e2e` against a running dev server (or let Playwright start it).
+5. Back up `apps/api/data` before deploying.
+6. Deploy the API first (migrations are forward-only and idempotent), then the web
    build. Static assets are content-hashed, so the old HTML keeps working during
    the swap.
-6. Roll back by redeploying the previous API/web build and restoring the JSON
+7. Roll back by redeploying the previous API/web build and restoring the JSON
    backup only if a migration changed data (it currently only adds missing
    fields).
 

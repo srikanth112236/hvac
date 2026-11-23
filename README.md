@@ -78,9 +78,11 @@ key. `npm run audit` gates high/critical advisories.
 ```bash
 npm run typecheck
 npm run lint
+npm run test        # Vitest + Supertest (API)
+npm run test:e2e    # Playwright smoke (needs a browser; dev server auto-start)
 npm run build
 npm run audit
-npm run verify      # all four
+npm run verify      # typecheck + lint + test + build + audit
 ```
 
 ## Notes
