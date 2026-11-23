@@ -659,6 +659,25 @@ adminRouter.get('/leads', async (req, res) => {
   })
 })
 
+adminRouter.get('/leads/export', async (_req, res) => {
+  const [content, leads] = await Promise.all([readSiteContent(), readLeads()])
+  res.set(
+    'Content-Disposition',
+    `attachment; filename="leads-${new Date().toISOString().slice(0, 10)}.json"`,
+  )
+  res.json({
+    company: {
+      name: content.brand.name,
+      legalName: content.brand.legalName,
+      monogram: content.brand.monogram,
+      logo: null,
+      contact: content.brand.contact,
+    },
+    exportedAt: new Date().toISOString(),
+    leads,
+  })
+})
+
 adminRouter.get('/leads/:ref', async (req, res) => {
   const leads = await readLeads()
   const lead = leads.find((entry) => entry.ref === req.params.ref)

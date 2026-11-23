@@ -184,6 +184,16 @@ describe('lead → invoice → customer portal', () => {
     )
     expect(customer).toBeTruthy()
 
+    const walkIn = await adminHeaders(admin.post('/api/v1/admin/customers'))
+      .send({
+        name: 'Walk In Customer',
+        email: 'walk-in@test.local',
+        phone: '2145550188',
+        address: '12 Walk In Road, Dallas',
+      })
+      .expect(201)
+    expect(walkIn.body.data.status).toBe('active')
+
     await adminHeaders(admin.patch(`/api/v1/admin/customers/${customer.id}`))
       .send({ status: 'active' })
       .expect(200)

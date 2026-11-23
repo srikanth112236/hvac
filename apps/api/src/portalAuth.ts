@@ -57,7 +57,7 @@ function statusOf(customer: { status?: CustomerStatus }): CustomerStatus {
   return customer.status ?? 'active'
 }
 
-function encodePassword(password: string): { passwordSalt: string; passwordHash: string } {
+export function encodePassword(password: string): { passwordSalt: string; passwordHash: string } {
   const passwordSalt = randomBytes(16).toString('hex')
   return {
     passwordSalt,

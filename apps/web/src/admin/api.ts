@@ -6,6 +6,7 @@ import type {
   AppointmentRecord,
   CustomerAccount,
   CustomerAccountWithStats,
+  CustomerAdminCreateInput,
   CustomerPortalFile,
   CustomerSite,
   CustomerSiteInput,
@@ -556,6 +557,11 @@ export const adminApi = {
     request<{ data: CustomerAccountWithStats[] }>('/admin/customers').then(
       (payload) => payload.data,
     ),
+  createCustomer: (input: CustomerAdminCreateInput) =>
+    request<{ data: CustomerAccount }>('/admin/customers', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }).then((payload) => payload.data),
   patchCustomer: (id: string, status: string) =>
     request<{ data: CustomerAccountWithStats }>(`/admin/customers/${encodeURIComponent(id)}`, {
       method: 'PATCH',

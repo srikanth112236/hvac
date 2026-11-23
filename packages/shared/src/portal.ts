@@ -63,6 +63,14 @@ export const customerStatusPatchSchema = z.object({
 })
 export type CustomerStatusPatch = z.infer<typeof customerStatusPatchSchema>
 
+export const customerAdminCreateSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  email: z.string().trim().email().max(160),
+  phone: z.string().trim().max(30).default(''),
+  address: z.string().trim().max(500).default(''),
+})
+export type CustomerAdminCreateInput = z.infer<typeof customerAdminCreateSchema>
+
 export interface CustomerAccountWithStats extends CustomerAccount {
   invoiceCount: number
   openBalance: number
@@ -124,9 +132,7 @@ export type CustomerVerifyInput = z.infer<typeof customerVerifySchema>
 export const customerResendVerificationSchema = z.object({
   email: z.string().trim().email('Enter your email address').max(160),
 })
-export type CustomerResendVerificationInput = z.infer<
-  typeof customerResendVerificationSchema
->
+export type CustomerResendVerificationInput = z.infer<typeof customerResendVerificationSchema>
 
 export const customerProfileSchema = z.object({
   name: z.string().trim().min(2).max(120),

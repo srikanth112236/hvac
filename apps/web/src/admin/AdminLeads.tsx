@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type DragEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useLiveRefresh } from '@/admin/useLiveRefresh'
 import { Icon } from '@/components/icons'
 import {
@@ -12,7 +12,7 @@ import {
   useToast,
 } from '@/components/ui'
 import { catalogueServices } from '@/content/services'
-import type { AdminLead } from '@hvac/shared'
+import type { AdminLead, CustomerAccount } from '@hvac/shared'
 import { adminApi } from '@/admin/api'
 import {
   AdminLoading,
@@ -28,6 +28,24 @@ import {
 } from '@/admin/ui'
 
 const columns = ['new', 'contacted', 'site-visit', 'quoted', 'won', 'lost'] as const
+
+const columnTheme: Record<(typeof columns)[number], string> = {
+  new: 'border-t-cold/70 from-cold/[0.08]',
+  contacted: 'border-t-fg-dim/40 from-fg-dim/[0.04]',
+  'site-visit': 'border-t-warn/60 from-warn/[0.06]',
+  quoted: 'border-t-heat/60 from-heat/[0.05]',
+  won: 'border-t-success/60 from-success/[0.07]',
+  lost: 'border-t-danger/50 from-danger/[0.05]',
+}
+
+const cardTheme: Record<(typeof columns)[number], string> = {
+  new: 'border-l-cold/70',
+  contacted: 'border-l-fg-dim/40',
+  'site-visit': 'border-l-warn/70',
+  quoted: 'border-l-heat/70',
+  won: 'border-l-success/70',
+  lost: 'border-l-danger/60',
+}
 
 export function AdminLeads() {
   const { toast } = useToast()
@@ -45,6 +63,10 @@ export function AdminLeads() {
   const [selected, setSelected] = useState<AdminLead | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [dragging, setDragging] = useState<string | null>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [suggestionResults, setSuggestionResults] = useState<AdminLead[]>([])
+  const [importing, setImporting] = useState(false)
+  const importRef = useRef<HTMLInputElement>(null)
 
   const load = async () => {
     try {
@@ -81,6 +103,98 @@ export function AdminLeads() {
         .includes(needle),
     )
   }, [leads, query])
+
+  const suggestions = suggestionResults
+
+  useEffect(() => {
+    const needle = query.trim()
+    if (needle.length < 2) {
+      setSuggestionResults([])
+      return
+    }
+    const timer = window.setTimeout(() => {
+      adminApi
+        .leads(`?page=1&pageSize=6&q=${encodeURIComponent(needle)}`)
+        .then((payload) => setSuggestionResults(payload.data))
+        .catch(() => setSuggestionResults([]))
+    }, 180)
+    return () => window.clearTimeout(timer)
+  }, [query])
+
+  const parseCsv = (text: string): Record<string, string>[] => {
+    const rows: string[][] = []
+    let row: string[] = []
+    let cell = ''
+    let quoted = false
+    for (let index = 0; index < text.length; index += 1) {
+      const char = text[index]
+      if (char === '"') {
+        if (quoted && text[index + 1] === '"') {
+          cell += '"'
+          index += 1
+        } else {
+          quoted = !quoted
+        }
+      } else if (char === ',' && !quoted) {
+        row.push(cell)
+        cell = ''
+      } else if ((char === '\n' || char === '\r') && !quoted) {
+        if (char === '\r' && text[index + 1] === '\n') index += 1
+        row.push(cell)
+        if (row.some((value) => value.trim())) rows.push(row)
+        row = []
+        cell = ''
+      } else {
+        cell += char
+      }
+    }
+    row.push(cell)
+    if (row.some((value) => value.trim())) rows.push(row)
+    const [header, ...body] = rows
+    if (!header) return []
+    return body.map((values) =>
+      Object.fromEntries(
+        header.map((key, index) => [key.trim().toLowerCase(), values[index]?.trim() ?? '']),
+      ),
+    )
+  }
+
+  const importLeads = async (file: File) => {
+    setImporting(true)
+    try {
+      const records = parseCsv(await file.text())
+      let created = 0
+      for (const record of records) {
+        if (!record.name || !record.phone) continue
+        await adminApi.createLead({
+          name: record.name,
+          phone: record.phone,
+          email: record.email || undefined,
+          city: record.city || undefined,
+          serviceSlug: record.service || undefined,
+          message: record.message || record.brief || undefined,
+          value: record.value ? Number(record.value) : undefined,
+          status: record.status || 'new',
+        })
+        created += 1
+      }
+      toast({
+        title: 'Leads imported',
+        description: `${created} row${created === 1 ? '' : 's'} added to the pipeline.`,
+        tone: created ? 'success' : 'warn',
+      })
+      await load()
+    } catch (caught) {
+      toast({
+        title: 'Import failed',
+        description: caught instanceof Error ? caught.message : 'Check the CSV columns.',
+        tone: 'danger',
+      })
+    } finally {
+      setImporting(false)
+      if (importRef.current) importRef.current.value = ''
+    }
+  }
 
   const moveLead = async (ref: string, status: string) => {
     const previous = leads
@@ -120,25 +234,81 @@ export function AdminLeads() {
         description="Drag a card between stages, or open it to assign an owner, value and follow-up. Follow-up dates create a reminder automatically."
         actions={
           <>
-            <div className="w-full min-w-[200px] sm:w-auto">
+            <div className="relative w-full min-w-[240px] sm:w-auto">
               <Input
                 aria-label="Search leads"
-                placeholder="Search name, ref, service…"
+                placeholder="Search leads, customer, service…"
                 value={query}
+                onFocus={() => setSearchOpen(true)}
+                onBlur={() => window.setTimeout(() => setSearchOpen(false), 160)}
                 onChange={(event) => {
                   setQuery(event.target.value)
                   setPage(1)
+                  setSearchOpen(true)
                 }}
               />
+              {searchOpen && suggestions.length ? (
+                <div className="absolute left-0 right-0 top-full z-[var(--z-overlay)] mt-1 border border-line bg-base shadow-pop">
+                  <p className="border-b border-line px-3 py-2 font-mono text-[8px] uppercase tracking-[0.1em] text-fg-faint">
+                    Matching leads
+                  </p>
+                  {suggestions.map((lead) => (
+                    <button
+                      key={lead.ref}
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        setQuery(lead.name)
+                        setSelected(lead)
+                        setSearchOpen(false)
+                      }}
+                      className="flex w-full items-start justify-between gap-3 border-b border-line/60 px-3 py-2.5 text-left last:border-0 hover:bg-cold/[0.06]"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-[12px] text-fg">{lead.name}</span>
+                        <span className="block truncate text-[10px] text-fg-faint">
+                          {lead.ref} · {lead.serviceName ?? 'Unallocated'}
+                        </span>
+                      </span>
+                      <StatusPill status={lead.status} />
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <Button icon="plus" onClick={() => setCreateOpen(true)}>
               New lead
+            </Button>
+            <input
+              ref={importRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="sr-only"
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0]
+                if (file) void importLeads(file)
+              }}
+            />
+            <Button
+              variant="secondary"
+              icon="upload"
+              loading={importing}
+              onClick={() => importRef.current?.click()}
+            >
+              Import CSV
             </Button>
             <a
               href="/api/v1/admin/csv/leads"
               className="flex h-9 items-center border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:border-cold/50 hover:text-cold"
             >
               Export CSV
+            </a>
+            <a
+              href="/api/v1/admin/leads/export"
+              download
+              className="flex h-9 items-center border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:border-cold/50 hover:text-cold"
+            >
+              Export JSON
             </a>
           </>
         }
@@ -184,9 +354,9 @@ export function AdminLeads() {
                   key={status}
                   onDragOver={(event) => event.preventDefault()}
                   onDrop={(event) => onDrop(event, status)}
-                  className="flex min-h-[460px] flex-col border border-line bg-panel/30"
+                  className={`flex min-h-[460px] flex-col border border-t-2 bg-gradient-to-b to-transparent ${columnTheme[status]}`}
                 >
-                  <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-2 border-b border-line/70 px-3 py-2.5">
                     <span className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim">
                       <span className="h-1.5 w-1.5 rounded-full bg-current" />
                       {meta?.label ?? status}
@@ -211,10 +381,10 @@ export function AdminLeads() {
                             setDragging(lead.ref)
                           }}
                           onDragEnd={() => setDragging(null)}
-                          className={`group cursor-grab border bg-base p-3 transition-colors duration-2 active:cursor-grabbing ${
+                          className={`group cursor-grab rounded-md border border-l-2 bg-gradient-to-br from-panel/70 to-base p-3 shadow-[0_1px_0_rgb(var(--line)/0.5)] transition-all duration-2 active:cursor-grabbing ${cardTheme[status]} ${
                             dragging === lead.ref
-                              ? 'border-cold/60 opacity-60'
-                              : 'border-line hover:border-cold/40'
+                              ? 'scale-[0.98] border-cold/60 opacity-60'
+                              : 'hover:-translate-y-0.5 hover:border-cold/50 hover:shadow-pop'
                           }`}
                         >
                           <button
@@ -574,6 +744,75 @@ function LeadDrawer({
   )
 }
 
+function CustomerCreateModal({
+  open,
+  onClose,
+  form,
+  setForm,
+  error,
+  busy,
+  onSave,
+}: {
+  open: boolean
+  onClose: () => void
+  form: { name: string; email: string; phone: string; address: string }
+  setForm: (value: { name: string; email: string; phone: string; address: string }) => void
+  error: string
+  busy: boolean
+  onSave: () => void
+}) {
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Add as customer"
+      description="Create the customer record now. The lead form will select it automatically."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button loading={busy} onClick={onSave} icon="plus">
+            Add customer
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Input
+          label="Customer name"
+          required
+          value={form.name}
+          onChange={(event) => setForm({ ...form, name: event.target.value })}
+        />
+        <Input
+          label="Phone"
+          type="tel"
+          value={form.phone}
+          onChange={(event) => setForm({ ...form, phone: event.target.value })}
+        />
+        <Input
+          label="Email"
+          type="email"
+          required
+          value={form.email}
+          onChange={(event) => setForm({ ...form, email: event.target.value })}
+        />
+        <Input
+          label="Service address"
+          value={form.address}
+          onChange={(event) => setForm({ ...form, address: event.target.value })}
+        />
+      </div>
+      {error ? (
+        <div className="mt-4">
+          <InlineError message={error} />
+        </div>
+      ) : null}
+    </Modal>
+  )
+}
+
 function CreateLeadModal({
   open,
   onClose,
@@ -593,6 +832,63 @@ function CreateLeadModal({
   const [status, setStatus] = useState('new')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
+  const [customers, setCustomers] = useState<CustomerAccount[]>([])
+  const [customerQuery, setCustomerQuery] = useState('')
+  const [customerOpen, setCustomerOpen] = useState(false)
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerAccount | null>(null)
+  const [customerModalOpen, setCustomerModalOpen] = useState(false)
+  const [customerForm, setCustomerForm] = useState({ name: '', email: '', phone: '', address: '' })
+  const [customerError, setCustomerError] = useState('')
+  const [customerBusy, setCustomerBusy] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    setCustomerQuery('')
+    setSelectedCustomer(null)
+    setCustomerOpen(false)
+    adminApi
+      .customers()
+      .then(setCustomers)
+      .catch(() => setCustomers([]))
+  }, [open])
+
+  const chooseCustomer = (customer: CustomerAccount) => {
+    setSelectedCustomer(customer)
+    setCustomerQuery(customer.name)
+    setName(customer.name)
+    setPhone(customer.phone)
+    setEmail(customer.email)
+    setCity(customer.address)
+    setCustomerOpen(false)
+  }
+
+  const customerMatches = useMemo(() => {
+    const needle = customerQuery.trim().toLowerCase()
+    if (needle.length < 2) return []
+    return customers
+      .filter((customer) =>
+        `${customer.name} ${customer.email} ${customer.phone} ${customer.address}`
+          .toLowerCase()
+          .includes(needle),
+      )
+      .slice(0, 6)
+  }, [customerQuery, customers])
+
+  const createCustomer = async () => {
+    setCustomerError('')
+    setCustomerBusy(true)
+    try {
+      const created = await adminApi.createCustomer(customerForm)
+      setCustomers((current) => [created, ...current])
+      chooseCustomer(created)
+      setCustomerModalOpen(false)
+      setCustomerForm({ name: '', email: '', phone: '', address: '' })
+    } catch (caught) {
+      setCustomerError(caught instanceof Error ? caught.message : 'Could not add the customer.')
+    } finally {
+      setCustomerBusy(false)
+    }
+  }
 
   const submit = async () => {
     setError('')
@@ -617,6 +913,8 @@ function CreateLeadModal({
       setMessage('')
       setValue('')
       setStatus('new')
+      setCustomerQuery('')
+      setSelectedCustomer(null)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not create the lead.')
     } finally {
@@ -647,6 +945,84 @@ function CreateLeadModal({
       }
     >
       <div className="flex flex-col gap-4">
+        <div className="relative">
+          <Input
+            label="Find or add customer"
+            value={customerQuery}
+            placeholder="Search name, email or phone…"
+            autoComplete="off"
+            onFocus={() => setCustomerOpen(true)}
+            onBlur={() => window.setTimeout(() => setCustomerOpen(false), 160)}
+            onChange={(event) => {
+              setCustomerQuery(event.target.value)
+              setCustomerOpen(true)
+              setSelectedCustomer(null)
+            }}
+            hint="Select an existing customer, or add a new one below."
+          />
+          {customerOpen && customerQuery.trim().length >= 2 ? (
+            <div className="absolute left-0 right-0 top-full z-[var(--z-overlay)] mt-1 border border-line bg-base shadow-pop">
+              {customerMatches.length ? (
+                customerMatches.map((customer) => (
+                  <button
+                    key={customer.id}
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => chooseCustomer(customer)}
+                    className="flex w-full items-start justify-between gap-3 border-b border-line/60 px-3 py-2.5 text-left last:border-0 hover:bg-cold/[0.06]"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-[12px] text-fg">{customer.name}</span>
+                      <span className="block truncate text-[10px] text-fg-faint">
+                        {customer.email || customer.phone}
+                      </span>
+                    </span>
+                    <span className="font-mono text-[8px] uppercase text-cold">Select</span>
+                  </button>
+                ))
+              ) : (
+                <div className="p-3">
+                  <p className="text-[11px] text-fg-dim">No customer matches “{customerQuery}”.</p>
+                  <button
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      setCustomerForm({
+                        name: customerQuery.includes('@') ? '' : customerQuery,
+                        email: customerQuery.includes('@') ? customerQuery : '',
+                        phone: '',
+                        address: '',
+                      })
+                      setCustomerError('')
+                      setCustomerModalOpen(true)
+                      setCustomerOpen(false)
+                    }}
+                    className="mt-2 flex w-full items-center justify-between gap-2 border border-cold/40 bg-cold/[0.05] px-3 py-2 text-left font-mono text-[9px] uppercase tracking-[0.08em] text-cold hover:bg-cold/[0.1]"
+                  >
+                    Add “{customerQuery}” as a customer
+                    <Icon name="plus" size={12} />
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : null}
+          {selectedCustomer ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2 border border-success/30 bg-success/[0.05] px-3 py-2 text-[11px] text-fg-dim">
+              <Icon name="check" size={12} className="text-success" />
+              Selected customer: <strong className="text-fg">{selectedCustomer.name}</strong>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCustomer(null)
+                  setCustomerQuery('')
+                }}
+                className="ml-auto font-mono text-[8px] uppercase text-fg-faint hover:text-danger"
+              >
+                Clear
+              </button>
+            </div>
+          ) : null}
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Input
             label="Name"
@@ -703,6 +1079,15 @@ function CreateLeadModal({
           onChange={(event) => setValue(event.target.value)}
         />
         {error ? <InlineError message={error} /> : null}
+        <CustomerCreateModal
+          open={customerModalOpen}
+          onClose={() => setCustomerModalOpen(false)}
+          form={customerForm}
+          setForm={setCustomerForm}
+          error={customerError}
+          busy={customerBusy}
+          onSave={() => void createCustomer()}
+        />
       </div>
     </Modal>
   )

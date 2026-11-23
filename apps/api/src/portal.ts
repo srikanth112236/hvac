@@ -1,9 +1,10 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { Router, type Response } from 'express'
 import {
   appointmentCreateSchema,
   appointmentPatchSchema,
   customerBookingSchema,
+  customerAdminCreateSchema,
   customerAppointmentActionSchema,
   customerStatusPatchSchema,
   invoiceTotals,
@@ -19,6 +20,7 @@ import { readSiteContent } from './content.js'
 import { appendLead, readLeads } from './leads.js'
 import {
   customerStore,
+  encodePassword,
   findCustomerByEmail,
   publicCustomer,
   readPublicCustomers,
@@ -457,9 +459,42 @@ portalRouter.patch(
 
 /* -------------------------------------------------------------------------- */
 /*  Admin customers and appointments                                          */
-/* -------------------------------------------------------------------------- */ export const customersRouter =
-  Router()
+/* -------------------------------------------------------------------------- */
+
+export const customersRouter = Router()
 customersRouter.use(requireAdmin, requirePermission('customers.write'), requireAdminMutation)
+
+customersRouter.post('/customers', async (req, res) => {
+  const parsed = customerAdminCreateSchema.safeParse(req.body)
+  if (!parsed.success) {
+    validationError(res, parsed.error.issues[0]?.message ?? 'Check the customer details.')
+    return
+  }
+  const email = parsed.data.email.trim().toLowerCase()
+  if (await findCustomerByEmail(email)) {
+    res.status(409).json({
+      error: { code: 'email_in_use', message: 'A customer with this email already exists.' },
+    })
+    return
+  }
+  const now = new Date().toISOString()
+  const record = {
+    id: randomUUID(),
+    name: parsed.data.name,
+    email,
+    phone: parsed.data.phone,
+    address: parsed.data.address,
+    status: 'active' as const,
+    createdAt: now,
+    updatedAt: now,
+    emailVerifiedAt: now,
+    verificationTokenHash: null,
+    verificationExpiresAt: null,
+    ...encodePassword(randomBytes(32).toString('hex')),
+  }
+  await customerStore.mutate((customers) => [record, ...customers])
+  res.status(201).json({ data: publicCustomer(record) })
+})
 
 customersRouter.get('/customers', async (_req, res) => {
   const [customers, invoices, appointments] = await Promise.all([
