@@ -31,6 +31,7 @@ import { BUSINESS_TIMEZONE } from './config.js'
 import { customerWantsEmail } from './customerPreferences.js'
 import { createStore } from './store.js'
 import { appointmentConfirmation, sendMail } from './mailer.js'
+import { streamInvoicePdf } from './pdf.js'
 import { hourInZone, startOfTodayInZone, zonedTimeToUtc } from './time.js'
 
 export const appointmentStore = createStore<AppointmentRecord[]>('appointments.json', () => [])
@@ -238,6 +239,20 @@ portalRouter.get('/portal/invoices/:id', requireCustomer, async (req, res) => {
   res.json({ data: toInvoiceView(invoice) })
 })
 
+portalRouter.get('/portal/invoices/:id/pdf', requireCustomer, async (req, res) => {
+  const customer = res.locals.customer as { email: string }
+  const invoices = await invoiceStore.read()
+  const invoice = invoicesForEmail(invoices, customer.email).find(
+    (entry) => entry.id === req.params.id || entry.ref === req.params.id,
+  )
+  if (!invoice) {
+    res.status(404).json({ error: { code: 'not_found', message: 'Invoice not found.' } })
+    return
+  }
+  const content = await readSiteContent()
+  streamInvoicePdf(res, toInvoiceView(invoice), content.brand)
+})
+
 portalRouter.post(
   '/portal/appointments',
   requireCustomer,
@@ -304,6 +319,7 @@ portalRouter.post(
       technician: '',
       leadRef: lead.ref,
       rebookOf: parsed.data.rebookOf ?? null,
+      amcContractId: null,
       createdAt: now,
       updatedAt: now,
     }
@@ -512,6 +528,7 @@ customersRouter.post('/appointments', async (req, res) => {
     technician: parsed.data.technician,
     leadRef: parsed.data.leadRef ?? null,
     rebookOf: parsed.data.rebookOf ?? null,
+    amcContractId: parsed.data.amcContractId ?? null,
     createdAt: now,
     updatedAt: now,
   }

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Icon } from '@/components/icons'
 import {
   Button,
+  ButtonAnchor,
   Input,
   Modal,
   Select,
@@ -239,9 +240,14 @@ export function AdminInvoiceDetail() {
           <Button variant="secondary" icon="wrench" onClick={() => setEditOpen(true)}>
             Edit
           </Button>
-          <Button variant="secondary" icon="download" onClick={() => window.print()}>
-            Print / PDF
-          </Button>
+          <ButtonAnchor
+            href={`/api/v1/admin/invoices/${invoice.id}/pdf`}
+            download
+            variant="secondary"
+            icon="download"
+          >
+            Download PDF
+          </ButtonAnchor>
           <button
             type="button"
             onClick={() => void removeInvoice()}

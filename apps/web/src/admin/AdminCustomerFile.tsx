@@ -5,9 +5,11 @@ import {
   quotationStatusLabel,
   ticketStatusLabel,
   type AmcStatus,
+  type AmcContract,
   type CustomerAccount,
   type CustomerPortalFile,
   type CustomerSite,
+  type EquipmentRecord,
   type QuotationRecord,
   type QuotationStatus,
   type SupportTicket,
@@ -16,6 +18,7 @@ import {
 import {
   Badge,
   Button,
+  ButtonAnchor,
   Checkbox,
   EmptyState,
   Input,
@@ -25,6 +28,7 @@ import {
   useToast,
 } from '@/components/ui'
 import { adminApi } from '@/admin/api'
+import { Icon } from '@/components/icons'
 import { AdminLoading, AdminPageHeader, InlineError, formatDate, formatDateTime, formatMoney } from '@/admin/ui'
 
 type Tab = 'sites' | 'equipment' | 'quotations' | 'amc' | 'reports' | 'tickets' | 'preferences'
@@ -82,6 +86,7 @@ export function AdminCustomerFile() {
   })
 
   const [equipmentOpen, setEquipmentOpen] = useState(false)
+  const [equipmentEditing, setEquipmentEditing] = useState<EquipmentRecord | null>(null)
   const [equipmentForm, setEquipmentForm] = useState({
     name: '',
     brand: '',
@@ -95,6 +100,7 @@ export function AdminCustomerFile() {
   })
 
   const [quoteOpen, setQuoteOpen] = useState(false)
+  const [quoteEditing, setQuoteEditing] = useState<QuotationRecord | null>(null)
   const [quoteForm, setQuoteForm] = useState({
     title: '',
     service: '',
@@ -105,6 +111,7 @@ export function AdminCustomerFile() {
   })
 
   const [amcOpen, setAmcOpen] = useState(false)
+  const [amcEditing, setAmcEditing] = useState<AmcContract | null>(null)
   const [amcForm, setAmcForm] = useState({
     plan: 'Comprehensive',
     startDate: today(),
@@ -117,6 +124,7 @@ export function AdminCustomerFile() {
   })
 
   const [reportOpen, setReportOpen] = useState(false)
+  const [reportUploading, setReportUploading] = useState(false)
   const [reportForm, setReportForm] = useState({
     title: '',
     appointmentId: '',
@@ -205,13 +213,35 @@ export function AdminCustomerFile() {
   const saveEquipment = async (event: FormEvent) => {
     event.preventDefault()
     await run(async () => {
-      await adminApi.createEquipment(customerId, {
+      const payload = {
         ...equipmentForm,
         siteId: equipmentForm.siteId || null,
-      })
+      }
+      if (equipmentEditing) {
+        await adminApi.patchEquipment(customerId, equipmentEditing.id, payload)
+      } else {
+        await adminApi.createEquipment(customerId, payload)
+      }
       setEquipmentOpen(false)
+      setEquipmentEditing(null)
       setEquipmentForm({ name: '', brand: '', model: '', serial: '', capacity: '', siteId: '', installedAt: '', warrantyUntil: '', notes: '' })
-    }, 'Equipment added')
+    }, equipmentEditing ? 'Equipment updated' : 'Equipment added')
+  }
+
+  const editEquipment = (item: EquipmentRecord) => {
+    setEquipmentEditing(item)
+    setEquipmentForm({
+      name: item.name,
+      brand: item.brand,
+      model: item.model,
+      serial: item.serial,
+      capacity: item.capacity,
+      siteId: item.siteId ?? '',
+      installedAt: item.installedAt,
+      warrantyUntil: item.warrantyUntil,
+      notes: item.notes,
+    })
+    setEquipmentOpen(true)
   }
 
   const saveQuotation = async (event: FormEvent) => {
@@ -222,25 +252,55 @@ export function AdminCustomerFile() {
       return
     }
     await run(async () => {
-      await adminApi.createQuotation(customerId, {
-        title: quoteForm.title,
-        service: quoteForm.service,
-        status: quoteForm.status,
-        validUntil: quoteForm.validUntil,
-        lines,
-        discount: 0,
-        notes: quoteForm.notes,
-        terms: '',
-      })
+      if (quoteEditing) {
+        await adminApi.patchQuotation(customerId, quoteEditing.id, {
+          title: quoteForm.title,
+          service: quoteForm.service,
+          status: quoteForm.status,
+          validUntil: quoteForm.validUntil,
+          lines,
+          notes: quoteForm.notes,
+        })
+      } else {
+        await adminApi.createQuotation(customerId, {
+          title: quoteForm.title,
+          service: quoteForm.service,
+          status: quoteForm.status,
+          validUntil: quoteForm.validUntil,
+          lines,
+          discount: 0,
+          notes: quoteForm.notes,
+          terms: '',
+        })
+      }
       setQuoteOpen(false)
+      setQuoteEditing(null)
       setQuoteForm({ title: '', service: '', validUntil: '', status: 'draft', lines: '', notes: '' })
-    }, 'Quotation created')
+    }, quoteEditing ? 'Quotation updated' : 'Quotation created')
+  }
+
+  const editQuotation = (quote: QuotationRecord) => {
+    setQuoteEditing(quote)
+    setQuoteForm({
+      title: quote.title,
+      service: quote.service,
+      validUntil: quote.validUntil,
+      status: quote.status,
+      lines: quote.lines
+        .map(
+          (line) =>
+            `${line.description} | ${line.quantity} | ${line.unitPrice} | ${line.taxPercent}`,
+        )
+        .join('\n'),
+      notes: quote.notes,
+    })
+    setQuoteOpen(true)
   }
 
   const saveAmc = async (event: FormEvent) => {
     event.preventDefault()
     await run(async () => {
-      await adminApi.createAmc(customerId, {
+      const payload = {
         plan: amcForm.plan,
         startDate: amcForm.startDate,
         endDate: amcForm.endDate,
@@ -249,9 +309,68 @@ export function AdminCustomerFile() {
         status: amcForm.status,
         notes: amcForm.notes,
         equipmentIds: amcForm.equipmentIds,
-      })
+      }
+      if (amcEditing) {
+        await adminApi.patchAmc(customerId, amcEditing.id, payload)
+      } else {
+        await adminApi.createAmc(customerId, payload)
+      }
       setAmcOpen(false)
-    }, 'Contract created')
+      setAmcEditing(null)
+    }, amcEditing ? 'Contract updated' : 'Contract created')
+  }
+
+  const editAmc = (contract: AmcContract) => {
+    setAmcEditing(contract)
+    setAmcForm({
+      plan: contract.plan,
+      startDate: contract.startDate,
+      endDate: contract.endDate,
+      visitsPerYear: String(contract.visitsPerYear),
+      price: String(contract.price),
+      status: contract.status,
+      notes: contract.notes,
+      equipmentIds: contract.equipmentIds,
+    })
+    setAmcOpen(true)
+  }
+
+  const uploadReportPhotos = async (files: File[], input?: HTMLInputElement) => {
+    if (!files.length) return
+    setReportUploading(true)
+    try {
+      const payload = await adminApi.uploadMedia(files, 'reports', 'Job report photo')
+      const urls = payload.data.map((asset) => `${asset.url} | ${asset.alt}`).join('\n')
+      setReportForm((current) => ({
+        ...current,
+        photos: [current.photos, urls].filter(Boolean).join('\n'),
+      }))
+      toast({
+        title: 'Photos uploaded',
+        description: `${payload.data.length} image${payload.data.length === 1 ? '' : 's'} added to the report.`,
+        tone: 'success',
+      })
+    } catch (caught) {
+      toast({
+        title: 'Photo upload failed',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
+    } finally {
+      setReportUploading(false)
+      if (input) input.value = ''
+    }
+  }
+
+  const removeReportPhoto = (url: string) => {
+    setReportForm((current) => ({
+      ...current,
+      photos: current.photos
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith(url))
+        .join('\n'),
+    }))
   }
 
   const saveReport = async (event: FormEvent) => {
@@ -269,7 +388,11 @@ export function AdminCustomerFile() {
       .split('\n')
       .map((line) => line.trim())
       .filter(Boolean)
-      .map((url) => ({ url, alt: '' }))
+      .map((line) => {
+        const [url, ...alt] = line.split('|').map((part) => part.trim())
+        return { url: url ?? '', alt: alt.join(' | ') }
+      })
+      .filter((photo) => photo.url)
     await run(async () => {
       await adminApi.createJobReport(customerId, {
         title: reportForm.title,
@@ -335,6 +458,13 @@ export function AdminCustomerFile() {
   if (error || !data || !file || !customer) {
     return <InlineError message={error || 'Customer file could not be loaded.'} />
   }
+
+  const reportPhotoUrls = reportForm.photos
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.split('|')[0]?.trim() ?? '')
+    .filter(Boolean)
 
   return (
     <div className="flex flex-col gap-6">
@@ -425,7 +555,16 @@ export function AdminCustomerFile() {
         <section className="border border-line bg-panel/20">
           <div className="flex items-center justify-between border-b border-line px-4 py-3">
             <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">Equipment</h2>
-            <Button size="sm" icon="plus" onClick={() => setEquipmentOpen(true)}>Add equipment</Button>
+            <Button
+              size="sm"
+              icon="plus"
+              onClick={() => {
+                setEquipmentEditing(null)
+                setEquipmentOpen(true)
+              }}
+            >
+              Add equipment
+            </Button>
           </div>
           {file.equipment.length === 0 ? (
             <div className="p-4"><EmptyState title="No equipment" description="Register each installed unit so the portal shows its history." /></div>
@@ -438,7 +577,10 @@ export function AdminCustomerFile() {
                     <p className="text-[11px] text-fg-dim">{[item.brand, item.model, item.serial].filter(Boolean).join(' · ') || 'No model data'}</p>
                     <p className="text-[10px] text-fg-faint">{[item.capacity, item.installedAt ? `installed ${formatDate(item.installedAt)}` : '', item.warrantyUntil ? `warranty to ${formatDate(item.warrantyUntil)}` : ''].filter(Boolean).join(' · ')}</p>
                   </div>
-                  <button type="button" onClick={() => void run(() => adminApi.deleteEquipment(customerId, item.id), 'Equipment removed')} className="font-mono text-[9px] uppercase text-fg-faint hover:text-danger">Remove</button>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button type="button" onClick={() => editEquipment(item)} className="font-mono text-[9px] uppercase text-cold hover:text-fg">Edit</button>
+                    <button type="button" onClick={() => void run(() => adminApi.deleteEquipment(customerId, item.id), 'Equipment removed')} className="font-mono text-[9px] uppercase text-fg-faint hover:text-danger">Remove</button>
+                  </div>
                 </article>
               ))}
             </div>
@@ -450,14 +592,23 @@ export function AdminCustomerFile() {
         <section className="border border-line bg-panel/20">
           <div className="flex items-center justify-between border-b border-line px-4 py-3">
             <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">Quotations</h2>
-            <Button size="sm" icon="plus" onClick={() => setQuoteOpen(true)}>New quotation</Button>
+            <Button
+              size="sm"
+              icon="plus"
+              onClick={() => {
+                setQuoteEditing(null)
+                setQuoteOpen(true)
+              }}
+            >
+              New quotation
+            </Button>
           </div>
           {file.quotations.length === 0 ? (
             <div className="p-4"><EmptyState title="No quotations" description="Create a quotation to send into the customer portal." /></div>
           ) : (
             <div className="divide-y divide-line">
               {file.quotations.map((quote) => (
-                <article key={quote.id} className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto_170px] md:items-center">
+                <article key={quote.id} className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto_170px_auto] md:items-center">
                   <div>
                     <p className="font-mono text-[9px] text-cold">{quote.ref}</p>
                     <p className="text-sm text-fg">{quote.title}</p>
@@ -470,6 +621,17 @@ export function AdminCustomerFile() {
                     onChange={(event) => void setQuotationStatus(quote, event.target.value as QuotationStatus)}
                     options={(Object.keys(quotationStatusLabel) as QuotationStatus[]).map((status) => ({ value: status, label: quotationStatusLabel[status] }))}
                   />
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button type="button" onClick={() => editQuotation(quote)} className="font-mono text-[9px] uppercase text-cold hover:text-fg">Edit lines</button>
+                    <ButtonAnchor
+                      href={`/api/v1/admin/customers/${customerId}/quotations/${quote.id}/pdf`}
+                      download
+                      variant="quiet"
+                      size="sm"
+                    >
+                      PDF
+                    </ButtonAnchor>
+                  </div>
                 </article>
               ))}
             </div>
@@ -481,7 +643,7 @@ export function AdminCustomerFile() {
         <section className="border border-line bg-panel/20">
           <div className="flex items-center justify-between border-b border-line px-4 py-3">
             <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">AMC cover</h2>
-            <Button size="sm" icon="plus" onClick={() => setAmcOpen(true)}>New contract</Button>
+            <Button size="sm" icon="plus" onClick={() => { setAmcEditing(null); setAmcOpen(true) }}>New contract</Button>
           </div>
           {file.amc.length === 0 ? (
             <div className="p-4"><EmptyState title="No contract" description="Create the first maintenance contract for this customer." /></div>
@@ -495,7 +657,10 @@ export function AdminCustomerFile() {
                     <p className="text-[10px] text-fg-faint">{formatDate(contract.startDate)} → {formatDate(contract.endDate)} · {contract.visitsPerYear} visits</p>
                     {contract.renewalRequestedAt ? <Badge tone="warn">Renewal requested</Badge> : null}
                   </div>
-                  <button type="button" onClick={() => void run(() => adminApi.deleteAmc(customerId, contract.id), 'Contract removed')} className="font-mono text-[9px] uppercase text-fg-faint hover:text-danger">Remove</button>
+                  <div className="flex flex-wrap gap-3">
+                    <button type="button" onClick={() => editAmc(contract)} className="font-mono text-[9px] uppercase text-cold hover:text-fg">Edit</button>
+                    <button type="button" onClick={() => void run(() => adminApi.deleteAmc(customerId, contract.id), 'Contract removed')} className="font-mono text-[9px] uppercase text-fg-faint hover:text-danger">Remove</button>
+                  </div>
                 </article>
               ))}
             </div>
@@ -590,7 +755,7 @@ export function AdminCustomerFile() {
         </form>
       </Modal>
 
-      <Modal open={equipmentOpen} onClose={() => setEquipmentOpen(false)} title="Add equipment" footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setEquipmentOpen(false)}>Cancel</Button><Button type="submit" form="admin-equipment-form" loading={busy}>Save</Button></div>}>
+      <Modal open={equipmentOpen} onClose={() => setEquipmentOpen(false)} title={equipmentEditing ? 'Edit equipment' : 'Add equipment'} footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setEquipmentOpen(false)}>Cancel</Button><Button type="submit" form="admin-equipment-form" loading={busy}>{equipmentEditing ? 'Save changes' : 'Save'}</Button></div>}>
         <form id="admin-equipment-form" className="grid gap-4 sm:grid-cols-2" onSubmit={(event) => void saveEquipment(event)}>
           <Input label="Name" required value={equipmentForm.name} onChange={(event) => setEquipmentForm({ ...equipmentForm, name: event.target.value })} />
           <Input label="Capacity" value={equipmentForm.capacity} onChange={(event) => setEquipmentForm({ ...equipmentForm, capacity: event.target.value })} />
@@ -604,7 +769,7 @@ export function AdminCustomerFile() {
         </form>
       </Modal>
 
-      <Modal open={quoteOpen} onClose={() => setQuoteOpen(false)} title="New quotation" size="lg" footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setQuoteOpen(false)}>Cancel</Button><Button type="submit" form="admin-quote-form" loading={busy}>Create</Button></div>}>
+      <Modal open={quoteOpen} onClose={() => setQuoteOpen(false)} title={quoteEditing ? 'Edit quotation' : 'New quotation'} size="lg" footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setQuoteOpen(false)}>Cancel</Button><Button type="submit" form="admin-quote-form" loading={busy}>{quoteEditing ? 'Save lines' : 'Create'}</Button></div>}>
         <form id="admin-quote-form" className="grid gap-4 sm:grid-cols-2" onSubmit={(event) => void saveQuotation(event)}>
           <Input label="Title" required value={quoteForm.title} onChange={(event) => setQuoteForm({ ...quoteForm, title: event.target.value })} />
           <Input label="Service" value={quoteForm.service} onChange={(event) => setQuoteForm({ ...quoteForm, service: event.target.value })} />
@@ -617,7 +782,7 @@ export function AdminCustomerFile() {
         </form>
       </Modal>
 
-      <Modal open={amcOpen} onClose={() => setAmcOpen(false)} title="New AMC contract" footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setAmcOpen(false)}>Cancel</Button><Button type="submit" form="admin-amc-form" loading={busy}>Create</Button></div>}>
+      <Modal open={amcOpen} onClose={() => setAmcOpen(false)} title={amcEditing ? 'Edit AMC contract' : 'New AMC contract'} footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setAmcOpen(false)}>Cancel</Button><Button type="submit" form="admin-amc-form" loading={busy}>{amcEditing ? 'Save changes' : 'Create'}</Button></div>}>
         <form id="admin-amc-form" className="grid gap-4 sm:grid-cols-2" onSubmit={(event) => void saveAmc(event)}>
           <Input label="Plan" required value={amcForm.plan} onChange={(event) => setAmcForm({ ...amcForm, plan: event.target.value })} />
           <Select label="Status" value={amcForm.status} onChange={(event) => setAmcForm({ ...amcForm, status: event.target.value as AmcStatus })} options={['pending', 'active', 'expired', 'cancelled'].map((status) => ({ value: status, label: status }))} />
@@ -645,7 +810,62 @@ export function AdminCustomerFile() {
           <Input label="Completed" type="date" value={reportForm.completedAt} onChange={(event) => setReportForm({ ...reportForm, completedAt: event.target.value })} />
           <div className="sm:col-span-2"><Textarea label="Summary" rows={2} value={reportForm.summary} onChange={(event) => setReportForm({ ...reportForm, summary: event.target.value })} /></div>
           <div className="sm:col-span-2"><Textarea label="Checklist — one per line, prefix [x] for done" rows={4} value={reportForm.checklist} onChange={(event) => setReportForm({ ...reportForm, checklist: event.target.value })} placeholder={'[x] Coil cleaned\n[x] Drain tested\n[ ] Filter replaced'} /></div>
-          <div className="sm:col-span-2"><Textarea label="Photo URLs — one per line" rows={3} value={reportForm.photos} onChange={(event) => setReportForm({ ...reportForm, photos: event.target.value })} placeholder="/uploads/reports/coil-after.jpg" /></div>
+          <div className="sm:col-span-2">
+            <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
+              Report photos
+            </span>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <label className="inline-flex cursor-pointer items-center gap-2 border border-line px-3 py-2 font-mono text-[9px] uppercase tracking-[0.08em] text-cold hover:border-cold/60">
+                <Icon name="upload" size={13} />
+                {reportUploading ? 'Uploading…' : 'Upload photos'}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+                  multiple
+                  className="sr-only"
+                  disabled={reportUploading}
+                  onChange={(event) =>
+                    void uploadReportPhotos(
+                      Array.from(event.currentTarget.files ?? []),
+                      event.currentTarget,
+                    )
+                  }
+                />
+              </label>
+              <span className="text-[10px] text-fg-faint">
+                Stored in the media library and attached to this report.
+              </span>
+            </div>
+            {reportPhotoUrls.length ? (
+              <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                {reportPhotoUrls.map((url) => (
+                  <div key={url} className="group relative border border-line bg-base">
+                    <img src={url} alt="" className="h-20 w-full object-cover" />
+                    <button
+                      type="button"
+                      aria-label="Remove report photo"
+                      onClick={() => removeReportPhoto(url)}
+                      className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center bg-base/90 text-fg-faint hover:text-danger"
+                    >
+                      <Icon name="close" size={11} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <details className="mt-3">
+              <summary className="cursor-pointer font-mono text-[9px] uppercase tracking-[0.08em] text-fg-faint">
+                Attached URLs
+              </summary>
+              <Textarea
+                className="mt-2"
+                label="Photo URLs - one per line"
+                rows={2}
+                value={reportForm.photos}
+                onChange={(event) => setReportForm({ ...reportForm, photos: event.target.value })}
+              />
+            </details>
+          </div>
           <div className="sm:col-span-2"><Textarea label="Findings" rows={2} value={reportForm.findings} onChange={(event) => setReportForm({ ...reportForm, findings: event.target.value })} /></div>
           <div className="sm:col-span-2"><Textarea label="Recommendations" rows={2} value={reportForm.recommendations} onChange={(event) => setReportForm({ ...reportForm, recommendations: event.target.value })} /></div>
         </form>

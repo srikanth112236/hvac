@@ -27,6 +27,11 @@ checks, build verification. **Not** a formal penetration test.
 | 16  | Portal modules partial          | Quotations, AMC, equipment history, support tickets and notification preferences included in the API integration flow                                                                         | Customer file exposes quote, AMC, equipment and report; quote acceptance, AMC renewal, preference toggles and desk ticket reply all return `200/201`; disabling billing email suppresses a new invoice email |
 | 17  | Calculators duplicated          | Six standalone `/tools/<slug>` pages; service pages link to the tool instead of embedding a second calculator                                                                                 | `/tools` cards navigate to dedicated pages; `/tools/room-tonnage` renders the sizing form and enquiry hand-off; sitemap and SSR include all six                                                              |
 
+| 18 | Browser print-to-PDF only | Server-generated invoice and quotation PDFs with authenticated portal/admin routes; PDFKit streams `application/pdf` | Admin and portal invoice/quote PDF routes return `200`, `application/pdf`, and a `%PDF` body; buttons download the file |
+| 19 | Report photos required URLs | Report form uploads images to the media library and attaches their URLs/thumbnails; URLs remain removable | Admin report form has a multi-file upload control with thumbnails, remove buttons and an attached-URL fallback |
+| 20 | AMC visits account-level | Appointments carry `amcContractId`; dispatch links a visit to a contract; the portal shows each contract's next visit | Test creates an appointment with `amcContractId`; portal file returns the linked visit and the AMC card filters by contract |
+| 21 | Delete-and-recreate editing | Equipment, AMC contracts and quotation lines have PATCH APIs and in-place admin edit forms | Integration test patches equipment name, quotation lines/total and AMC visit count; UI opens the same records in edit modals |
+
 Additional checks:
 
 | Check                                  | Result                                                                                            |

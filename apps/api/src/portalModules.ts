@@ -46,6 +46,7 @@ import {
   worksDeskNotice,
 } from './mailer.js'
 import { removeNewsletterSignup } from './newsletterSignups.js'
+import { streamQuotationPdf } from './pdf.js'
 import { appointmentStore } from './portal.js'
 import {
   customerStore,
@@ -386,6 +387,26 @@ portalFileRouter.get('/portal/quotations', requireCustomer, async (_req, res) =>
       .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
       .map((quotation) => ({ ...quotation, totals: quotationTotals(quotation) })),
   })
+})
+
+portalFileRouter.get('/portal/quotations/:id/pdf', requireCustomer, async (req, res) => {
+  const id = customerId(res)
+  const quotations = await quotationStore.read()
+  const quotation = quotations.find(
+    (entry) => entry.id === req.params.id && entry.customerId === id && entry.status !== 'draft',
+  )
+  const customer = await findCustomer(id)
+  if (!quotation || !customer) {
+    res.status(404).json({ error: { code: 'not_found', message: 'Quotation not found.' } })
+    return
+  }
+  const content = await readSiteContent()
+  streamQuotationPdf(
+    res,
+    { ...quotation, totals: quotationTotals(quotation) },
+    content.brand,
+    customer,
+  )
 })
 
 portalFileRouter.post(
@@ -1048,6 +1069,25 @@ portalAdminRouter.post('/customers/:id/quotations', async (req, res) => {
   }
 })
 
+portalAdminRouter.get('/customers/:id/quotations/:quotationId/pdf', async (req, res) => {
+  const quotations = await quotationStore.read()
+  const quotation = quotations.find(
+    (entry) => entry.id === req.params.quotationId && entry.customerId === req.params.id,
+  )
+  const customer = await findCustomer(req.params.id)
+  if (!quotation || !customer) {
+    res.status(404).json({ error: { code: 'not_found', message: 'Quotation not found.' } })
+    return
+  }
+  const content = await readSiteContent()
+  streamQuotationPdf(
+    res,
+    { ...quotation, totals: quotationTotals(quotation) },
+    content.brand,
+    customer,
+  )
+})
+
 portalAdminRouter.patch('/customers/:id/quotations/:quotationId', async (req, res) => {
   const parsed = quotationPatchSchema.safeParse(req.body)
   if (!parsed.success) {
@@ -1114,6 +1154,10 @@ portalAdminRouter.delete('/customers/:id/quotations/:quotationId', async (req, r
 })
 
 /* AMC */
+portalAdminRouter.get('/amc-contracts', async (_req, res) => {
+  res.json({ data: await amcStore.read() })
+})
+
 portalAdminRouter.post('/customers/:id/amc', async (req, res) => {
   const parsed = amcInputSchema.safeParse(req.body)
   if (!parsed.success) {

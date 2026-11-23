@@ -27,6 +27,7 @@ import { findCustomerByEmail } from './portalAuth.js'
 import { reminderStore } from './reminders.js'
 import { createStore } from './store.js'
 import { invoiceIssuedEmail, invoiceReminderEmail, sendMail } from './mailer.js'
+import { streamInvoicePdf } from './pdf.js'
 import { PUBLIC_SITE_URL } from './config.js'
 
 export const invoiceStore = createStore<InvoiceRecord[]>('invoices.json', () => [])
@@ -246,6 +247,19 @@ businessRouter.get('/invoices/:id', async (req, res) => {
     return
   }
   res.json({ data: toInvoiceView(invoice) })
+})
+
+businessRouter.get('/invoices/:id/pdf', async (req, res) => {
+  const invoices = await invoiceStore.read()
+  const invoice = invoices.find(
+    (entry) => entry.id === req.params.id || entry.ref === req.params.id,
+  )
+  if (!invoice) {
+    res.status(404).json({ error: { code: 'not_found', message: 'Invoice not found.' } })
+    return
+  }
+  const content = await readSiteContent()
+  streamInvoicePdf(res, toInvoiceView(invoice), content.brand)
 })
 
 businessRouter.post('/invoices', async (req, res) => {

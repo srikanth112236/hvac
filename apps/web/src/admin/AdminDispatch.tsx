@@ -4,6 +4,7 @@ import {
   appointmentStatusLabel,
   APPOINTMENT_STATUSES,
   serviceWindowLabel,
+  type AmcContract,
   type AppointmentRecord,
   type AppointmentStatus,
   type TeamMember,
@@ -21,6 +22,7 @@ export function AdminDispatch() {
   const { toast } = useToast()
   const [appointments, setAppointments] = useState<AppointmentRecord[]>([])
   const [team, setTeam] = useState<TeamMember[]>([])
+  const [contracts, setContracts] = useState<AmcContract[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [day, setDay] = useState<'today' | 'upcoming' | 'all'>('today')
@@ -28,9 +30,14 @@ export function AdminDispatch() {
   const load = useCallback(async () => {
     setError('')
     try {
-      const [visits, members] = await Promise.all([adminApi.appointments(), adminApi.team()])
+      const [visits, members, amc] = await Promise.all([
+        adminApi.appointments(),
+        adminApi.team(),
+        adminApi.amcContracts(),
+      ])
       setAppointments(visits)
       setTeam(members.data)
+      setContracts(amc)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not load dispatch.')
     } finally {
@@ -71,7 +78,7 @@ export function AdminDispatch() {
 
   const patch = async (
     appointment: AppointmentRecord,
-    patch: { status?: AppointmentStatus; technician?: string },
+    patch: { status?: AppointmentStatus; technician?: string; amcContractId?: string | null },
   ) => {
     try {
       const updated = await adminApi.patchAppointment(appointment.id, patch)
@@ -146,7 +153,7 @@ export function AdminDispatch() {
       ) : (
         <div className="divide-y divide-line border border-line bg-panel/20">
           {visible.map((appointment) => (
-            <article key={appointment.id} className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_170px_190px] lg:items-center">
+            <article key={appointment.id} className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_150px_170px_190px] lg:items-center">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-[9px] text-cold">{appointment.ref}</span>
@@ -209,6 +216,25 @@ export function AdminDispatch() {
                     ...team
                       .filter((member) => member.status === 'active')
                       .map((member) => ({ value: member.name, label: `${member.name} · ${member.role}` })),
+                  ]}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-fg-faint">AMC contract</span>
+                <Select
+                  aria-label={`AMC contract for ${appointment.ref}`}
+                  value={appointment.amcContractId ?? ''}
+                  onChange={(event) =>
+                    void patch(appointment, { amcContractId: event.target.value || null })
+                  }
+                  options={[
+                    { value: '', label: 'Not linked' },
+                    ...contracts
+                      .filter((contract) => contract.customerId === appointment.customerId)
+                      .map((contract) => ({
+                        value: contract.id,
+                        label: `${contract.ref} · ${contract.plan}`,
+                      })),
                   ]}
                 />
               </label>

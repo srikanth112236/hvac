@@ -651,6 +651,8 @@ export const adminApi = {
     }).then((payload) => payload.data),
   appointments: () =>
     request<{ data: AppointmentRecord[] }>('/admin/appointments').then((payload) => payload.data),
+  amcContracts: () =>
+    request<{ data: AmcContract[] }>('/admin/amc-contracts').then((payload) => payload.data),
 
   newsletters: () =>
     request<{ data: NewsletterRecord[]; summary: NewsletterSummary }>('/admin/newsletters'),

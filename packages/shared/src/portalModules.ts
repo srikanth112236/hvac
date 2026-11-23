@@ -60,7 +60,17 @@ export const equipmentInputSchema = z.object({
   notes: z.string().trim().max(1000).default(''),
 })
 export type EquipmentInput = z.infer<typeof equipmentInputSchema>
-export const equipmentPatchSchema = equipmentInputSchema.partial()
+export const equipmentPatchSchema = z.object({
+  siteId: z.string().trim().max(80).nullable().optional(),
+  name: z.string().trim().min(2, 'Name the equipment').max(120).optional(),
+  brand: z.string().trim().max(80).optional(),
+  model: z.string().trim().max(80).optional(),
+  serial: z.string().trim().max(80).optional(),
+  capacity: z.string().trim().max(60).optional(),
+  installedAt: z.string().trim().max(40).optional(),
+  warrantyUntil: z.string().trim().max(40).optional(),
+  notes: z.string().trim().max(1000).optional(),
+})
 
 /* -------------------------------------------------------------------------- */
 /*  Quotations                                                                 */
@@ -138,7 +148,16 @@ export const quotationInputSchema = z.object({
   validUntil: z.string().trim().max(40).default(''),
 })
 export type QuotationInput = z.infer<typeof quotationInputSchema>
-export const quotationPatchSchema = quotationInputSchema.partial()
+export const quotationPatchSchema = z.object({
+  title: z.string().trim().min(3, 'Give the quotation a title').max(160).optional(),
+  service: z.string().trim().max(200).optional(),
+  lines: z.array(quotationLineSchema).min(1).max(50).optional(),
+  discount: z.number().min(0).max(100_000_000).optional(),
+  notes: z.string().trim().max(1500).optional(),
+  terms: z.string().trim().max(2000).optional(),
+  status: z.enum(QUOTATION_STATUSES).optional(),
+  validUntil: z.string().trim().max(40).optional(),
+})
 
 export const quotationChangeRequestSchema = z.object({
   note: z.string().trim().min(5, 'Describe the change you need').max(1500),
@@ -199,7 +218,16 @@ export const amcInputSchema = z.object({
   notes: z.string().trim().max(1000).default(''),
 })
 export type AmcInput = z.infer<typeof amcInputSchema>
-export const amcPatchSchema = amcInputSchema.partial()
+export const amcPatchSchema = z.object({
+  plan: z.string().trim().min(2, 'Name the plan').max(80).optional(),
+  equipmentIds: z.array(z.string().trim().max(80)).max(50).optional(),
+  startDate: z.string().trim().min(4).max(40).optional(),
+  endDate: z.string().trim().min(4).max(40).optional(),
+  visitsPerYear: z.number().int().min(0).max(52).optional(),
+  price: z.number().min(0).max(100_000_000).optional(),
+  status: z.enum(AMC_STATUSES).optional(),
+  notes: z.string().trim().max(1000).optional(),
+})
 
 /* -------------------------------------------------------------------------- */
 /*  Job reports                                                                */

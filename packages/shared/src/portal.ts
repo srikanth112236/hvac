@@ -31,6 +31,7 @@ export interface AppointmentRecord {
   technician: string
   leadRef: string | null
   rebookOf: string | null
+  amcContractId: string | null
   createdAt: string
   updatedAt: string
 }
@@ -163,6 +164,7 @@ export const appointmentCreateSchema = z.object({
   technician: z.string().trim().max(120).default(''),
   leadRef: z.string().trim().max(40).nullable().optional(),
   rebookOf: z.string().trim().max(80).nullable().optional(),
+  amcContractId: z.string().trim().max(80).nullable().optional(),
 })
 
 export const appointmentPatchSchema = z.object({
@@ -172,6 +174,7 @@ export const appointmentPatchSchema = z.object({
   technician: z.string().trim().max(120).optional(),
   notes: z.string().trim().max(1500).optional(),
   address: z.string().trim().max(500).optional(),
+  amcContractId: z.string().trim().max(80).nullable().optional(),
 })
 
 export const customerAppointmentActionSchema = z.object({

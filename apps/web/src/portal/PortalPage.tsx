@@ -26,6 +26,7 @@ import { Icon } from '@/components/icons'
 import {
   Badge,
   Button,
+  ButtonAnchor,
   Checkbox,
   EmptyState,
   Input,
@@ -71,9 +72,9 @@ function formatDate(value: string | null | undefined): string {
 }
 
 function formatDateTime(value: string | null | undefined): string {
-  if (!value) return '—'
+  if (!value) return '-'
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '—'
+  if (Number.isNaN(date.getTime())) return '-'
   return new Intl.DateTimeFormat('en-US', {
     day: '2-digit',
     month: 'short',
@@ -81,6 +82,23 @@ function formatDateTime(value: string | null | undefined): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date)
+}
+
+function nextContractVisit(
+  appointments: AppointmentRecord[],
+  contractId: string,
+): AppointmentRecord | null {
+  return (
+    appointments
+      .filter(
+        (appointment) =>
+          appointment.amcContractId === contractId &&
+          appointment.status !== 'cancelled' &&
+          appointment.status !== 'completed' &&
+          Date.parse(appointment.scheduledAt) >= Date.now(),
+      )
+      .sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt))[0] ?? null
+  )
 }
 
 function today(): string {
@@ -1324,11 +1342,16 @@ export function PortalPage() {
                       </div>
                     </dl>
                     {contract.notes ? <p className="mt-3 text-[11px] leading-relaxed text-fg-faint">{contract.notes}</p> : null}
-                    <p className="mt-3 border-t border-line pt-3 text-[11px] text-fg-dim">
-                      {overview.nextAppointment
-                        ? `Next visit on the account: ${formatDateTime(overview.nextAppointment.scheduledAt)} · ${overview.nextAppointment.serviceName}`
-                        : 'No visit is currently scheduled on the account.'}
-                    </p>
+                    {(() => {
+                      const next = nextContractVisit(overview.appointments, contract.id)
+                      return (
+                        <p className="mt-3 border-t border-line pt-3 text-[11px] text-fg-dim">
+                          {next
+                            ? `Next contract visit: ${formatDateTime(next.scheduledAt)} · ${next.serviceName}`
+                            : 'No visit is linked to this contract yet. The works desk will schedule the next AMC visit.'}
+                        </p>
+                      )
+                    })()}
                     <div className="mt-4 flex flex-wrap items-center gap-2">
                       <Button
                         size="sm"
@@ -1725,6 +1748,16 @@ export function PortalPage() {
               {quoteOpen ? quotationStatusLabel[quoteOpen.status] : ''}
             </span>
             <div className="flex flex-wrap gap-2">
+              {quoteOpen ? (
+                <ButtonAnchor
+                  href={`/api/v1/portal/quotations/${quoteOpen.id}/pdf`}
+                  download
+                  variant="secondary"
+                  icon="download"
+                >
+                  Download PDF
+                </ButtonAnchor>
+              ) : null}
               <Button
                 variant="secondary"
                 onClick={() => {
@@ -2024,9 +2057,16 @@ export function PortalPage() {
               {invoice?.totals.state}
             </span>
             <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" onClick={() => window.print()} icon="download">
-                Print / PDF
-              </Button>
+              {invoice ? (
+                <ButtonAnchor
+                  href={`/api/v1/portal/invoices/${invoice.id}/pdf`}
+                  download
+                  variant="secondary"
+                  icon="download"
+                >
+                  Download PDF
+                </ButtonAnchor>
+              ) : null}
               <Button variant="secondary" onClick={() => setInvoice(null)}>
                 Close
               </Button>

@@ -158,6 +158,10 @@ describe('lead → invoice → customer portal', () => {
       .expect(201)
     expect(paid.body.data.totals.balance).toBe(600)
 
+    const adminPdf = await admin.get(`/api/v1/admin/invoices/${invoiceId}/pdf`).expect(200)
+    expect(adminPdf.headers['content-type']).toContain('application/pdf')
+    expect(adminPdf.body.subarray(0, 4).toString()).toBe('%PDF')
+
     const register = await request(app)
       .post('/api/v1/portal/auth/register')
       .set('Origin', ORIGIN)
@@ -199,6 +203,12 @@ describe('lead → invoice → customer portal', () => {
       })
       .expect(201)
     const equipmentId = equipment.body.data.id
+    const equipmentEdited = await adminHeaders(
+      admin.patch(`/api/v1/admin/customers/${customer.id}/equipment/${equipmentId}`),
+    )
+      .send({ name: 'Test cassette v2' })
+      .expect(200)
+    expect(equipmentEdited.body.data.name).toBe('Test cassette v2')
 
     const quote = await adminHeaders(
       admin.post(`/api/v1/admin/customers/${customer.id}/quotations`),
@@ -215,6 +225,14 @@ describe('lead → invoice → customer portal', () => {
       })
       .expect(201)
     const quoteId = quote.body.data.id
+    const quoteEdited = await adminHeaders(
+      admin.patch(`/api/v1/admin/customers/${customer.id}/quotations/${quoteId}`),
+    )
+      .send({
+        lines: [{ description: 'Revised cassette service', quantity: 1, unitPrice: 1300, taxPercent: 0 }],
+      })
+      .expect(200)
+    expect(quoteEdited.body.data.totals.total).toBe(1300)
 
     const amc = await adminHeaders(admin.post(`/api/v1/admin/customers/${customer.id}/amc`))
       .send({
@@ -229,6 +247,26 @@ describe('lead → invoice → customer portal', () => {
       })
       .expect(201)
     const amcId = amc.body.data.id
+    const amcEdited = await adminHeaders(
+      admin.patch(`/api/v1/admin/customers/${customer.id}/amc/${amcId}`),
+    )
+      .send({ visitsPerYear: 6 })
+      .expect(200)
+    expect(amcEdited.body.data.visitsPerYear).toBe(6)
+
+    const amcVisit = await adminHeaders(admin.post('/api/v1/admin/appointments'))
+      .send({
+        customerName: 'Portal Test',
+        customerEmail: 'portal-test@example.com',
+        customerId: customer.id,
+        serviceName: 'AMC visit',
+        scheduledAt: '2027-01-10',
+        window: 'morning',
+        amcContractId: amcId,
+        address: '1 Test Way, Dallas',
+      })
+      .expect(201)
+    expect(amcVisit.body.data.amcContractId).toBe(amcId)
 
     await adminHeaders(admin.post(`/api/v1/admin/customers/${customer.id}/reports`))
       .send({
@@ -260,6 +298,11 @@ describe('lead → invoice → customer portal', () => {
       true,
     )
     expect(file.body.data.amc.some((entry: { id: string }) => entry.id === amcId)).toBe(true)
+    expect(
+      file.body.data.appointments.some(
+        (entry: { amcContractId: string | null }) => entry.amcContractId === amcId,
+      ),
+    ).toBe(true)
     expect(file.body.data.equipment.some((entry: { id: string }) => entry.id === equipmentId)).toBe(
       true,
     )
@@ -268,6 +311,18 @@ describe('lead → invoice → customer portal', () => {
         (entry: { equipmentId: string }) => entry.equipmentId === equipmentId,
       ),
     ).toBe(true)
+
+    const portalInvoicePdf = await portal
+      .get(`/api/v1/portal/invoices/${invoiceId}/pdf`)
+      .expect(200)
+    expect(portalInvoicePdf.headers['content-type']).toContain('application/pdf')
+    expect(portalInvoicePdf.body.subarray(0, 4).toString()).toBe('%PDF')
+
+    const portalQuotePdf = await portal
+      .get(`/api/v1/portal/quotations/${quoteId}/pdf`)
+      .expect(200)
+    expect(portalQuotePdf.headers['content-type']).toContain('application/pdf')
+    expect(portalQuotePdf.body.subarray(0, 4).toString()).toBe('%PDF')
 
     await portal
       .post(`/api/v1/portal/quotations/${quoteId}/accept`)
