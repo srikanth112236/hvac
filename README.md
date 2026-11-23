@@ -62,6 +62,9 @@ development the floating switcher also flips it live; the choice is stored in
   identity, SEO & social), page tree, per-page draft indicators, add-detail
   wizard, logo/favicon/share image, global theme tokens, publish validation,
   `If-Match` conflict recovery and revision ledger. See `docs/content-studio.md`.
+- Revision control: complete version table with content-aware search and
+  filters, page-by-page timeline, complete/page/selected-field restores, and
+  immutable snapshots. See `docs/revisions.md`.
 - Customer portal: overview, bookings (book, reschedule, cancel), invoices and
   **server-generated PDFs**, quotations (accept / request changes / edit /
   **PDF**), equipment + service history, AMC cover + renewal request +

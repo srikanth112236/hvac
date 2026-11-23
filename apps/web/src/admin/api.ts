@@ -484,13 +484,16 @@ export const adminApi = {
     request<{ data: ContentRevisionList }>('/admin/content/revisions').then(
       (payload) => payload.data,
     ),
-  restoreContentVersion: (version: number, pageId?: string) =>
+  restoreContentVersion: (version: number, pageId?: string, paths?: string[]) =>
     request<{
       data: SiteContent
       meta: { changed: boolean; revision: ContentRevisionMeta | null }
     }>(`/admin/content/revisions/${version}/restore`, {
       method: 'POST',
-      body: JSON.stringify(pageId ? { pageId } : {}),
+      body: JSON.stringify({
+        ...(pageId ? { pageId } : {}),
+        ...(paths?.length ? { paths } : {}),
+      }),
     }),
 
   media: (folder = '') =>
@@ -619,7 +622,14 @@ export const adminApi = {
     ).then((payload) => payload.data),
   quotations: (query = '') =>
     request<{
-      data: Array<QuotationRecord & { totals: QuotationTotals; customerName: string; customerEmail: string; leadName: string | null }>
+      data: Array<
+        QuotationRecord & {
+          totals: QuotationTotals
+          customerName: string
+          customerEmail: string
+          leadName: string | null
+        }
+      >
       meta: { count: number; totals: { counts: Record<string, number>; value: number } }
     }>(`/admin/quotations${query}`),
   createGlobalQuotation: (input: QuotationInput & { customerId: string }) =>

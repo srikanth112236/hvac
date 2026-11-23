@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import {
   contentPageLabel,
   diffContent,
+  siteContentPayloadSchema,
   summarizeContentChanges,
   type ContentRevision,
   type ContentRevisionChange,
@@ -115,7 +116,9 @@ async function ensureBaseline(
     prior?.content ?? null,
     changes,
     'System',
-    prior ? 'Recovered snapshot for the live content version' : 'Revision history began with this version',
+    prior
+      ? 'Recovered snapshot for the live content version'
+      : 'Revision history began with this version',
   )
   const next = [...records, baseline].sort((a, b) => a.version - b.version)
   await revisionStore.write(next)
@@ -240,6 +243,112 @@ function restorePagePayload(
   }
 }
 
+function stableArrayIndex(array: unknown[], segment: string): number {
+  if (/^\d+$/.test(segment)) {
+    const index = Number(segment)
+    return index >= 0 && index < array.length ? index : -1
+  }
+  return array.findIndex((entry) => {
+    if (!entry || typeof entry !== 'object') return false
+    const record = entry as { id?: unknown; slug?: unknown }
+    return String(record.id ?? '') === segment || String(record.slug ?? '') === segment
+  })
+}
+
+function valueAtPath(root: unknown, segments: string[]): { found: boolean; value?: unknown } {
+  let current: unknown = root
+  for (const segment of segments) {
+    if (Array.isArray(current)) {
+      const index = stableArrayIndex(current, segment)
+      if (index < 0) return { found: false }
+      current = current[index]
+      continue
+    }
+    if (!current || typeof current !== 'object') return { found: false }
+    const record = current as Record<string, unknown>
+    if (!(segment in record)) return { found: false }
+    current = record[segment]
+  }
+  return { found: true, value: current }
+}
+
+function setExistingPath(root: unknown, segments: string[], value: unknown): boolean {
+  if (!segments.length) return false
+  let current: unknown = root
+  for (const segment of segments.slice(0, -1)) {
+    if (Array.isArray(current)) {
+      const index = stableArrayIndex(current, segment)
+      if (index < 0) return false
+      current = current[index]
+      continue
+    }
+    if (!current || typeof current !== 'object') return false
+    const record = current as Record<string, unknown>
+    if (!(segment in record)) return false
+    current = record[segment]
+  }
+
+  const leaf = segments.at(-1)
+  if (!leaf) return false
+  if (Array.isArray(current)) {
+    const index = stableArrayIndex(current, leaf)
+    if (index < 0) return false
+    current[index] = structuredClone(value)
+    return true
+  }
+  if (current && typeof current === 'object') {
+    ;(current as Record<string, unknown>)[leaf] = structuredClone(value)
+    return true
+  }
+  return false
+}
+
+/**
+ * Restore only leaf fields that still have a parent in the live document.
+ * Added/removed records are deliberately rejected here: restoring one leaf of
+ * a record that no longer exists would create invalid content. Those cases use
+ * page or full-version restore so the record is restored atomically.
+ */
+export function restoreSelectedChanges(
+  current: SiteContent,
+  revision: ContentRevision,
+  paths: string[],
+): SiteContentPayload {
+  const payload = structuredClone(toPayload(current)) as SiteContentPayload
+  for (const path of paths) {
+    const change = revision.changes.find((entry) => entry.path === path)
+    if (!change) {
+      throw new ContentRevisionError('One of the selected fields is not in this revision.', 400)
+    }
+    if (change.kind !== 'changed') {
+      throw new ContentRevisionError(
+        'Added or removed records must be restored as a whole page or complete version.',
+        400,
+      )
+    }
+    const segments = path.split('.')
+    const targetValue = valueAtPath(revision.content, segments)
+    if (!targetValue.found) {
+      throw new ContentRevisionError('A selected field is missing from the revision snapshot.', 400)
+    }
+    if (!setExistingPath(payload, segments, targetValue.value)) {
+      throw new ContentRevisionError(
+        'A selected field no longer exists in the live content. Restore the page or complete version instead.',
+        409,
+      )
+    }
+  }
+
+  const validation = siteContentPayloadSchema.safeParse(payload)
+  if (!validation.success) {
+    throw new ContentRevisionError(
+      'Those fields cannot be restored on their own because the result would be invalid. Restore the page instead.',
+      400,
+    )
+  }
+  return validation.data
+}
+
 export class ContentRevisionError extends Error {
   status: number
 
@@ -311,13 +420,7 @@ export async function saveContentWithRevision(
       return { content: current, revision: null, changed: false }
     }
 
-    const revision = buildRevision(
-      next,
-      current,
-      changes,
-      author,
-      'Published content update',
-    )
+    const revision = buildRevision(next, current, changes, author, 'Published content update')
     await contentStore.write(next)
     await revisionStore.write(appendRevision(records, revision))
     return { content: next, revision: revisionMeta(revision), changed: true }
@@ -328,6 +431,7 @@ export async function restoreContentRevision(
   version: number,
   author: string,
   pageId?: string,
+  paths?: string[],
 ): Promise<ContentWriteResult> {
   return serialise(async () => {
     const current = await readSiteContent()
@@ -337,9 +441,28 @@ export async function restoreContentRevision(
       throw new ContentRevisionError(`Version ${version} is not in the revision ledger.`, 404)
     }
 
-    const payload = pageId
-      ? restorePagePayload(current, target.content, pageId)
-      : toPayload(target.content)
+    const selected = paths?.filter((path) => path.trim()).map((path) => path.trim()) ?? []
+    if (selected.length) {
+      const allowed = new Set(
+        target.changes
+          .filter((change) => !pageId || change.pageId === pageId)
+          .filter((change) => change.kind === 'changed')
+          .map((change) => change.path),
+      )
+      const rejected = selected.filter((path) => !allowed.has(path))
+      if (rejected.length) {
+        throw new ContentRevisionError(
+          'One or more selected fields cannot be restored on their own. Restore the page instead.',
+          400,
+        )
+      }
+    }
+
+    const payload = selected.length
+      ? restoreSelectedChanges(current, target, selected)
+      : pageId
+        ? restorePagePayload(current, target.content, pageId)
+        : toPayload(target.content)
     if (!payload) {
       throw new ContentRevisionError('That page cannot be restored from this revision.', 400)
     }
@@ -358,9 +481,13 @@ export async function restoreContentRevision(
       pageId &&
       (target.changes.find((change) => change.pageId === pageId)?.pageLabel ??
         contentPageLabel(pageId))
-    const note = pageId
-      ? `Restored ${pageLabel} from v${version}`
-      : `Restored the complete site from v${version}`
+    const note = selected.length
+      ? `Restored ${selected.length} field${selected.length === 1 ? '' : 's'}${
+          pageLabel ? ` on ${pageLabel}` : ''
+        } from v${version}`
+      : pageId
+        ? `Restored ${pageLabel} from v${version}`
+        : `Restored the complete site from v${version}`
     const revision = buildRevision(next, current, changes, author, note)
     await contentStore.write(next)
     await revisionStore.write(appendRevision(records, revision))

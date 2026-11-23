@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { invoiceTotals } from '@hvac/shared'
+import { invoiceTotals, summarizeContentChanges, type ContentRevision } from '@hvac/shared'
+import { defaultContent } from './content.js'
+import { restoreSelectedChanges } from './contentHistory.js'
 import { sanitizeNewsletterHtml } from './sanitize.js'
 import { zonedTimeToUtc } from './time.js'
 
@@ -68,5 +70,101 @@ describe('invoice totals', () => {
     expect(totals.state).toBe('overdue')
     expect(totals.balance).toBe(900)
     expect(totals.daysOverdue).toBeGreaterThan(0)
+  })
+})
+
+describe('content revision field restore', () => {
+  it('restores only the selected changed leaves and leaves the live document untouched', () => {
+    const current = defaultContent()
+    current.version = 12
+    current.updatedAt = '2026-11-23T12:00:00.000Z'
+    current.home.heroTitle = 'Current hero'
+    const serviceId = current.services[0]?.id
+    expect(serviceId).toBeTruthy()
+    if (!serviceId) return
+    current.services[0]!.name = 'Current service name'
+
+    const target = structuredClone(current)
+    target.version = 11
+    target.updatedAt = '2026-11-22T12:00:00.000Z'
+    target.home.heroTitle = 'Previous hero'
+    target.services[0]!.name = 'Previous service name'
+
+    const changes = [
+      {
+        path: 'home.heroTitle',
+        field: 'Hero title',
+        pageId: 'home',
+        pageLabel: 'Home',
+        sectionKey: 'home',
+        sectionLabel: 'Home',
+        kind: 'changed' as const,
+        before: 'Previous hero',
+        after: 'Current hero',
+      },
+      {
+        path: `services.${serviceId}.name`,
+        field: 'Name',
+        pageId: 'services',
+        pageLabel: 'Services',
+        sectionKey: 'services',
+        sectionLabel: 'Services',
+        kind: 'changed' as const,
+        before: 'Previous service name',
+        after: 'Current service name',
+      },
+    ]
+    const revision: ContentRevision = {
+      id: 'revision-test',
+      version: 11,
+      previousVersion: 10,
+      createdAt: target.updatedAt,
+      author: 'test',
+      note: 'test',
+      stats: summarizeContentChanges(changes),
+      changes,
+      content: target,
+    }
+
+    const restored = restoreSelectedChanges(current, revision, [
+      'home.heroTitle',
+      `services.${serviceId}.name`,
+    ])
+    expect(restored.home.heroTitle).toBe('Previous hero')
+    expect(restored.services[0]!.name).toBe('Previous service name')
+    expect(current.home.heroTitle).toBe('Current hero')
+    expect(current.services[0]!.name).toBe('Current service name')
+  })
+
+  it('refuses to restore an added record leaf in isolation', () => {
+    const current = defaultContent()
+    const target = structuredClone(current)
+    const changes = [
+      {
+        path: 'faqs.new-faq.question',
+        field: 'Question',
+        pageId: 'site',
+        pageLabel: 'Shared FAQs',
+        sectionKey: 'faqs',
+        sectionLabel: 'Shared FAQs',
+        kind: 'added' as const,
+        before: '',
+        after: 'New question',
+      },
+    ]
+    const revision: ContentRevision = {
+      id: 'revision-test',
+      version: 1,
+      previousVersion: null,
+      createdAt: current.updatedAt,
+      author: 'test',
+      note: 'test',
+      stats: summarizeContentChanges(changes),
+      changes,
+      content: target,
+    }
+    expect(() => restoreSelectedChanges(current, revision, ['faqs.new-faq.question'])).toThrow(
+      /whole page or complete version/i,
+    )
   })
 })

@@ -46,7 +46,8 @@ rollback path. It is not the default and should not receive new features.
   revision ledger.
 - Every successful publish creates a revision. The ledger at
   `/admin/content/revisions` supports preview, field-level diff and restore.
-  Restores publish a new version and keep the old snapshot.
+  Restores publish a new version and keep the old snapshot. See
+  `docs/revisions.md` for the version/page/field restore workspaces.
 - The public site receives content through the existing bootstrap/SSR path.
   Open public tabs pick up the change through the content event and 10-second
   poll.
@@ -111,4 +112,4 @@ add it to the test’s page id list at the same time.
 
 Last promotion run: **19/19 registry editors opened**, 4/4 workspaces present,
 0 page errors, classic fallback reachable; the full Playwright suite was
-**7/7** and SSR hydration was **102/102** route checks.
+**9/9** and SSR hydration was **102/102** route checks.

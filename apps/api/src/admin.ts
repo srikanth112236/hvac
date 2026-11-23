@@ -927,9 +927,21 @@ adminRouter.post('/content/revisions/:version/restore', async (req, res) => {
 
   const rawPage = (req.body as { pageId?: unknown } | null)?.pageId
   const pageId = typeof rawPage === 'string' && rawPage.trim() ? rawPage.trim() : undefined
+  const rawPaths = (req.body as { paths?: unknown } | null)?.paths
+  const paths = Array.isArray(rawPaths)
+    ? rawPaths
+        .filter((path): path is string => typeof path === 'string' && path.trim().length > 0)
+        .map((path) => path.trim())
+        .slice(0, 200)
+    : undefined
 
   try {
-    const result = await restoreContentRevision(version, String(res.locals.admin.email), pageId)
+    const result = await restoreContentRevision(
+      version,
+      String(res.locals.admin.email),
+      pageId,
+      paths,
+    )
     res.json({
       data: result.content,
       meta: { changed: result.changed, revision: result.revision },
