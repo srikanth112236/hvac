@@ -105,7 +105,7 @@ export function Forms() {
   const [slot, setSlot] = useState('10:00')
   const [commercial, setCommercial] = useState(true)
   const [emergency, setEmergency] = useState(false)
-  const [sms, setSms] = useState(false)
+  const [emailUpdates, setEmailUpdates] = useState(false)
 
   return (
     <section id="forms" className="flex flex-col gap-8 scroll-mt-28">
@@ -203,10 +203,10 @@ export function Forms() {
             />
           </div>
           <Toggle
-            checked={sms}
-            onChange={setSms}
-            label="SMS on technician arrival"
-            description="Optional; email is always sent."
+            checked={emailUpdates}
+            onChange={setEmailUpdates}
+            label="Email on technician arrival"
+            description="Email only; no SMS is sent."
           />
         </div>
       </div>
@@ -215,7 +215,12 @@ export function Forms() {
         <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-faint">
           Cash settlement only · no online payment in this template
         </span>
-        <span className={cn('font-mono text-[10px] uppercase tracking-[0.12em]', emergency ? 'text-heat' : 'text-fg-faint')}>
+        <span
+          className={cn(
+            'font-mono text-[10px] uppercase tracking-[0.12em]',
+            emergency ? 'text-heat' : 'text-fg-faint',
+          )}
+        >
           {emergency ? 'Emergency path armed' : 'Standard path'}
         </span>
       </div>

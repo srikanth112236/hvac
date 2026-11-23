@@ -29,11 +29,18 @@ import {
   type SupportTicket,
 } from '@hvac/shared'
 import { requireAdmin, requireAdminMutation, requireWriteRole } from './auth.js'
-import { ADMIN_NOTIFY_EMAIL } from './config.js'
+import { ADMIN_NOTIFY_EMAIL, PUBLIC_SITE_URL } from './config.js'
 import { invoiceStore, toInvoiceView } from './business.js'
 import { readSiteContent } from './content.js'
 import { leadStore, readLeads } from './leads.js'
-import { sendMail, worksDeskNotice } from './mailer.js'
+import {
+  amcRenewalAcknowledgementEmail,
+  quotationIssuedEmail,
+  sendMail,
+  supportTicketAcknowledgementEmail,
+  supportTicketReplyEmail,
+  worksDeskNotice,
+} from './mailer.js'
 import { removeNewsletterSignup } from './newsletterSignups.js'
 import { appointmentStore } from './portal.js'
 import {
@@ -82,6 +89,39 @@ export const preferenceStore = createStore<Record<string, NotificationPreference
   'customer-preferences.json',
   () => ({}),
 )
+
+async function customerWantsEmail(
+  customerId: string,
+  field: 'emailService' | 'emailBilling' | 'emailAmc',
+): Promise<boolean> {
+  const preferences = await preferenceStore.read()
+  return preferences[customerId]?.[field] ?? true
+}
+
+function portalUrl(path: string): string {
+  const base = PUBLIC_SITE_URL.replace(/\/+$/, '')
+  return `${base}${path.startsWith('/') ? '' : '/'}${path}`
+}
+
+async function emailCustomer(input: {
+  customerId: string
+  field: 'emailService' | 'emailBilling' | 'emailAmc'
+  to: string
+  kind: string
+  subject: string
+  html: string
+}): Promise<void> {
+  if (!(await customerWantsEmail(input.customerId, input.field))) return
+  const result = await sendMail({
+    to: input.to,
+    subject: input.subject,
+    html: input.html,
+    kind: input.kind,
+  })
+  if (!result.ok) {
+    console.warn('[hvac-api] customer email was not sent', input.kind, result.status)
+  }
+}
 
 function nextReference(prefix: string, records: { ref: string }[]): string {
   const year = new Date().getFullYear()
@@ -206,7 +246,10 @@ async function buildFile(
       .sort((a, b) => b.endDate.localeCompare(a.endDate)),
     reports: reports
       .filter((report) => report.customerId === customer.id)
-      .sort((a, b) => Date.parse(b.completedAt || b.createdAt) - Date.parse(a.completedAt || a.createdAt)),
+      .sort(
+        (a, b) =>
+          Date.parse(b.completedAt || b.createdAt) - Date.parse(a.completedAt || a.createdAt),
+      ),
     tickets: tickets
       .filter((ticket) => ticket.customerId === customer.id)
       .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
@@ -420,7 +463,8 @@ portalFileRouter.post(
     await quotationStore.mutate((quotations) =>
       quotations.map((quotation) => {
         if (quotation.id !== req.params.id || quotation.customerId !== id) return quotation
-        if (quotation.status !== 'sent' && quotation.status !== 'changes-requested') return quotation
+        if (quotation.status !== 'sent' && quotation.status !== 'changes-requested')
+          return quotation
         saved = {
           ...quotation,
           status: 'changes-requested',
@@ -504,6 +548,26 @@ portalFileRouter.post(
       reference: contract.ref,
       body: `${(res.locals.customer as { name: string }).name} requested a renewal for ${contract.plan}, ending ${contract.endDate}.`,
     })
+    if (ticket) {
+      const created = ticket
+      void (async () => {
+        const content = await readSiteContent()
+        const email = amcRenewalAcknowledgementEmail({
+          name: customer.name,
+          contractRef: contract.ref,
+          ticketRef: created.ref,
+          brand: content.brand.name,
+          portalUrl: portalUrl('/portal'),
+        })
+        await emailCustomer({
+          customerId: id,
+          field: 'emailAmc',
+          to: customer.email,
+          kind: 'amc-renewal-request',
+          ...email,
+        })
+      })().catch((error) => console.error('[hvac-api] AMC renewal email failed', error))
+    }
   },
 )
 
@@ -545,7 +609,7 @@ portalFileRouter.post(
       })
       return
     }
-    const customer = res.locals.customer as { id: string; name: string }
+    const customer = res.locals.customer as { id: string; name: string; email: string }
     const now = nowIso()
     let saved: SupportTicket | undefined
     await ticketStore.mutate((tickets) => {
@@ -573,12 +637,31 @@ portalFileRouter.post(
     })
     res.status(201).json({ data: saved })
     if (saved) {
+      const created = saved
       notifyDesk({
-        subject: `Portal request · ${saved.ref}`,
+        subject: `Portal request · ${created.ref}`,
         heading: 'New support request',
-        reference: saved.ref,
+        reference: created.ref,
         body: `${customer.name} · ${parsed.data.category}\n${parsed.data.subject}\n\n${parsed.data.body}`,
       })
+      void (async () => {
+        const content = await readSiteContent()
+        const email = supportTicketAcknowledgementEmail({
+          name: customer.name,
+          reference: created.ref,
+          subject: created.subject,
+          body: parsed.data.body,
+          brand: content.brand.name,
+          portalUrl: portalUrl('/portal'),
+        })
+        await emailCustomer({
+          customerId: customer.id,
+          field: 'emailService',
+          to: customer.email,
+          kind: 'support-ticket-created',
+          ...email,
+        })
+      })().catch((error) => console.error('[hvac-api] support acknowledgement failed', error))
     }
   },
 )
@@ -800,7 +883,10 @@ portalAdminRouter.post('/customers/:id/sites', async (req, res) => {
   const parsed = customerSiteInputSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({
-      error: { code: 'validation_error', message: parsed.error.issues[0]?.message ?? 'Check the site.' },
+      error: {
+        code: 'validation_error',
+        message: parsed.error.issues[0]?.message ?? 'Check the site.',
+      },
     })
     return
   }
@@ -819,7 +905,9 @@ portalAdminRouter.post('/customers/:id/sites', async (req, res) => {
   }
   await siteStore.mutate((sites) => {
     const next = parsed.data.isPrimary
-      ? sites.map((site) => (site.customerId === customer.id ? { ...site, isPrimary: false } : site))
+      ? sites.map((site) =>
+          site.customerId === customer.id ? { ...site, isPrimary: false } : site,
+        )
       : sites
     return [record, ...next]
   })
@@ -921,7 +1009,10 @@ portalAdminRouter.post('/customers/:id/quotations', async (req, res) => {
   const parsed = quotationInputSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({
-      error: { code: 'validation_error', message: parsed.error.issues[0]?.message ?? 'Check the quotation.' },
+      error: {
+        code: 'validation_error',
+        message: parsed.error.issues[0]?.message ?? 'Check the quotation.',
+      },
     })
     return
   }
@@ -955,6 +1046,26 @@ portalAdminRouter.post('/customers/:id/quotations', async (req, res) => {
     return [record, ...quotations]
   })
   res.status(201).json({ data: saved && { ...saved, totals: quotationTotals(saved) } })
+  if (saved && saved.status !== 'draft') {
+    const quotation = saved
+    const totals = quotationTotals(quotation)
+    const email = quotationIssuedEmail({
+      name: customer.name,
+      reference: quotation.ref,
+      title: quotation.title,
+      total: formatPortalMoney(totals.total),
+      validUntil: quotation.validUntil ?? '',
+      brand: content.brand.name,
+      portalUrl: portalUrl('/portal'),
+    })
+    void emailCustomer({
+      customerId: customer.id,
+      field: 'emailBilling',
+      to: customer.email,
+      kind: 'quotation-issued',
+      ...email,
+    }).catch((error) => console.error('[hvac-api] quotation email failed', error))
+  }
 })
 
 portalAdminRouter.patch('/customers/:id/quotations/:quotationId', async (req, res) => {
@@ -964,6 +1075,7 @@ portalAdminRouter.patch('/customers/:id/quotations/:quotationId', async (req, re
     return
   }
   let saved: QuotationRecord | undefined
+  let notifyCustomer: QuotationRecord | undefined
   await quotationStore.mutate((quotations) =>
     quotations.map((quotation) => {
       if (quotation.id !== req.params.quotationId || quotation.customerId !== req.params.id) {
@@ -977,6 +1089,7 @@ portalAdminRouter.patch('/customers/:id/quotations/:quotationId', async (req, re
           : quotation.lines,
         updatedAt: nowIso(),
       }
+      if (quotation.status !== 'sent' && saved.status === 'sent') notifyCustomer = saved
       return saved
     }),
   )
@@ -985,6 +1098,29 @@ portalAdminRouter.patch('/customers/:id/quotations/:quotationId', async (req, re
     return
   }
   res.json({ data: { ...saved, totals: quotationTotals(saved) } })
+  if (notifyCustomer) {
+    const quotation = notifyCustomer
+    const customer = await findCustomer(req.params.id)
+    if (customer) {
+      const content = await readSiteContent()
+      const email = quotationIssuedEmail({
+        name: customer.name,
+        reference: quotation.ref,
+        title: quotation.title,
+        total: formatPortalMoney(quotationTotals(quotation).total),
+        validUntil: quotation.validUntil ?? '',
+        brand: content.brand.name,
+        portalUrl: portalUrl('/portal'),
+      })
+      void emailCustomer({
+        customerId: customer.id,
+        field: 'emailBilling',
+        to: customer.email,
+        kind: 'quotation-issued',
+        ...email,
+      }).catch((error) => console.error('[hvac-api] quotation email failed', error))
+    }
+  }
 })
 
 portalAdminRouter.delete('/customers/:id/quotations/:quotationId', async (req, res) => {
@@ -1002,7 +1138,10 @@ portalAdminRouter.post('/customers/:id/amc', async (req, res) => {
   const parsed = amcInputSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({
-      error: { code: 'validation_error', message: parsed.error.issues[0]?.message ?? 'Check the contract.' },
+      error: {
+        code: 'validation_error',
+        message: parsed.error.issues[0]?.message ?? 'Check the contract.',
+      },
     })
     return
   }
@@ -1055,7 +1194,8 @@ portalAdminRouter.patch('/customers/:id/amc/:contractId', async (req, res) => {
 portalAdminRouter.delete('/customers/:id/amc/:contractId', async (req, res) => {
   await amcStore.mutate((contracts) =>
     contracts.filter(
-      (contract) => !(contract.id === req.params.contractId && contract.customerId === req.params.id),
+      (contract) =>
+        !(contract.id === req.params.contractId && contract.customerId === req.params.id),
     ),
   )
   res.json({ data: { deleted: req.params.contractId } })
@@ -1066,7 +1206,10 @@ portalAdminRouter.post('/customers/:id/reports', async (req, res) => {
   const parsed = jobReportInputSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({
-      error: { code: 'validation_error', message: parsed.error.issues[0]?.message ?? 'Check the report.' },
+      error: {
+        code: 'validation_error',
+        message: parsed.error.issues[0]?.message ?? 'Check the report.',
+      },
     })
     return
   }
@@ -1180,6 +1323,31 @@ portalAdminRouter.post('/support-tickets/:id/messages', async (req, res) => {
     return
   }
   res.json({ data: saved })
+  const reply = saved.messages.at(-1)
+  if (reply && reply.authorRole === 'admin') {
+    const ticket = saved
+    const customer = await findCustomer(ticket.customerId)
+    if (customer) {
+      void (async () => {
+        const content = await readSiteContent()
+        const email = supportTicketReplyEmail({
+          name: customer.name,
+          reference: ticket.ref,
+          subject: ticket.subject,
+          body: reply.body,
+          brand: content.brand.name,
+          portalUrl: portalUrl('/portal'),
+        })
+        await emailCustomer({
+          customerId: customer.id,
+          field: 'emailService',
+          to: customer.email,
+          kind: 'support-ticket-reply',
+          ...email,
+        })
+      })().catch((error) => console.error('[hvac-api] support reply email failed', error))
+    }
+  }
 })
 
 portalAdminRouter.patch('/support-tickets/:id', async (req, res) => {

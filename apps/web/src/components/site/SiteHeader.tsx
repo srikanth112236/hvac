@@ -36,7 +36,12 @@ export function SiteHeader() {
   const [compact, setCompact] = useState(false)
   const [megaOpen, setMegaOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [portalReady, setPortalReady] = useState(false)
   const servicesRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setPortalReady(true)
+  }, [])
 
   useEffect(() => {
     const onScroll = () => setCompact(window.scrollY > 32)
@@ -90,11 +95,16 @@ export function SiteHeader() {
             <span aria-hidden className="h-1 w-1 bg-heat" />
             <span className="text-fg-dim">24 × 7 breakdown dispatch</span>
             <span aria-hidden className="hidden h-3 w-px bg-line sm:block" />
-            <span className="hidden sm:inline">{brand.serviceAreas.map((area) => area.city).join(' · ')}</span>
+            <span className="hidden sm:inline">
+              {brand.serviceAreas.map((area) => area.city).join(' · ')}
+            </span>
           </span>
           <span className="flex items-center gap-4">
             <span className="hidden md:inline">Est. {brand.foundedYear}</span>
-            <a href={`tel:${brand.contact.phone}`} className="transition-colors duration-2 hover:text-cold">
+            <a
+              href={`tel:${brand.contact.phone}`}
+              className="transition-colors duration-2 hover:text-cold"
+            >
               {brand.contact.phoneDisplay}
             </a>
           </span>
@@ -146,7 +156,10 @@ export function SiteHeader() {
                 <Icon
                   name="chevron-down"
                   size={12}
-                  className={cn('transition-transform duration-3 ease-mech', megaOpen && 'rotate-180')}
+                  className={cn(
+                    'transition-transform duration-3 ease-mech',
+                    megaOpen && 'rotate-180',
+                  )}
                 />
               </button>
 
@@ -186,8 +199,8 @@ export function SiteHeader() {
                         <div>
                           <span className="t-label">Dispatch</span>
                           <p className="mt-2 text-[12px] leading-relaxed text-fg-dim">
-                            A failure at 02:00 gets an engineer, not a ticket. Four-hour response inside
-                            city limits.
+                            A failure at 02:00 gets an engineer, not a ticket. Four-hour response
+                            inside city limits.
                           </p>
                         </div>
                         <div className="flex flex-col gap-3">
@@ -205,7 +218,12 @@ export function SiteHeader() {
                           >
                             {brand.contact.emergencyPhone}
                           </a>
-                          <ButtonLink to="/#callback" size="sm" full onClick={() => setMegaOpen(false)}>
+                          <ButtonLink
+                            to="/#callback"
+                            size="sm"
+                            full
+                            onClick={() => setMegaOpen(false)}
+                          >
                             Request a callback
                           </ButtonLink>
                         </div>
@@ -248,7 +266,12 @@ export function SiteHeader() {
               <Icon name="phone" size={14} />
               {brand.contact.phoneDisplay}
             </a>
-            <ButtonLink to="/#callback" size="sm" className="hidden sm:inline-flex" icon="arrow-up-right">
+            <ButtonLink
+              to="/#callback"
+              size="sm"
+              className="hidden sm:inline-flex"
+              icon="arrow-up-right"
+            >
               Request callback
             </ButtonLink>
             <button
@@ -264,116 +287,124 @@ export function SiteHeader() {
         </div>
       </header>
 
-      {createPortal(
-        <AnimatePresence>
-          {menuOpen ? (
-            <motion.div
-              key="mobile-menu"
-              role="dialog"
-              aria-modal="true"
-              aria-label="Site index"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="fixed inset-0 z-[var(--z-overlay)] flex flex-col bg-base lg:hidden"
-            >
-              <div className="flex h-[var(--header-h)] shrink-0 items-center justify-between border-b border-line px-5">
-                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-faint">
-                  Index · CV-00
-                </span>
-                <button
-                  type="button"
-                  autoFocus
-                  aria-label="Close menu"
-                  onClick={() => setMenuOpen(false)}
-                  className="flex h-9 w-9 items-center justify-center border border-line text-fg"
+      {portalReady
+        ? createPortal(
+            <AnimatePresence>
+              {menuOpen ? (
+                <motion.div
+                  key="mobile-menu"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Site index"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="fixed inset-0 z-[var(--z-overlay)] flex flex-col bg-base lg:hidden"
                 >
-                  <Icon name="close" size={18} />
-                </button>
-              </div>
-
-              <nav aria-label="Mobile" className="flex-1 overflow-y-auto px-5 pb-8">
-                <ul className="flex flex-col">
-                  {featured.map((service, index) => (
-                    <motion.li
-                      key={service.id}
-                      initial={{ opacity: 0, y: 14 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.04 * index + 0.06, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                      className="border-b border-line"
+                  <div className="flex h-[var(--header-h)] shrink-0 items-center justify-between border-b border-line px-5">
+                    <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-faint">
+                      Index · CV-00
+                    </span>
+                    <button
+                      type="button"
+                      autoFocus
+                      aria-label="Close menu"
+                      onClick={() => setMenuOpen(false)}
+                      className="flex h-9 w-9 items-center justify-center border border-line text-fg"
                     >
-                      <Link
-                        to={`/services/${service.id}`}
-                        onClick={() => setMenuOpen(false)}
-                        className="flex items-center justify-between gap-4 py-4"
+                      <Icon name="close" size={18} />
+                    </button>
+                  </div>
+
+                  <nav aria-label="Mobile" className="flex-1 overflow-y-auto px-5 pb-8">
+                    <ul className="flex flex-col">
+                      {featured.map((service, index) => (
+                        <motion.li
+                          key={service.id}
+                          initial={{ opacity: 0, y: 14 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{
+                            delay: 0.04 * index + 0.06,
+                            duration: 0.4,
+                            ease: [0.16, 1, 0.3, 1],
+                          }}
+                          className="border-b border-line"
+                        >
+                          <Link
+                            to={`/services/${service.id}`}
+                            onClick={() => setMenuOpen(false)}
+                            className="flex items-center justify-between gap-4 py-4"
+                          >
+                            <span className="text-h4 text-fg">{service.name}</span>
+                            <span className="t-num text-[10px] text-fg-faint">{service.index}</span>
+                          </Link>
+                        </motion.li>
+                      ))}
+                    </ul>
+
+                    <Link
+                      to="/services"
+                      onClick={() => setMenuOpen(false)}
+                      className="mt-4 inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-cold"
+                    >
+                      All {liveServices.length} services
+                      <Icon name="arrow-right" size={12} />
+                    </Link>
+
+                    <ul className="mt-6 grid grid-cols-2 gap-2">
+                      {navItems.map((item) => (
+                        <li key={item.to}>
+                          <Link
+                            to={item.to}
+                            onClick={() => setMenuOpen(false)}
+                            className="flex items-center justify-between border border-line px-4 py-3 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim"
+                          >
+                            {item.label}
+                            <Icon name="arrow-right" size={13} />
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+
+                    <div className="mt-8 flex flex-col gap-3 border-t border-line pt-6">
+                      <a
+                        href={`tel:${brand.contact.emergencyPhone}`}
+                        className="flex items-center justify-between text-fg"
                       >
-                        <span className="text-h4 text-fg">{service.name}</span>
-                        <span className="t-num text-[10px] text-fg-faint">{service.index}</span>
-                      </Link>
-                    </motion.li>
-                  ))}
-                </ul>
-
-                <Link
-                  to="/services"
-                  onClick={() => setMenuOpen(false)}
-                  className="mt-4 inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-cold"
-                >
-                  All {liveServices.length} services
-                  <Icon name="arrow-right" size={12} />
-                </Link>
-
-                <ul className="mt-6 grid grid-cols-2 gap-2">
-                  {navItems.map((item) => (
-                    <li key={item.to}>
-                      <Link
-                        to={item.to}
-                        onClick={() => setMenuOpen(false)}
-                        className="flex items-center justify-between border border-line px-4 py-3 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim"
+                        <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-heat">
+                          <Icon name="bolt" size={14} /> Emergency
+                        </span>
+                        <span className="t-num text-[13px]">{brand.contact.emergencyPhone}</span>
+                      </a>
+                      <a
+                        href={`mailto:${brand.contact.email}`}
+                        className="flex items-center justify-between text-fg"
                       >
-                        {item.label}
-                        <Icon name="arrow-right" size={13} />
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
+                        <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                          <Icon name="mail" size={14} /> Works
+                        </span>
+                        <span className="font-mono text-[11px] text-fg-dim">
+                          {brand.contact.email}
+                        </span>
+                      </a>
+                      <p className="font-mono text-[9px] uppercase leading-relaxed tracking-[0.12em] text-fg-faint">
+                        {brand.hours.weekdays} · {brand.hours.saturday}
+                      </p>
+                    </div>
+                  </nav>
 
-                <div className="mt-8 flex flex-col gap-3 border-t border-line pt-6">
-                  <a
-                    href={`tel:${brand.contact.emergencyPhone}`}
-                    className="flex items-center justify-between text-fg"
-                  >
-                    <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-heat">
-                      <Icon name="bolt" size={14} /> Emergency
-                    </span>
-                    <span className="t-num text-[13px]">{brand.contact.emergencyPhone}</span>
-                  </a>
-                  <a
-                    href={`mailto:${brand.contact.email}`}
-                    className="flex items-center justify-between text-fg"
-                  >
-                    <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-                      <Icon name="mail" size={14} /> Works
-                    </span>
-                    <span className="font-mono text-[11px] text-fg-dim">{brand.contact.email}</span>
-                  </a>
-                  <p className="font-mono text-[9px] uppercase leading-relaxed tracking-[0.12em] text-fg-faint">
-                    {brand.hours.weekdays} · {brand.hours.saturday}
-                  </p>
-                </div>
-              </nav>
-
-              <div className="shrink-0 border-t border-line p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
-                <ButtonLink to="/#callback" full onClick={() => setMenuOpen(false)}>
-                  Request a callback
-                </ButtonLink>
-              </div>
-            </motion.div>
-          ) : null}
-        </AnimatePresence>,
-        document.body,
-      )}
+                  <div className="shrink-0 border-t border-line p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
+                    <ButtonLink to="/#callback" full onClick={() => setMenuOpen(false)}>
+                      Request a callback
+                    </ButtonLink>
+                  </div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>,
+            document.body,
+          )
+        : null}
     </>
   )
 }

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { cn } from '@/lib/cn'
@@ -25,7 +25,8 @@ function useDismissable(open: boolean, onClose: () => void) {
 
   useEffect(() => {
     if (!open) return
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const previousFocus =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
     const previousOverflow = document.body.style.overflow
     const previousPadding = document.body.style.paddingRight
     const scrollbar = window.innerWidth - document.documentElement.clientWidth
@@ -84,6 +85,15 @@ function useDismissable(open: boolean, onClose: () => void) {
 
 const ease = [0.16, 1, 0.3, 1] as const
 
+/** Portals need a DOM; defer them until after hydration. */
+function useHydrated(): boolean {
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => {
+    setHydrated(true)
+  }, [])
+  return hydrated
+}
+
 interface OverlayShellProps {
   open: boolean
   onClose: () => void
@@ -108,8 +118,10 @@ export function Modal({
   const titleId = useId()
   const descriptionId = useId()
   const panelRef = useDismissable(open, onClose)
+  const hydrated = useHydrated()
   const width = size === 'sm' ? 'max-w-sm' : size === 'lg' ? 'max-w-2xl' : 'max-w-lg'
 
+  if (!hydrated) return null
   return createPortal(
     <AnimatePresence>
       {open ? (
@@ -199,7 +211,9 @@ export function Drawer({
   const titleId = useId()
   const descriptionId = useId()
   const panelRef = useDismissable(open, onClose)
+  const hydrated = useHydrated()
 
+  if (!hydrated) return null
   return createPortal(
     <AnimatePresence>
       {open ? (

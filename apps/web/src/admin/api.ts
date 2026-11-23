@@ -55,6 +55,34 @@ export interface AdminUser {
   expiresAt: number
 }
 
+export interface TwoFactorChallenge {
+  requires2fa: true
+  challengeId: string
+  maskedEmail: string
+  expiresAt: number
+}
+
+export interface TwoFactorSetupChallenge {
+  challengeId: string
+  maskedEmail: string
+  expiresAt: number
+  purpose: 'enable' | 'disable'
+}
+
+export interface TwoFactorStatus {
+  enabled: boolean
+  enabledAt: string | null
+  mailConfigured: boolean
+  email: string
+  maskedEmail: string
+}
+
+export type AdminLoginResult = AdminUser | TwoFactorChallenge
+
+export function isTwoFactorChallenge(value: AdminLoginResult): value is TwoFactorChallenge {
+  return 'requires2fa' in value
+}
+
 export interface PublicAdminUser {
   id: string
   name: string
@@ -98,7 +126,13 @@ export interface AdminMetrics {
     activeTeam: number
   }
   revenue: { month: string; amount: number }[]
-  financeTrend: { month: string; collected: number; expenses: number; payroll: number; net: number }[]
+  financeTrend: {
+    month: string
+    collected: number
+    expenses: number
+    payroll: number
+    net: number
+  }[]
   serviceDemand: { service: string; count: number }[]
   recentLeads: AdminLead[]
   recentInvoices: InvoiceWithTotals[]
@@ -192,7 +226,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError('The works API could not be reached.', 0)
   }
 
-  if (response.status === 401 && !path.startsWith('/auth/login')) {
+  if (response.status === 401 && !path.startsWith('/auth/login') && !path.startsWith('/auth/2fa')) {
     window.dispatchEvent(new Event('hvac-admin-unauthorised'))
   }
 
@@ -221,9 +255,31 @@ export const adminApi = {
   hint: () =>
     request<{ data: { email: string } | null }>('/auth/hint').then((payload) => payload.data),
   login: (email: string, password: string) =>
-    request<{ data: AdminUser }>('/auth/login', {
+    request<{ data: AdminLoginResult }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
+    }).then((payload) => payload.data),
+  verifyTwoFactorLogin: (challengeId: string, code: string) =>
+    request<{ data: AdminUser }>('/auth/2fa/verify', {
+      method: 'POST',
+      body: JSON.stringify({ challengeId, code }),
+    }).then((payload) => payload.data),
+  resendTwoFactorCode: (challengeId: string) =>
+    request<{ data: TwoFactorChallenge }>('/auth/2fa/resend', {
+      method: 'POST',
+      body: JSON.stringify({ challengeId }),
+    }).then((payload) => payload.data),
+  twoFactorStatus: () =>
+    request<{ data: TwoFactorStatus }>('/auth/2fa').then((payload) => payload.data),
+  setupTwoFactor: (purpose: 'enable' | 'disable') =>
+    request<{ data: TwoFactorSetupChallenge }>('/auth/2fa/setup', {
+      method: 'POST',
+      body: JSON.stringify({ purpose }),
+    }).then((payload) => payload.data),
+  confirmTwoFactor: (challengeId: string, code: string, purpose: 'enable' | 'disable') =>
+    request<{ data: TwoFactorStatus }>('/auth/2fa/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ challengeId, code, purpose }),
     }).then((payload) => payload.data),
   logout: () => request<{ data: { signedOut: boolean } }>('/auth/logout', { method: 'POST' }),
 
@@ -245,12 +301,7 @@ export const adminApi = {
       `/admin/search?q=${encodeURIComponent(query)}`,
     ).then((payload) => payload.data.results),
   users: () => request<{ data: PublicAdminUser[] }>('/admin/users').then((payload) => payload.data),
-  createAdminUser: (input: {
-    name: string
-    email: string
-    password: string
-    role: AdminRole
-  }) =>
+  createAdminUser: (input: { name: string; email: string; password: string; role: AdminRole }) =>
     request<{ data: PublicAdminUser }>('/admin/users', {
       method: 'POST',
       body: JSON.stringify(input),
@@ -265,9 +316,7 @@ export const adminApi = {
     }).then((payload) => payload.data),
 
   leads: (query = '') =>
-    request<{ data: AdminLead[]; meta: { count: number; total: number } }>(
-      `/admin/leads${query}`,
-    ),
+    request<{ data: AdminLead[]; meta: { count: number; total: number } }>(`/admin/leads${query}`),
   patchLead: (
     ref: string,
     patch: {
@@ -288,8 +337,7 @@ export const adminApi = {
       body: JSON.stringify(input),
     }).then((payload) => payload.data),
 
-  reminders: () =>
-    request<{ data: ReminderRecord[]; meta: { open: number } }>('/admin/reminders'),
+  reminders: () => request<{ data: ReminderRecord[]; meta: { open: number } }>('/admin/reminders'),
   createReminder: (input: Record<string, unknown>) =>
     request<{ data: ReminderRecord }>('/admin/reminders', {
       method: 'POST',
@@ -342,8 +390,7 @@ export const adminApi = {
       { method: 'POST' },
     ),
 
-  expenses: () =>
-    request<{ data: ExpenseRecord[]; summary: ExpenseSummary }>('/admin/expenses'),
+  expenses: () => request<{ data: ExpenseRecord[]; summary: ExpenseSummary }>('/admin/expenses'),
   createExpense: (input: ExpenseInput) =>
     request<{ data: ExpenseRecord; summary: ExpenseSummary }>('/admin/expenses', {
       method: 'POST',
@@ -360,8 +407,7 @@ export const adminApi = {
       { method: 'DELETE' },
     ),
 
-  team: () =>
-    request<{ data: TeamMember[]; summary: PayrollSummary }>('/admin/team'),
+  team: () => request<{ data: TeamMember[]; summary: PayrollSummary }>('/admin/team'),
   createTeamMember: (input: TeamMemberInput) =>
     request<{ data: TeamMember; summary: PayrollSummary }>('/admin/team', {
       method: 'POST',
@@ -378,8 +424,7 @@ export const adminApi = {
       { method: 'DELETE' },
     ),
 
-  payroll: () =>
-    request<{ data: PayrollRecord[]; summary: PayrollSummary }>('/admin/payroll'),
+  payroll: () => request<{ data: PayrollRecord[]; summary: PayrollSummary }>('/admin/payroll'),
   createPayroll: (input: PayrollInput) =>
     request<{ data: PayrollRecord; summary: PayrollSummary }>('/admin/payroll', {
       method: 'POST',
@@ -396,33 +441,33 @@ export const adminApi = {
       { method: 'DELETE' },
     ),
   generatePayroll: (period: string) =>
-    request<{ data: { period: string; created: number; skipped: number }; summary: PayrollSummary }>(
-      '/admin/payroll/generate',
-      { method: 'POST', body: JSON.stringify({ period }) },
-    ),
+    request<{
+      data: { period: string; created: number; skipped: number }
+      summary: PayrollSummary
+    }>('/admin/payroll/generate', { method: 'POST', body: JSON.stringify({ period }) }),
 
   content: () => request<{ data: SiteContent }>('/admin/content').then((payload) => payload.data),
   saveContent: (content: SiteContentPayload, baseVersion?: number) =>
-    request<{ data: SiteContent; meta: { changed: boolean; revision: ContentRevisionMeta | null } }>(
-      '/admin/content',
-      {
-        method: 'PUT',
-        body: JSON.stringify(content),
-        ...(baseVersion !== undefined ? { headers: { 'If-Match': String(baseVersion) } } : {}),
-      },
-    ),
+    request<{
+      data: SiteContent
+      meta: { changed: boolean; revision: ContentRevisionMeta | null }
+    }>('/admin/content', {
+      method: 'PUT',
+      body: JSON.stringify(content),
+      ...(baseVersion !== undefined ? { headers: { 'If-Match': String(baseVersion) } } : {}),
+    }),
   contentHistory: () =>
     request<{ data: ContentRevisionList }>('/admin/content/revisions').then(
       (payload) => payload.data,
     ),
   restoreContentVersion: (version: number, pageId?: string) =>
-    request<{ data: SiteContent; meta: { changed: boolean; revision: ContentRevisionMeta | null } }>(
-      `/admin/content/revisions/${version}/restore`,
-      {
-        method: 'POST',
-        body: JSON.stringify(pageId ? { pageId } : {}),
-      },
-    ),
+    request<{
+      data: SiteContent
+      meta: { changed: boolean; revision: ContentRevisionMeta | null }
+    }>(`/admin/content/revisions/${version}/restore`, {
+      method: 'POST',
+      body: JSON.stringify(pageId ? { pageId } : {}),
+    }),
 
   media: (folder = '') =>
     request<{ data: SiteMediaAsset[]; folders: string[] }>(
@@ -472,7 +517,9 @@ export const adminApi = {
           window.dispatchEvent(new Event('hvac-admin-unauthorised'))
         }
         if (xhr.status < 200 || xhr.status >= 300) {
-          reject(new ApiError(payload.error?.message ?? `Upload failed (${xhr.status}).`, xhr.status))
+          reject(
+            new ApiError(payload.error?.message ?? `Upload failed (${xhr.status}).`, xhr.status),
+          )
           return
         }
         resolve({ data: payload.data ?? [], folders: payload.folders ?? [] })
@@ -583,14 +630,12 @@ export const adminApi = {
       body: JSON.stringify({ status }),
     }).then((payload) => payload.data),
   eraseCustomer: (id: string) =>
-    request<{ data: { erased: boolean } }>(
-      `/admin/customers/${encodeURIComponent(id)}/erase`,
-      { method: 'POST', body: JSON.stringify({ confirm: 'ERASE' }) },
-    ).then((payload) => payload.data),
+    request<{ data: { erased: boolean } }>(`/admin/customers/${encodeURIComponent(id)}/erase`, {
+      method: 'POST',
+      body: JSON.stringify({ confirm: 'ERASE' }),
+    }).then((payload) => payload.data),
   appointments: () =>
-    request<{ data: AppointmentRecord[] }>('/admin/appointments').then(
-      (payload) => payload.data,
-    ),
+    request<{ data: AppointmentRecord[] }>('/admin/appointments').then((payload) => payload.data),
 
   newsletters: () =>
     request<{ data: NewsletterRecord[]; summary: NewsletterSummary }>('/admin/newsletters'),
@@ -642,8 +687,7 @@ export const adminApi = {
       { method: 'DELETE' },
     ),
 
-  coupons: () =>
-    request<{ data: CouponWithStats[]; summary: CouponSummary }>('/admin/coupons'),
+  coupons: () => request<{ data: CouponWithStats[]; summary: CouponSummary }>('/admin/coupons'),
   createCoupon: (input: CouponInput) =>
     request<{ data: CouponWithStats; summary: CouponSummary }>('/admin/coupons', {
       method: 'POST',

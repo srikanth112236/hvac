@@ -21,6 +21,8 @@ checks, build verification. **Not** a formal penetration test.
 | 10 | Plaintext PII at rest | AES-256-GCM store encryption; production requires a 32+ char key | Fresh production boot wrote `ENC1:` files; restart with the correct key read them; a wrong key refused to start |
 | 11 | Single shared admin account | Multi-user RBAC with write-role enforcement | Viewer can read metrics, gets `403` on writes and user management; disable revokes the session |
 | 12 | Dependency advisories | Zod 4, React Router 7, Vite 8, unused Tiptap removed | `npm audit` reports 0 vulnerabilities |
+| 13 | No second factor for staff | Email OTP 2FA, hashed codes, expiry, attempt/resend caps; no SMS channel | Enable → mail captured → confirm; login → `requires2fa` with no cookie; wrong code `401`; correct code issues a session; test suite covers the flow |
+| 14 | Client-only HTML for crawlers | True SSR with live content, server-generated title/canonical/OG/JSON-LD, hydration | `x-render-mode: ssr`; one canonical, one description, one JSON-LD block; route title changes; unknown service returns `404`; browser hydration produced no React errors |
 
 Additional checks:
 
@@ -33,18 +35,23 @@ Additional checks:
 | Request logging | `x-request-id` + one JSON line per request |
 | `npm run typecheck` | Pass |
 | `npm run lint` | Pass |
-| `npm run build` | Pass |
+| `npm run test` | 13 API/unit tests pass (including email OTP login and RBAC) |
+| `npm run build` | Pass (client + SSR entry) |
 | `npm run audit` (`--audit-level=high`) | Exit 0; **0 vulnerabilities** |
+| SSR verification | `x-render-mode: ssr`; title/canonical/JSON-LD present; browser hydration produced no React errors |
+| Portal/admin shells | `x-render-mode: spa`, `X-Robots-Tag: noindex, nofollow` |
+| SSR bundle exposure | `/server/entry-server.js` returns `404` |
 | Vite dev + preview | `200`; API proxy `200` |
 | Test data after run | Removed; stores returned to seed/empty state |
 
 ## Remaining risks
 
 - Media files under `uploads/` are public images and are not encrypted.
-- Sessions, rate limits and jobs are process-local; one API instance until a
-  shared store is added.
+- Sessions, rate limits, in-flight 2FA challenges and jobs are process-local; one
+  API instance until a shared store is added.
 - The Azure Terraform template has not been applied or validated against a
   subscription in this workspace.
 - No third-party penetration test has been performed.
-- Remaining product gaps: a true job model/AMC auto-scheduling and a
-  multi-instance database. SSR/prerendering and RBAC are implemented.
+- Remaining product gaps: a true job model/AMC auto-visit generation and a
+  multi-instance database. SSR, RBAC, email 2FA and the portal modules are
+  implemented.

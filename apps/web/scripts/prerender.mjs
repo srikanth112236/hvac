@@ -1,15 +1,15 @@
 /* global document */
-import { mkdir, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { chromium } from '@playwright/test'
 
 /**
- * Build-time prerender: render each public route with the real API content,
- * then write the resulting HTML (including title, meta, canonical and JSON-LD)
- * into dist/<route>/index.html. The client still boots normally and replaces
- * the root, but crawlers and no-JS visitors get the full page.
+ * Optional build-time prerender: render each public route with the real API
+ * content, then write the resulting HTML (including title, meta, canonical and
+ * JSON-LD) into dist/<route>.html. The SSR server takes precedence; these files
+ * are fallbacks for hosts that cannot run Node. The client hydrates the markup.
  */
 const dirname = path.dirname(fileURLToPath(import.meta.url))
 const webRoot = path.resolve(dirname, '..')
@@ -73,6 +73,8 @@ function outputPath(route) {
   if (route === '/') return path.join(dist, 'index.html')
   return path.join(dist, `${route.replace(/^\//, '')}.html`)
 }
+
+await copyFile(path.join(dist, 'index.html'), path.join(dist, 'index.template.html'))
 
 const server = spawn(process.execPath, ['server.mjs'], {
   cwd: webRoot,

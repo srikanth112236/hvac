@@ -15,6 +15,7 @@ infra           reserved for deployment templates
 npm install
 npm run fonts     # self-host the typefaces (once, or after changing families)
 npm run dev       # web on http://127.0.0.1:5175, api on http://127.0.0.1:4000
+npm run build && npm run serve:web   # production SSR + hydration on :3000
 ```
 
 - Design system: **http://127.0.0.1:5175/__styleguide** (development only, noindex)
@@ -45,16 +46,19 @@ development the floating switcher also flips it live; the choice is stored in
 - Admin: overview, leads, customers + full customer file, **dispatch**, invoices,
   expenses, team/payroll, reminders, newsletters, coupons, content studio,
   revisions, journal, media, settings, **global search (Ctrl K), CSV exports**,
-  **RBAC users**, audit log, data health, GDPR erasure, backup export.
+  **RBAC users**, **email two-factor authentication**, audit log, data health,
+  GDPR erasure, backup export.
 - Customer portal: overview, bookings (book, reschedule, cancel), invoices and
   print, quotations (accept / request changes / print), equipment + service
   history, AMC cover + renewal request, job reports (checklist/photos), support
   tickets, profile, multiple sites, notification preferences, password reset,
-  email verification.
+  email verification. Quotation, AMC renewal and support events notify the
+  customer by email only.
 - Operations: live admin refresh, cross-tab content sync, 10 s content polling with
-  ETag/304, **prerendered public HTML with meta/JSON-LD**, same-origin sitemap/
-  robots/feed, background jobs (reminders, AMC windows, digest, backups,
-  retention), encrypted JSON stores, rate limiting, CSP/consent, audit trail.
+  ETag/304, **server-rendered public HTML with per-route meta/JSON-LD and
+  hydration**, optional prerendered fallback, same-origin sitemap/robots/feed,
+  background jobs (reminders, AMC windows, digest, backups, retention), encrypted
+  JSON stores, rate limiting, CSP/consent, audit trail.
 
 ## Security
 
@@ -69,7 +73,12 @@ DATA_ENCRYPTION_KEY=       # 32+ characters; keep a copy, data is unreadable wit
 ALLOWED_ORIGINS=
 PUBLIC_SITE_URL=
 RESEND_API_KEY=            # or MAIL_WEBHOOK_URL; required for production registration/mail
+PUBLIC_BRAND_NAME=         # optional; used in the 2FA email shell
 ```
+
+Email is the only notification channel. Admin two-factor sends a six-digit code
+to the account inbox; there is no SMS provider or SMS fallback. Codes are hashed
+in memory, expire after ten minutes and allow five attempts.
 
 The JSON stores are AES-256-GCM encrypted when the key is set. Production
 refuses to boot with development credentials, missing origins or no encryption
@@ -92,5 +101,6 @@ npm run verify      # typecheck + lint + test + build + audit
 - Fonts are self-hosted in `apps/web/public/fonts`; `scripts/fetch-fonts.mjs` regenerates them and `src/styles/fonts.css`.
 - Lenis smooth scroll is disabled for coarse pointers and `prefers-reduced-motion`.
 - GSAP/ScrollTrigger and three.js are client-only.
-- Public pages are still client-rendered; SSR remains an open architecture item.
+- Public routes are server-rendered for crawlers and hydrated on the client; `/admin` and `/portal` remain client-only shells. Rebuild (`npm run build`) after code changes; `build:prerender` is optional and only creates static fallbacks.
+- Admin 2FA is email OTP only. Portal accounts use verified email + password and admin approval; no SMS is sent anywhere.
 - One API instance is assumed until sessions, rate limits and jobs move to a shared store.

@@ -13,7 +13,6 @@ const CSP = [
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
-  "frame-ancestors 'none'",
 ].join('; ')
 
 /** Production build only: a meta CSP for hosts that cannot set headers. */

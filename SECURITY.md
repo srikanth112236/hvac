@@ -15,23 +15,25 @@ Production **must** set:
 - `ALLOWED_ORIGINS` (exact web origin)
 - `PUBLIC_SITE_URL`
 - `RESEND_API_KEY` or `MAIL_WEBHOOK_URL` (required for production portal
-  registration, password reset and email verification)
+  registration, password reset, email verification and staff 2FA)
 - TLS at the edge and encrypted storage for `apps/api/data` and backups
 
 The API refuses to start in production without the first four. In production,
 portal registration is closed when no email provider is configured because email
-ownership cannot be verified.
+ownership cannot be verified. Staff 2FA cannot be enabled without a provider; the
+API fails closed rather than reporting a code as sent.
 
 ## Controls
 
 | Area | Control |
 |---|---|
 | Admin auth | Multi-user RBAC (`owner`, `admin`, `manager`, `accountant`, `viewer`) with scrypt password hashes; environment owner is the recovery account; HttpOnly + SameSite=Strict cookie, 12 h persisted sessions, per-IP and per-account throttling, origin + header checks; write-role enforcement on the API |
+| Admin 2FA | Optional per-account email OTP: six digits, hashed in memory, 10 min TTL, five attempts, three resends, login challenge bound to a 256-bit id; enabling/disabling requires a fresh emailed code; no SMS path exists |
 | Customer auth | Password + admin approval; production requires email verification token (hashed, 24 h, single use); reset tokens (hashed, 1 h, single use) revoke sessions |
 | Authorization | Customer routes scope every record by `customerId`; admin routes require a live session; no public admin reads |
 | Public intake | Per-route limits (leads 10/10 min, callbacks 6/10 min, registration 6/h, forgot 5/h, reset 10/h, verification 3–10/h) plus 300 req/min/IP global |
 | Content | Public DTO strips bank details and unpublished records; ETag/304; admin If-Match version check |
-| Email | Newsletter HTML sanitised with an allowlist; preview in a sandboxed iframe; provider failures are logged as failed/skipped, never "sent" |
+| Email | Newsletter HTML sanitised with an allowlist; preview in a sandboxed iframe; quotation/AMC/support notifications respect customer preferences; provider failures are logged as failed/skipped, never "sent"; no SMS provider |
 | Uploads | Signature-based type detection (JPEG/PNG/GIF/WebP/AVIF); client filename/extension ignored; stored files served `nosniff` with a lockdown CSP |
 | At rest | Every JSON store is AES-256-GCM encrypted when `DATA_ENCRYPTION_KEY` is set (required in production); wrong/missing key fails closed; backups inherit encryption |
 | Web headers | CSP (meta at build + `_headers`), HSTS, `X-Frame-Options: DENY`, Referrer-Policy, Permissions-Policy |
@@ -43,8 +45,11 @@ ownership cannot be verified.
 
 - Media files under `uploads/` are public images by design and are not encrypted.
   The JSON business/PII stores are encrypted at rest when the production key is set.
-- Sessions, rate limits and jobs are process-local. Run one API instance until a
-  shared store is introduced.
+- Sessions, rate limits, in-flight 2FA challenges and jobs are process-local. Run
+  one API instance until a shared store is introduced.
+- Staff 2FA recovery requires server access: remove `admin-2fa.json` and restart
+  to clear all staff 2FA preferences. This is intentional break-glass, not an
+  unauthenticated bypass.
 - The Azure Terraform template has not been applied or validated against a
   subscription in this workspace.
 - A formal penetration test has not been performed.

@@ -50,9 +50,9 @@ const fallbackContent: SiteContent = {
     billing: {
       bankName: 'Commerce Bank, Dallas Main',
       accountName: 'Coolvane Climate Systems LLC',
-              accountNumber: '000123456789',
-        ifsc: '111000025',
-        upiId: 'coolvane.example/pay',
+      accountNumber: '000123456789',
+      ifsc: '111000025',
+      upiId: 'coolvane.example/pay',
       invoicePrefix: 'INV',
       invoiceTerms:
         'Payment by cash, cheque, card on site or bank transfer. Cheques in favour of Coolvane Climate Systems LLC. Please quote the invoice reference with every transfer.',
@@ -157,38 +157,31 @@ const fallbackContent: SiteContent = {
   pages: {
     services: {
       headline: 'Twenty-two systems, one standard.',
-      lead:
-        'Residential splits to 2,000 TR centrifugal plant. Each entry lists the capacity we design to, the lead time we hold, and the specification that decides the selection — not the brochure tier.',
+      lead: 'Residential splits to 2,000 TR centrifugal plant. Each entry lists the capacity we design to, the lead time we hold, and the specification that decides the selection — not the brochure tier.',
     },
     process: {
       headline: 'A file, not a promise.',
-      lead:
-        'Six stages from survey to signature. No stage starts before the previous deliverable exists, and the commissioning file is written during the job — not reconstructed after the first breakdown.',
+      lead: 'Six stages from survey to signature. No stage starts before the previous deliverable exists, and the commissioning file is written during the job — not reconstructed after the first breakdown.',
     },
     work: {
       headline: 'Handed over, still running.',
-      lead:
-        'Five files from the last four years: two plant rooms, one cold chain, one cleanroom and a maintenance contract that has held since 2021. Each one states the problem, the change and the measured result.',
+      lead: 'Five files from the last four years: two plant rooms, one cold chain, one cleanroom and a maintenance contract that has held since 2021. Each one states the problem, the change and the measured result.',
     },
     amc: {
       headline: 'Cover written before the failure.',
-      lead:
-        'A contract with a written scope, a visit report every time, and a dispatch line that answers at 02:00. Essential, Comprehensive and Precision — priced per unit or per TR, with the exclusions on the card.',
+      lead: 'A contract with a written scope, a visit report every time, and a dispatch line that answers at 02:00. Essential, Comprehensive and Precision — priced per unit or per TR, with the exclusions on the card.',
     },
     contact: {
       headline: 'Talk to the works.',
-      lead:
-        'The person who answers has the plant schedule in front of them. Call for a failure, write for a survey, or send the brief below — all three reach the same three engineers.',
+      lead: 'The person who answers has the plant schedule in front of them. Call for a failure, write for a survey, or send the brief below — all three reach the same three engineers.',
     },
     blog: {
       headline: 'Field notes, written to be used.',
-      lead:
-        'Answer-first technical guides for owners, facility teams and consultants. Every article states the measurement, the assumption and the question worth asking before work is approved.',
+      lead: 'Answer-first technical guides for owners, facility teams and consultants. Every article states the measurement, the assumption and the question worth asking before work is approved.',
     },
     products: {
       headline: 'A specification library, not a shopping cart.',
-      lead:
-        'Residential splits to central plant, selected against the load and quoted after a survey. Compare capacity, refrigerant, installation route and the checks that come with handover.',
+      lead: 'Residential splits to central plant, selected against the load and quoted after a survey. Compare capacity, refrigerant, installation route and the checks that come with handover.',
     },
   },
   services: catalogueServices.map((service) => ({
@@ -235,8 +228,14 @@ const SiteContentContext = createContext<SiteContentContextValue>({
 
 /** Fill fields added after a cache or server document was written. */
 
-export function SiteContentProvider({ children }: { children: ReactNode }) {
-  const [content, setContent] = useState(fallbackContent)
+export function SiteContentProvider({
+  children,
+  initialContent,
+}: {
+  children: ReactNode
+  initialContent?: SiteContent
+}) {
+  const [content, setContent] = useState(initialContent ?? fallbackContent)
   const [syncedAt, setSyncedAt] = useState<number | null>(null)
   const [stale, setStale] = useState(false)
   const etagRef = useRef<string | null>(null)

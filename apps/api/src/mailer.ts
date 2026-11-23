@@ -78,6 +78,7 @@ export async function sendMail(input: MailInput): Promise<MailResult> {
     if (provider === 'resend') {
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
+        signal: AbortSignal.timeout(10_000),
         headers: {
           Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
           'Content-Type': 'application/json',
@@ -96,6 +97,7 @@ export async function sendMail(input: MailInput): Promise<MailResult> {
     } else {
       const response = await fetch(process.env.MAIL_WEBHOOK_URL as string, {
         method: 'POST',
+        signal: AbortSignal.timeout(10_000),
         headers: {
           'Content-Type': 'application/json',
           ...(process.env.MAIL_WEBHOOK_TOKEN
@@ -302,11 +304,10 @@ export function emailVerificationEmail(input: {
   }
 }
 
-export function adminPortalNotice(input: {
-  name: string
-  email: string
-  phone: string
-}): { subject: string; html: string } {
+export function adminPortalNotice(input: { name: string; email: string; phone: string }): {
+  subject: string
+  html: string
+} {
   return {
     subject: 'Portal account awaiting approval',
     html: SHELL(
@@ -315,6 +316,116 @@ export function adminPortalNotice(input: {
 <p style="margin:0 0 10px">${escapeHtml(input.email)} · ${escapeHtml(input.phone)}</p>
 <p style="margin:0">Approve or suspend the account in Admin → Customers before it can see invoices.</p>`,
       'Works desk',
+    ),
+  }
+}
+
+export function quotationIssuedEmail(input: {
+  name: string
+  reference: string
+  title: string
+  total: string
+  validUntil: string
+  brand: string
+  portalUrl: string
+}): { subject: string; html: string } {
+  return {
+    subject: `Quotation ${input.reference} · ${input.brand}`,
+    html: SHELL(
+      `Quotation ${input.reference}`,
+      `<p style="margin:0 0 14px">Hello ${escapeHtml(input.name)},</p>
+<p style="margin:0 0 14px">Quotation <strong>${escapeHtml(input.reference)}</strong> for <strong>${escapeHtml(input.title)}</strong> is ready. The total is <strong>${escapeHtml(input.total)}</strong>${
+        input.validUntil ? ` and it is valid until ${escapeHtml(input.validUntil)}` : ''
+      }.</p>
+<p style="margin:0 0 14px">Open the customer portal to review the lines, accept it or request a change. Acceptance is recorded against your account and the works desk is notified.</p>
+<p style="margin:0"><a href="${escapeHtml(input.portalUrl)}" style="color:#0b5f82">Review the quotation</a></p>`,
+      input.brand,
+    ),
+  }
+}
+
+export function supportTicketAcknowledgementEmail(input: {
+  name: string
+  reference: string
+  subject: string
+  body: string
+  brand: string
+  portalUrl: string
+}): { subject: string; html: string } {
+  return {
+    subject: `Request ${input.reference} received · ${input.brand}`,
+    html: SHELL(
+      `Request ${input.reference}`,
+      `<p style="margin:0 0 14px">Hello ${escapeHtml(input.name)},</p>
+<p style="margin:0 0 14px">Your request <strong>${escapeHtml(input.subject)}</strong> is logged as <strong>${escapeHtml(input.reference)}</strong>. The works desk will reply in the portal.</p>
+<p style="margin:0 0 14px;white-space:pre-wrap;color:#3b4652">${escapeHtml(input.body)}</p>
+<p style="margin:0"><a href="${escapeHtml(input.portalUrl)}" style="color:#0b5f82">Open the request</a></p>`,
+      input.brand,
+    ),
+  }
+}
+
+export function supportTicketReplyEmail(input: {
+  name: string
+  reference: string
+  subject: string
+  body: string
+  brand: string
+  portalUrl: string
+}): { subject: string; html: string } {
+  return {
+    subject: `Works desk replied · ${input.reference}`,
+    html: SHELL(
+      `Update on ${input.reference}`,
+      `<p style="margin:0 0 14px">Hello ${escapeHtml(input.name)},</p>
+<p style="margin:0 0 14px">The works desk replied to <strong>${escapeHtml(input.subject)}</strong>.</p>
+<p style="margin:0 0 14px;white-space:pre-wrap;border-left:2px solid #0b5f82;padding-left:12px;color:#3b4652">${escapeHtml(input.body)}</p>
+<p style="margin:0"><a href="${escapeHtml(input.portalUrl)}" style="color:#0b5f82">Continue the thread</a></p>`,
+      input.brand,
+    ),
+  }
+}
+
+export function amcRenewalAcknowledgementEmail(input: {
+  name: string
+  contractRef: string
+  ticketRef: string
+  brand: string
+  portalUrl: string
+}): { subject: string; html: string } {
+  return {
+    subject: `AMC renewal requested · ${input.contractRef}`,
+    html: SHELL(
+      'AMC renewal requested',
+      `<p style="margin:0 0 14px">Hello ${escapeHtml(input.name)},</p>
+<p style="margin:0 0 14px">The renewal request for <strong>${escapeHtml(input.contractRef)}</strong> is logged as <strong>${escapeHtml(input.ticketRef)}</strong>. The works desk will send the renewal quotation to the portal.</p>
+<p style="margin:0"><a href="${escapeHtml(input.portalUrl)}" style="color:#0b5f82">Open the portal</a></p>`,
+      input.brand,
+    ),
+  }
+}
+
+export function twoFactorCodeEmail(input: {
+  code: string
+  purpose: 'login' | 'enable' | 'disable'
+  expiresMinutes: number
+  brand: string
+}): { subject: string; html: string } {
+  const action =
+    input.purpose === 'login'
+      ? 'sign in to the control room'
+      : input.purpose === 'enable'
+        ? 'turn on email two-factor authentication'
+        : 'turn off email two-factor authentication'
+  return {
+    subject: `Your verification code · ${input.brand}`,
+    html: SHELL(
+      'Verification code',
+      `<p style="margin:0 0 14px">Use this code to ${escapeHtml(action)}. It expires in ${input.expiresMinutes} minutes and can be used once.</p>
+<p style="margin:0 0 18px;font:600 30px/1.2 'Courier New',monospace;letter-spacing:.22em;color:#12161a">${escapeHtml(input.code)}</p>
+<p style="margin:0 0 14px;font-size:12px;color:#6b7480">If you did not request this, do not share the code. Change your password and review the audit log. We never send codes by SMS.</p>
+<p style="margin:0">— ${escapeHtml(input.brand)}</p>`,
+      input.brand,
     ),
   }
 }

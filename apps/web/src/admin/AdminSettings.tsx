@@ -5,16 +5,30 @@ import { useLiveRefresh } from '@/admin/useLiveRefresh'
 import { Icon } from '@/components/icons'
 import { Badge, Button, Input, Select, useToast } from '@/components/ui'
 import { useSiteContent } from '@/content/SiteContentProvider'
-import { adminApi, type AdminUser, type AuditEntry, type DataHealth, type PublicAdminUser } from '@/admin/api'
+import {
+  adminApi,
+  type AdminUser,
+  type AuditEntry,
+  type DataHealth,
+  type PublicAdminUser,
+  type TwoFactorSetupChallenge,
+  type TwoFactorStatus,
+} from '@/admin/api'
 import { AdminPageHeader, Panel, formatDateTime } from '@/admin/ui'
 
 export function AdminSettings() {
   const { content, syncedAt, stale, refresh } = useSiteContent()
   const { toast } = useToast()
   const [user, setUser] = useState<AdminUser | null>(null)
-  const [mail, setMail] = useState<{ configured: boolean; from: string; notify: string } | null>(null)
+  const [mail, setMail] = useState<{ configured: boolean; from: string; notify: string } | null>(
+    null,
+  )
   const [audit, setAudit] = useState<AuditEntry[]>([])
   const [health, setHealth] = useState<DataHealth | null>(null)
+  const [twoFactor, setTwoFactor] = useState<TwoFactorStatus | null>(null)
+  const [twoFactorChallenge, setTwoFactorChallenge] = useState<TwoFactorSetupChallenge | null>(null)
+  const [twoFactorCode, setTwoFactorCode] = useState('')
+  const [twoFactorBusy, setTwoFactorBusy] = useState(false)
   const [users, setUsers] = useState<PublicAdminUser[]>([])
   const [userForm, setUserForm] = useState({
     name: '',
@@ -42,11 +56,68 @@ export function AdminSettings() {
       .then(setHealth)
       .catch(() => setHealth(null))
     adminApi
+      .twoFactorStatus()
+      .then(setTwoFactor)
+      .catch(() => setTwoFactor(null))
+    adminApi
       .users()
       .then(setUsers)
       .catch(() => setUsers([]))
   }, [])
   useLiveRefresh(load, 30_000)
+
+  const startTwoFactor = async (purpose: 'enable' | 'disable') => {
+    setTwoFactorBusy(true)
+    try {
+      const challenge = await adminApi.setupTwoFactor(purpose)
+      setTwoFactorChallenge(challenge)
+      setTwoFactorCode('')
+      toast({
+        title: purpose === 'enable' ? 'Confirmation sent' : 'Disable code sent',
+        description: `Check ${challenge.maskedEmail} for the six-digit code.`,
+        tone: 'success',
+      })
+    } catch (caught) {
+      toast({
+        title: 'Could not send the code',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
+    } finally {
+      setTwoFactorBusy(false)
+    }
+  }
+
+  const confirmTwoFactor = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!twoFactorChallenge) return
+    setTwoFactorBusy(true)
+    try {
+      const status = await adminApi.confirmTwoFactor(
+        twoFactorChallenge.challengeId,
+        twoFactorCode,
+        twoFactorChallenge.purpose,
+      )
+      setTwoFactor(status)
+      setTwoFactorChallenge(null)
+      setTwoFactorCode('')
+      toast({
+        title: status.enabled ? 'Two-factor enabled' : 'Two-factor disabled',
+        description: status.enabled
+          ? 'Future sign-ins require a code sent to this inbox.'
+          : 'Sign-in now uses password only.',
+        tone: status.enabled ? 'success' : 'warn',
+      })
+    } catch (caught) {
+      toast({
+        title: 'Code not accepted',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
+    } finally {
+      setTwoFactorBusy(false)
+    }
+  }
 
   const createUser = async (event: FormEvent) => {
     event.preventDefault()
@@ -55,7 +126,11 @@ export function AdminSettings() {
       const created = await adminApi.createAdminUser(userForm)
       setUsers((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)))
       setUserForm({ name: '', email: '', password: '', role: 'viewer' })
-      toast({ title: 'User created', description: `${created.email} can sign in as ${created.role}.`, tone: 'success' })
+      toast({
+        title: 'User created',
+        description: `${created.email} can sign in as ${created.role}.`,
+        tone: 'success',
+      })
     } catch (caught) {
       toast({
         title: 'Could not create user',
@@ -96,11 +171,15 @@ export function AdminSettings() {
         <Panel title="Account">
           <dl className="flex flex-col">
             <div className="flex items-center justify-between border-b border-line/70 py-3 first:pt-0">
-              <dt className="font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint">Email</dt>
+              <dt className="font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint">
+                Email
+              </dt>
               <dd className="font-mono text-[11px] text-fg">{user?.email ?? '—'}</dd>
             </div>
             <div className="flex items-center justify-between border-b border-line/70 py-3">
-              <dt className="font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint">Role</dt>
+              <dt className="font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint">
+                Role
+              </dt>
               <dd className="font-mono text-[11px] text-fg">{user?.role ?? 'owner'}</dd>
             </div>
             <div className="flex items-center justify-between py-3">
@@ -113,14 +192,109 @@ export function AdminSettings() {
             </div>
           </dl>
           <p className="mt-3 text-[11px] leading-relaxed text-fg-faint">
-            The environment owner remains the recovery account. Additional staff accounts are managed
-            in Users &amp; roles; write actions are limited by role on the API.
+            The environment owner remains the recovery account. Additional staff accounts are
+            managed in Users &amp; roles; write actions are limited by role on the API.
           </p>
+        </Panel>
+
+        <Panel
+          title="Two-factor authentication"
+          action={
+            <Badge
+              tone={twoFactor?.enabled ? 'success' : twoFactor?.mailConfigured ? 'neutral' : 'warn'}
+              dot
+            >
+              {twoFactor
+                ? twoFactor.enabled
+                  ? 'Email OTP on'
+                  : twoFactor.mailConfigured
+                    ? 'Off'
+                    : 'Email not configured'
+                : 'Checking'}
+            </Badge>
+          }
+        >
+          <p className="text-[12px] leading-relaxed text-fg-dim">
+            When on, every sign-in needs a six-digit code sent to{' '}
+            {twoFactor?.maskedEmail ?? 'the account inbox'}. Codes expire in ten minutes, allow five
+            attempts and are delivered by email only — there is no SMS fallback anywhere in the
+            product.
+          </p>
+          {twoFactor?.enabledAt ? (
+            <p className="mt-2 font-mono text-[9px] uppercase tracking-[0.08em] text-fg-faint">
+              On since {formatDateTime(twoFactor.enabledAt)}
+            </p>
+          ) : null}
+          {!twoFactor?.mailConfigured ? (
+            <p className="mt-3 border border-warn/30 bg-warn/[0.06] p-3 text-[11px] leading-relaxed text-fg-dim">
+              Set RESEND_API_KEY or MAIL_WEBHOOK_URL before enabling. Without a provider the API
+              refuses to enable two-factor rather than pretending codes were sent.
+            </p>
+          ) : null}
+
+          {twoFactorChallenge ? (
+            <form
+              className="mt-4 flex flex-col gap-3"
+              onSubmit={(event) => void confirmTwoFactor(event)}
+            >
+              <Input
+                label={`Code sent to ${twoFactorChallenge.maskedEmail}`}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                value={twoFactorCode}
+                onChange={(event) =>
+                  setTwoFactorCode(event.target.value.replace(/\D/g, '').slice(0, 6))
+                }
+                required
+                autoFocus
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={twoFactorBusy || twoFactorCode.length !== 6}
+                >
+                  {twoFactorBusy
+                    ? 'Checking…'
+                    : twoFactorChallenge.purpose === 'enable'
+                      ? 'Enable two-factor'
+                      : 'Disable two-factor'}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="quiet"
+                  onClick={() => {
+                    setTwoFactorChallenge(null)
+                    setTwoFactorCode('')
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant={twoFactor?.enabled ? 'quiet' : 'primary'}
+                disabled={twoFactorBusy || !twoFactor?.mailConfigured}
+                onClick={() => void startTwoFactor(twoFactor?.enabled ? 'disable' : 'enable')}
+              >
+                {twoFactor?.enabled ? 'Turn off two-factor' : 'Turn on two-factor'}
+              </Button>
+            </div>
+          )}
         </Panel>
 
         {user?.role === 'owner' ? (
           <Panel title="Users & roles" action={<Badge tone="neutral">{users.length}</Badge>}>
-            <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => void createUser(event)}>
+            <form
+              className="grid gap-3 sm:grid-cols-2"
+              onSubmit={(event) => void createUser(event)}
+            >
               <Input
                 label="Name"
                 required
@@ -146,7 +320,9 @@ export function AdminSettings() {
               <Select
                 label="Role"
                 value={userForm.role}
-                onChange={(event) => setUserForm({ ...userForm, role: event.target.value as AdminRole })}
+                onChange={(event) =>
+                  setUserForm({ ...userForm, role: event.target.value as AdminRole })
+                }
                 options={ADMIN_ROLES.map((role) => ({ value: role, label: adminRoleLabel[role] }))}
               />
               <div className="sm:col-span-2">
@@ -163,7 +339,10 @@ export function AdminSettings() {
                 </li>
               ) : (
                 users.map((entry) => (
-                  <li key={entry.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                  <li
+                    key={entry.id}
+                    className="flex flex-wrap items-center justify-between gap-3 py-3"
+                  >
                     <div className="min-w-0">
                       <p className="truncate text-[12px] text-fg">{entry.name}</p>
                       <p className="truncate text-[10px] text-fg-faint">{entry.email}</p>
@@ -175,7 +354,10 @@ export function AdminSettings() {
                         onChange={(event) =>
                           void patchUser(entry.id, { role: event.target.value as AdminRole })
                         }
-                        options={ADMIN_ROLES.map((role) => ({ value: role, label: adminRoleLabel[role] }))}
+                        options={ADMIN_ROLES.map((role) => ({
+                          value: role,
+                          label: adminRoleLabel[role],
+                        }))}
                         className="min-w-[120px]"
                       />
                       <Badge tone={entry.status === 'active' ? 'success' : 'danger'}>
@@ -238,17 +420,23 @@ export function AdminSettings() {
         <Panel title="Security controls">
           <ul className="flex flex-col gap-3">
             {[
+              ['Email two-factor', 'Optional per account; a one-time code per sign-in. No SMS.'],
               ['HttpOnly session cookie', 'SameSite=Strict, twelve-hour expiry, no token in JS.'],
               ['Login rate limiting', 'Eight attempts per IP in a fifteen-minute window.'],
               ['Mutation checks', 'Same-origin verification plus X-Admin-Request header.'],
               ['Private admin API', 'Every /admin route requires a live session.'],
               ['No public lead list', 'Lead reads exist only behind authentication.'],
             ].map(([label, body]) => (
-              <li key={label} className="flex items-start gap-2.5 border-t border-line/70 pt-3 first:border-0 first:pt-0">
+              <li
+                key={label}
+                className="flex items-start gap-2.5 border-t border-line/70 pt-3 first:border-0 first:pt-0"
+              >
                 <Icon name="shield" size={14} className="mt-0.5 shrink-0 text-cold" />
                 <span>
                   <span className="block text-[12px] text-fg">{label}</span>
-                  <span className="mt-0.5 block text-[11px] leading-snug text-fg-faint">{body}</span>
+                  <span className="mt-0.5 block text-[11px] leading-snug text-fg-faint">
+                    {body}
+                  </span>
                 </span>
               </li>
             ))}
@@ -257,13 +445,20 @@ export function AdminSettings() {
 
         <Panel title="Data stores">
           <p className="text-[12px] leading-relaxed text-fg-dim">
-            Content, leads, customers, invoices, reminders and the audit/email ledgers persist as JSON
-            documents under <code className="font-mono text-[11px] text-cold">apps/api/data/</code>.
-            The directory is gitignored. Swap the store module for a database without changing the API
-            contracts.
+            Content, leads, customers, invoices, reminders and the audit/email ledgers persist as
+            JSON documents under{' '}
+            <code className="font-mono text-[11px] text-cold">apps/api/data/</code>. The directory
+            is gitignored. Swap the store module for a database without changing the API contracts.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
-            {['content.json', 'leads.json', 'customers.json', 'invoices.json', 'audit-log.json', 'email-log.json'].map((file) => (
+            {[
+              'content.json',
+              'leads.json',
+              'customers.json',
+              'invoices.json',
+              'audit-log.json',
+              'email-log.json',
+            ].map((file) => (
               <span
                 key={file}
                 className="border border-line px-2 py-1 font-mono text-[9px] uppercase tracking-[0.06em] text-fg-faint"
@@ -292,8 +487,8 @@ export function AdminSettings() {
         >
           <p className="text-[12px] leading-relaxed text-fg-dim">
             {mail?.configured
-              ? 'A provider is configured. Enquiry acknowledgements, invoice reminders, booking confirmations and newsletter sends are delivered and logged.'
-              : 'No provider is configured. Nothing is sent: set RESEND_API_KEY or MAIL_WEBHOOK_URL in the API environment. Enquiry acknowledgements and newsletter sends stay blocked until it is set.'}
+              ? 'A provider is configured. Enquiries, quotations, AMC renewal, support updates, invoice reminders, bookings, newsletters and staff 2FA codes are delivered and logged.'
+              : 'No provider is configured. Nothing is sent: set RESEND_API_KEY or MAIL_WEBHOOK_URL in the API environment. Enquiry acknowledgements, newsletter sends and staff 2FA setup stay blocked until it is set.'}
           </p>
           {mail ? (
             <dl className="mt-4 flex flex-col gap-2 font-mono text-[10px] uppercase tracking-[0.06em] text-fg-faint">
@@ -313,7 +508,11 @@ export function AdminSettings() {
           title="Data health & backup"
           action={
             <Badge tone={health && health.issues.length ? 'warn' : 'success'} dot>
-              {health ? (health.issues.length ? `${health.issues.length} issues` : 'Consistent') : 'Checking'}
+              {health
+                ? health.issues.length
+                  ? `${health.issues.length} issues`
+                  : 'Consistent'
+                : 'Checking'}
             </Badge>
           }
         >
@@ -351,8 +550,8 @@ export function AdminSettings() {
                 Download JSON backup
               </a>
               <p className="mt-2 text-[10px] leading-relaxed text-fg-faint">
-                A daily copy is kept under <code className="font-mono">data/backups</code> for seven days.
-                Session and password-reset files are excluded.
+                A daily copy is kept under <code className="font-mono">data/backups</code> for seven
+                days. Session and password-reset files are excluded.
               </p>
             </>
           ) : (
@@ -369,7 +568,10 @@ export function AdminSettings() {
           ) : (
             <ul className="flex flex-col divide-y divide-line/70">
               {audit.slice(0, 12).map((entry) => (
-                <li key={entry.id} className="flex items-start justify-between gap-4 py-2 first:pt-0 last:pb-0">
+                <li
+                  key={entry.id}
+                  className="flex items-start justify-between gap-4 py-2 first:pt-0 last:pb-0"
+                >
                   <div className="min-w-0">
                     <p className="truncate font-mono text-[10px] uppercase tracking-[0.06em] text-fg-dim">
                       {entry.method} {entry.path}
@@ -379,7 +581,13 @@ export function AdminSettings() {
                     </p>
                   </div>
                   <div className="shrink-0 text-right">
-                    <span className={entry.status >= 400 ? 'font-mono text-[10px] text-danger' : 'font-mono text-[10px] text-success'}>
+                    <span
+                      className={
+                        entry.status >= 400
+                          ? 'font-mono text-[10px] text-danger'
+                          : 'font-mono text-[10px] text-success'
+                      }
+                    >
                       {entry.status}
                     </span>
                     <p className="mt-0.5 text-[10px] text-fg-faint">{formatDateTime(entry.at)}</p>
@@ -393,8 +601,8 @@ export function AdminSettings() {
 
       <div className="border border-line bg-panel/30 p-4">
         <p className="font-mono text-[9px] uppercase leading-relaxed tracking-[0.08em] text-fg-faint">
-          Tip · Keep ADMIN_PASSWORD out of the repository. Rotate it by changing the API environment and
-          restarting the service; existing sessions expire within twelve hours.
+          Tip · Keep ADMIN_PASSWORD out of the repository. Rotate it by changing the API environment
+          and restarting the service; existing sessions expire within twelve hours.
         </p>
       </div>
     </div>

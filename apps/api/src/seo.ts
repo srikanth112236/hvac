@@ -31,6 +31,8 @@ seoRouter.get('/robots.txt', async (_req, res) => {
         'User-agent: *',
         'Allow: /',
         'Disallow: /admin',
+        'Disallow: /portal',
+        'Disallow: /__styleguide',
         'Disallow: /api/',
         '',
         `Sitemap: ${base}/sitemap.xml`,

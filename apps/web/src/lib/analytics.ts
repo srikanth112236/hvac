@@ -3,6 +3,7 @@ export type ConsentChoice = 'all' | 'essential'
 const KEY = 'hvac-consent'
 
 export function readConsent(): ConsentChoice | null {
+  if (typeof window === 'undefined') return null
   try {
     const value = window.localStorage.getItem(KEY)
     return value === 'all' || value === 'essential' ? value : null

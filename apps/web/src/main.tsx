@@ -1,6 +1,7 @@
-﻿import { StrictMode, type ReactNode } from 'react'
-import { createRoot } from 'react-dom/client'
+﻿import { StrictMode } from 'react'
+import { createRoot, hydrateRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
+import type { SiteContent } from '@hvac/shared'
 
 import './styles/tailwind.css'
 import './styles/fonts.css'
@@ -12,53 +13,37 @@ import './styles/base.css'
 import './styles/article.css'
 
 import { App } from './App'
-import { BrandProvider, type BrandOverrides } from './brand/BrandProvider'
 import { ErrorBoundary } from './components/system/ErrorBoundary'
-import { ToastProvider } from './components/ui'
-import { SiteContentProvider, useSiteContent } from './content/SiteContentProvider'
-import { ThemeProvider } from './theme/ThemeProvider'
+import { Root } from './Root'
 
 const container = document.getElementById('root')
 if (!container) throw new Error('Root container missing')
 
-/** Brand overrides are derived from the same API document the admin edits. */
-function BrandFromContent({ children }: { children: ReactNode }) {
-  const { content } = useSiteContent()
-  const overrides: BrandOverrides = {
-    name: content.brand.name,
-    shortName: content.brand.shortName,
-    legalName: content.brand.legalName,
-    tagline: content.brand.tagline,
-    description: content.brand.description,
-    monogram: content.brand.monogram,
-    contact: content.brand.contact,
-    address: content.brand.address,
-    hours: content.brand.hours,
-    serviceAreas: content.brand.serviceAreas,
-    stats: content.brand.stats,
-    credentials: content.brand.credentials,
-    foundedYear: content.brand.foundedYear,
-    gstin: content.brand.gstin,
+let initialContent: SiteContent | undefined
+const initialElement = document.getElementById('hvac-initial-content')
+if (initialElement?.textContent) {
+  try {
+    initialContent = JSON.parse(initialElement.textContent) as SiteContent
+  } catch {
+    initialContent = undefined
   }
-
-  return <BrandProvider overrides={overrides}>{children}</BrandProvider>
 }
 
-createRoot(container).render(
+const tree = (
   <StrictMode>
     <ErrorBoundary>
-      <ThemeProvider>
-        <SiteContentProvider>
-          <BrandFromContent>
-            <ToastProvider>
-              <BrowserRouter>
-                <App />
-              </BrowserRouter>
-            </ToastProvider>
-          </BrandFromContent>
-        </SiteContentProvider>
-      </ThemeProvider>
+      <Root initialContent={initialContent}>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </Root>
     </ErrorBoundary>
-  </StrictMode>,
+  </StrictMode>
 )
 
+// SSR/SSG markup hydrates; a plain dev/static shell mounts normally.
+if (initialContent && container.hasChildNodes()) {
+  hydrateRoot(container, tree)
+} else {
+  createRoot(container).render(tree)
+}

@@ -2,16 +2,19 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { Router, type NextFunction, type Request, type Response } from 'express'
 import { z } from 'zod'
 import type { AdminRole } from '@hvac/shared'
+import { ADMIN_EMAIL, ADMIN_PASSWORD, IS_PROD, originAllowed } from './config.js'
+import { adminPasswordMatches, findAdminUserByEmail, findAdminUserById } from './adminUsers.js'
 import {
-  ADMIN_EMAIL,
-  ADMIN_PASSWORD,
-  IS_PROD,
-  originAllowed,
-} from './config.js'
-import {
-  adminPasswordMatches,
-  findAdminUserByEmail,
-} from './adminUsers.js'
+  TwoFactorError,
+  isTwoFactorEnabled,
+  maskEmail,
+  readTwoFactorStatus,
+  resendChallenge,
+  startLoginChallenge,
+  startSetupChallenge,
+  consumeSetupChallenge,
+  verifyChallenge,
+} from './twoFactor.js'
 import { createStore } from './store.js'
 
 /**
@@ -52,6 +55,26 @@ const accountAttempts = new Map<string, { count: number; resetAt: number }>()
 const loginSchema = z.object({
   email: z.string().trim().email(),
   password: z.string().min(8).max(200),
+})
+
+const twoFactorCodeSchema = z.object({
+  challengeId: z.string().trim().min(32).max(200),
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, 'Enter the six-digit code.'),
+})
+
+const twoFactorSetupSchema = z.object({
+  purpose: z.enum(['enable', 'disable']),
+})
+
+const twoFactorConfirmSchema = twoFactorCodeSchema.extend({
+  purpose: z.enum(['enable', 'disable']),
+})
+
+const twoFactorResendSchema = z.object({
+  challengeId: z.string().trim().min(32).max(200),
 })
 
 function digest(value: string): Buffer {
@@ -110,15 +133,13 @@ export async function revokeAdminSessionsForUser(userId: string): Promise<void> 
   })
 }
 
-export async function requireAdmin(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): Promise<void> {
+export async function requireAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const session = await sessionFor(req)
     if (!session) {
-      res.status(401).json({ error: { code: 'unauthorised', message: 'Sign in to the admin panel.' } })
+      res
+        .status(401)
+        .json({ error: { code: 'unauthorised', message: 'Sign in to the admin panel.' } })
       return
     }
     res.locals.admin = session
@@ -140,7 +161,9 @@ export function requireAdminMutation(req: Request, res: Response, next: NextFunc
     return
   }
   if (req.get('x-admin-request') !== '1') {
-    res.status(403).json({ error: { code: 'missing_admin_header', message: 'Admin request header missing.' } })
+    res
+      .status(403)
+      .json({ error: { code: 'missing_admin_header', message: 'Admin request header missing.' } })
     return
   }
   next()
@@ -151,7 +174,9 @@ export function requireRole(...roles: AdminRole[]) {
   return (_req: Request, res: Response, next: NextFunction): void => {
     const admin = res.locals.admin as Session | undefined
     if (!admin) {
-      res.status(401).json({ error: { code: 'unauthorised', message: 'Sign in to the admin panel.' } })
+      res
+        .status(401)
+        .json({ error: { code: 'unauthorised', message: 'Sign in to the admin panel.' } })
       return
     }
     if (!roles.includes(admin.role)) {
@@ -182,6 +207,36 @@ export function requireWriteRole(...roles: AdminRole[]) {
   }
 }
 
+async function issueSession(
+  res: Response,
+  identity: { email: string; role: AdminRole; userId?: string },
+): Promise<{ email: string; role: AdminRole; userId: string | null; expiresAt: number }> {
+  const now = Date.now()
+  const token = randomBytes(32).toString('hex')
+  const session: Session = { ...identity, expiresAt: now + SESSION_TTL_MS }
+  await sessionStore.mutate((current) => {
+    const next: Record<string, Session> = {}
+    for (const [key, value] of Object.entries(current)) {
+      if (value.expiresAt > now) next[key] = value
+    }
+    next[token] = session
+    return next
+  })
+  res.cookie(COOKIE, token, {
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: IS_PROD,
+    path: '/',
+    maxAge: SESSION_TTL_MS,
+  })
+  return {
+    email: session.email,
+    role: session.role,
+    userId: session.userId ?? null,
+    expiresAt: session.expiresAt,
+  }
+}
+
 export const authRouter = Router()
 
 authRouter.post('/auth/login', async (req, res, next) => {
@@ -197,7 +252,9 @@ authRouter.post('/auth/login', async (req, res, next) => {
 
   const parsed = loginSchema.safeParse(req.body)
   if (!parsed.success) {
-    res.status(400).json({ error: { code: 'validation_error', message: 'Email and password are required.' } })
+    res
+      .status(400)
+      .json({ error: { code: 'validation_error', message: 'Email and password are required.' } })
     return
   }
 
@@ -206,13 +263,17 @@ authRouter.post('/auth/login', async (req, res, next) => {
   const accountRecord = accountAttempts.get(accountKey)
   if (accountRecord && accountRecord.resetAt > now && accountRecord.count >= MAX_ATTEMPTS) {
     res.status(429).json({
-      error: { code: 'rate_limited', message: 'Too many attempts for this account. Try again in 15 minutes.' },
+      error: {
+        code: 'rate_limited',
+        message: 'Too many attempts for this account. Try again in 15 minutes.',
+      },
     })
     return
   }
 
   const envOwner =
-    safeEqual(email, ADMIN_EMAIL) && safeEqual(parsed.data.password, ADMIN_PASSWORD)
+    safeEqual(email, ADMIN_EMAIL.trim().toLowerCase()) &&
+    safeEqual(parsed.data.password, ADMIN_PASSWORD)
   let resolved: { email: string; role: AdminRole; userId?: string } | null = envOwner
     ? { email: ADMIN_EMAIL, role: 'owner' }
     : null
@@ -236,43 +297,210 @@ authRouter.post('/auth/login', async (req, res, next) => {
         ? { count: accountRecord.count + 1, resetAt: accountRecord.resetAt }
         : { count: 1, resetAt: now + ATTEMPT_WINDOW_MS },
     )
-    res.status(401).json({ error: { code: 'invalid_credentials', message: 'Email or password is incorrect.' } })
+    res
+      .status(401)
+      .json({ error: { code: 'invalid_credentials', message: 'Email or password is incorrect.' } })
     return
   }
 
   attempts.delete(key)
   accountAttempts.delete(accountKey)
-  const token = randomBytes(32).toString('hex')
-  const session: Session = { ...resolved, expiresAt: now + SESSION_TTL_MS }
-  try {
-    await sessionStore.mutate((current) => {
-      const next: Record<string, Session> = {}
-      for (const [key, value] of Object.entries(current)) {
-        if (value.expiresAt > now) next[key] = value
-      }
-      next[token] = session
-      return next
-    })
-  } catch (error) {
-    next(error)
+
+  if (await isTwoFactorEnabled(resolved.email)) {
+    try {
+      const challenge = await startLoginChallenge({
+        email: resolved.email,
+        role: resolved.role,
+        userId: resolved.userId,
+      })
+      res.json({
+        data: {
+          requires2fa: true,
+          challengeId: challenge.challengeId,
+          maskedEmail: challenge.maskedEmail,
+          expiresAt: challenge.expiresAt,
+        },
+      })
+    } catch (error) {
+      const twoFactor = error instanceof TwoFactorError ? error : null
+      res.status(twoFactor?.status ?? 503).json({
+        error: {
+          code: twoFactor?.code ?? 'two_factor_unavailable',
+          message:
+            twoFactor?.message ??
+            'A verification code could not be sent. Try again or contact the owner.',
+        },
+      })
+    }
     return
   }
 
-  res.cookie(COOKIE, token, {
-    httpOnly: true,
-    sameSite: 'strict',
-    secure: IS_PROD,
-    path: '/',
-    maxAge: SESSION_TTL_MS,
-  })
-  res.json({
-    data: {
-      email: session.email,
-      role: session.role,
-      userId: session.userId ?? null,
-      expiresAt: session.expiresAt,
-    },
-  })
+  try {
+    const data = await issueSession(res, resolved)
+    res.json({ data })
+  } catch (error) {
+    next(error)
+  }
+})
+
+authRouter.post('/auth/2fa/verify', async (req, res, next) => {
+  const parsed = twoFactorCodeSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({
+      error: {
+        code: 'validation_error',
+        message: parsed.error.issues[0]?.message ?? 'Enter the code.',
+      },
+    })
+    return
+  }
+  try {
+    const result = await verifyChallenge(parsed.data.challengeId, parsed.data.code, 'login')
+    if (result.status !== 'ok') {
+      res.status(result.status === 'expired' ? 410 : result.status === 'locked' ? 429 : 401).json({
+        error: {
+          code: result.status === 'expired' ? 'code_expired' : 'invalid_code',
+          message:
+            result.status === 'expired'
+              ? 'That code has expired. Sign in again.'
+              : result.status === 'locked'
+                ? 'Too many incorrect codes. Sign in again.'
+                : 'That code is not correct.',
+        },
+      })
+      return
+    }
+
+    let identity = result.identity
+    if (identity.userId) {
+      const user = await findAdminUserById(identity.userId)
+      if (!user || user.status !== 'active') {
+        res.status(401).json({
+          error: { code: 'account_unavailable', message: 'This account is no longer active.' },
+        })
+        return
+      }
+      identity = { email: user.email, role: user.role, userId: user.id }
+    } else if (!safeEqual(identity.email, ADMIN_EMAIL.trim().toLowerCase())) {
+      res.status(401).json({
+        error: { code: 'account_unavailable', message: 'This account is no longer active.' },
+      })
+      return
+    }
+
+    const data = await issueSession(res, identity)
+    res.json({ data })
+  } catch (error) {
+    next(error)
+  }
+})
+
+authRouter.post('/auth/2fa/resend', async (req, res) => {
+  const parsed = twoFactorResendSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ error: { code: 'validation_error', message: 'Start sign-in again.' } })
+    return
+  }
+  try {
+    const challenge = await resendChallenge(parsed.data.challengeId, 'login')
+    res.json({
+      data: {
+        requires2fa: true,
+        challengeId: challenge.challengeId,
+        maskedEmail: challenge.maskedEmail,
+        expiresAt: challenge.expiresAt,
+      },
+    })
+  } catch (error) {
+    const twoFactor = error instanceof TwoFactorError ? error : null
+    res.status(twoFactor?.status ?? 503).json({
+      error: {
+        code: twoFactor?.code ?? 'resend_failed',
+        message: twoFactor?.message ?? 'A new code could not be sent.',
+      },
+    })
+  }
+})
+
+authRouter.get('/auth/2fa', requireAdmin, async (_req, res, next) => {
+  try {
+    const admin = res.locals.admin as Session
+    const status = await readTwoFactorStatus(admin.email)
+    res.json({ data: { ...status, email: admin.email, maskedEmail: maskEmail(admin.email) } })
+  } catch (error) {
+    next(error)
+  }
+})
+
+authRouter.post('/auth/2fa/setup', requireAdmin, requireAdminMutation, async (req, res) => {
+  const parsed = twoFactorSetupSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res
+      .status(400)
+      .json({ error: { code: 'validation_error', message: 'Choose enable or disable.' } })
+    return
+  }
+  const admin = res.locals.admin as Session
+  try {
+    const enabled = await isTwoFactorEnabled(admin.email)
+    if (parsed.data.purpose === 'enable' && enabled) {
+      res
+        .status(409)
+        .json({ error: { code: 'already_enabled', message: 'Two-factor is already on.' } })
+      return
+    }
+    if (parsed.data.purpose === 'disable' && !enabled) {
+      res
+        .status(409)
+        .json({ error: { code: 'already_disabled', message: 'Two-factor is already off.' } })
+      return
+    }
+    const challenge = await startSetupChallenge(
+      { email: admin.email, role: admin.role, userId: admin.userId },
+      parsed.data.purpose,
+    )
+    res.json({ data: { ...challenge, purpose: parsed.data.purpose } })
+  } catch (error) {
+    const twoFactor = error instanceof TwoFactorError ? error : null
+    res.status(twoFactor?.status ?? 503).json({
+      error: {
+        code: twoFactor?.code ?? 'setup_failed',
+        message: twoFactor?.message ?? 'A verification code could not be sent.',
+      },
+    })
+  }
+})
+
+authRouter.post('/auth/2fa/confirm', requireAdmin, requireAdminMutation, async (req, res) => {
+  const parsed = twoFactorConfirmSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({
+      error: {
+        code: 'validation_error',
+        message: parsed.error.issues[0]?.message ?? 'Enter the code.',
+      },
+    })
+    return
+  }
+  const admin = res.locals.admin as Session
+  try {
+    await consumeSetupChallenge(
+      parsed.data.challengeId,
+      parsed.data.code,
+      admin.email,
+      parsed.data.purpose,
+    )
+    const status = await readTwoFactorStatus(admin.email)
+    res.json({ data: { ...status, email: admin.email, maskedEmail: maskEmail(admin.email) } })
+  } catch (error) {
+    const twoFactor = error instanceof TwoFactorError ? error : null
+    res.status(twoFactor?.status ?? 500).json({
+      error: {
+        code: twoFactor?.code ?? 'confirm_failed',
+        message: twoFactor?.message ?? 'Two-factor could not be updated.',
+      },
+    })
+  }
 })
 
 authRouter.post('/auth/logout', async (req, res, next) => {

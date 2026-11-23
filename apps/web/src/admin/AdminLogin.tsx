@@ -1,11 +1,18 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Icon } from '@/components/icons'
 import { Button, Input } from '@/components/ui'
-import { adminApi, type AdminUser } from '@/admin/api'
+import {
+  adminApi,
+  isTwoFactorChallenge,
+  type AdminUser,
+  type TwoFactorChallenge,
+} from '@/admin/api'
 
 export function AdminLogin({ onSuccess }: { onSuccess: (user: AdminUser) => void }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [challenge, setChallenge] = useState<TwoFactorChallenge | null>(null)
+  const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
 
@@ -27,13 +34,44 @@ export function AdminLogin({ onSuccess }: { onSuccess: (user: AdminUser) => void
     setError('')
     setPending(true)
     try {
-      const user = await adminApi.login(email, password)
-      onSuccess(user)
+      if (challenge) {
+        const user = await adminApi.verifyTwoFactorLogin(challenge.challengeId, code)
+        onSuccess(user)
+        return
+      }
+      const result = await adminApi.login(email, password)
+      if (isTwoFactorChallenge(result)) {
+        setChallenge(result)
+        setCode('')
+        return
+      }
+      onSuccess(result)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Sign in failed.')
     } finally {
       setPending(false)
     }
+  }
+
+  const resend = async () => {
+    if (!challenge) return
+    setError('')
+    setPending(true)
+    try {
+      setChallenge(await adminApi.resendTwoFactorCode(challenge.challengeId))
+      setCode('')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'A new code could not be sent.')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  const reset = () => {
+    setChallenge(null)
+    setCode('')
+    setPassword('')
+    setError('')
   }
 
   return (
@@ -85,30 +123,50 @@ export function AdminLogin({ onSuccess }: { onSuccess: (user: AdminUser) => void
             </span>
           </div>
 
-          <h2 className="t-h3 mt-10 text-fg">Sign in.</h2>
+          <h2 className="t-h3 mt-10 text-fg">{challenge ? 'Verify it’s you.' : 'Sign in.'}</h2>
           <p className="mt-2 text-[13px] leading-relaxed text-fg-dim">
-            Owner access only. Sessions are HttpOnly and expire after twelve hours.
+            {challenge
+              ? `We emailed a six-digit code to ${challenge.maskedEmail}. It expires in ten minutes.`
+              : 'Owner and staff access. Sessions are HttpOnly and expire after twelve hours. Email two-factor is enforced when enabled.'}
           </p>
 
           <form onSubmit={onSubmit} noValidate className="mt-8 flex flex-col gap-4">
-            <Input
-              label="Email"
-              name="email"
-              type="email"
-              autoComplete="username"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              required
-            />
-            <Input
-              label="Password"
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-            />
+            {challenge ? (
+              <Input
+                label="Six-digit code"
+                name="code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                value={code}
+                onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                required
+                autoFocus
+                hint="Check the account inbox, including spam. Codes are email-only — we never send SMS."
+              />
+            ) : (
+              <>
+                <Input
+                  label="Email"
+                  name="email"
+                  type="email"
+                  autoComplete="username"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  required
+                />
+                <Input
+                  label="Password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                />
+              </>
+            )}
 
             {error ? (
               <p
@@ -120,12 +178,37 @@ export function AdminLogin({ onSuccess }: { onSuccess: (user: AdminUser) => void
               </p>
             ) : null}
 
-            <Button type="submit" full disabled={pending} icon={pending ? 'clock' : 'arrow-right'}>
-              {pending ? 'Signing in…' : 'Open control room'}
+            <Button
+              type="submit"
+              full
+              disabled={pending || (Boolean(challenge) && code.length !== 6)}
+              icon={pending ? 'clock' : 'arrow-right'}
+            >
+              {pending ? 'Checking…' : challenge ? 'Verify and open' : 'Open control room'}
             </Button>
+            {challenge ? (
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => void resend()}
+                  disabled={pending}
+                  className="font-mono text-[9px] uppercase tracking-[0.12em] text-cold hover:text-fg disabled:opacity-50"
+                >
+                  Send a new code
+                </button>
+                <button
+                  type="button"
+                  onClick={reset}
+                  disabled={pending}
+                  className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint hover:text-fg disabled:opacity-50"
+                >
+                  Use another account
+                </button>
+              </div>
+            ) : null}
           </form>
 
-          {import.meta.env.DEV ? (
+          {import.meta.env.DEV && !challenge ? (
             <details className="mt-8 border border-line bg-panel/40 p-4">
               <summary className="cursor-pointer font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">
                 Local development credentials

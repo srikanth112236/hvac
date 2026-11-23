@@ -66,11 +66,14 @@ export async function findAdminUserByEmail(email: string): Promise<StoredAdminUs
   return users.find((user) => user.email === normalized) ?? null
 }
 
+export async function findAdminUserById(id: string): Promise<StoredAdminUser | null> {
+  const users = await adminUserStore.read()
+  return users.find((user) => user.id === id) ?? null
+}
+
 export async function readPublicAdminUsers(): Promise<PublicAdminUser[]> {
   const users = await adminUserStore.read()
-  return users
-    .map(publicAdminUser)
-    .sort((a, b) => a.name.localeCompare(b.name))
+  return users.map(publicAdminUser).sort((a, b) => a.name.localeCompare(b.name))
 }
 
 export async function createAdminUser(input: {

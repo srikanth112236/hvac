@@ -5,10 +5,16 @@
 ```
 Internet
   └─ TLS / WAF / CDN
-       ├─ /            → Node web host (apps/web/server.mjs, prerendered dist)
+       ├─ /            → Node web host (apps/web/server.mjs: SSR + hydration)
        ├─ /uploads     → API (or object storage with the same path contract)
        └─ /api/v1      → Node API (apps/api)
 ```
+
+The web host renders public routes on the server with the live content document,
+injects per-route title/description/canonical/Open Graph/JSON-LD, then hydrates
+the same markup in the browser. `/admin`, `/portal` and the styleguide are
+client-only shells. When the API is unreachable the server falls back to the
+bundled content so the public site still answers.
 
 `infra/terraform` contains the Azure template for staging/production workspaces,
 including Key Vault, App Insights, 5xx alerts and availability tests. It is a
@@ -32,13 +38,23 @@ cookies `SameSite=Strict`. If they must be separate origins, set
 | `BUSINESS_TIMEZONE` | no | IANA zone, default `America/Chicago` |
 | `RESEND_API_KEY` or `MAIL_WEBHOOK_URL` | for mail | Without one, sends are logged as skipped |
 | `MAIL_FROM` | recommended | e.g. `Client HVAC <no-reply@client.com>` |
+| `PUBLIC_BRAND_NAME` | recommended | Brand name used in the 2FA email shell |
 | `ADMIN_NOTIFY_EMAIL` | recommended | Desk inbox for leads, reminders, digests |
 | `UPLOAD_ROOT` | no | Defaults to the repo `uploads/` directory |
 | `AUDIT_RETENTION_DAYS` | no | Default 365 |
 | `EMAIL_LOG_RETENTION_DAYS` | no | Default 180 |
 
-Front-end build variables:
+### Staff 2FA recovery
 
+Email OTP is the only second factor; there is no SMS fallback. If the mail
+provider is permanently lost and the owner is locked out, use the documented
+break-glass: stop the API, remove `apps/api/data/admin-2fa.json`, then restart.
+That clears every staff 2FA preference (passwords and sessions are untouched) and
+allows a fresh sign-in. Restrict server access to the same people who hold
+`DATA_ENCRYPTION_KEY`; deleting the file is a privileged recovery action, not a
+routine reset.
+
+Front-end build variables:
 ```env
 VITE_THEME=foundry|atelier
 VITE_API_URL=/api/v1
@@ -52,21 +68,28 @@ npm ci
 npm run typecheck
 npm run lint
 npm run test
-npm run build          # apps/web/dist (client build)
+npm run build          # client bundle + dist/server SSR entry
 ```
 
-For crawler-visible HTML and same-origin SEO files:
+Run the web host against the build and the API:
 
 ```bash
-npm run build:prerender   # build + render all public routes with Playwright
 API_ORIGIN=http://127.0.0.1:4000 npm run serve:web
 ```
 
-`server.mjs` serves `apps/web/dist`, the prerendered `dist/<route>.html` files,
-and proxies `/api`, `/uploads`, `/sitemap.xml`, `/robots.txt`, `/llms.txt` and
-`/feed.xml` to the API, so those files live on the site origin. Re-run
-`build:prerender` after a content release so the build-time HTML/meta catches up;
-the client still fetches live content after boot.
+`npm run build` produces `apps/web/dist` (client assets) and
+`apps/web/dist/server/entry-server.js` (SSR entry). `server.mjs` renders public
+routes with the live content feed, proxies `/api`, `/uploads`, `/sitemap.xml`,
+`/robots.txt`, `/llms.txt` and `/feed.xml` to the API, and serves `/admin` and
+`/portal` as client shells. SSR HTML is `no-cache`; hashed assets are immutable.
+`/admin`, `/portal`, the styleguide and 404 responses send `X-Robots-Tag:
+noindex, nofollow`. The SSR bundle and `index.template.html` are blocked from
+static serving.
+
+`npm run build:prerender` is optional. It writes static fallbacks to
+`dist/<route>.html` for hosts that cannot run Node; the SSR server still takes
+precedence. Re-run it only when a static fallback is required — live content is
+read at request time and refreshed by the client after hydration.
 
 The API runs TypeScript directly with `tsx`; start it with
 `npm run start -w @hvac/api` (or under a process manager).
@@ -146,5 +169,6 @@ process-local. Run **one** API instance until they are moved to a shared store
 - [x] Consent banner; analytics loads only after opt-in.
 - [x] Async route errors reach the error middleware.
 - [x] Audit log, data health, export, retention, customer erasure.
+- [x] Email two-factor OTP for staff; no SMS provider exists.
+- [x] Server-side rendering with per-route meta/JSON-LD and hydration.
 - [ ] Move the JSON stores to an encrypted database before multi-instance scale.
-- [ ] Add 2FA and RBAC for multiple staff accounts.

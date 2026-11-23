@@ -18,7 +18,7 @@ test('services and journal pages render', async ({ page }) => {
 test('admin login screen is reachable', async ({ page }) => {
   await page.goto('/admin')
   await expect(page.getByRole('heading', { name: /Sign in/i })).toBeVisible()
-  await expect(page.getByText(/Owner access only/i)).toBeVisible()
+  await expect(page.getByText(/Owner and staff access/i)).toBeVisible()
 })
 
 test('customer portal login screen is reachable', async ({ page }) => {

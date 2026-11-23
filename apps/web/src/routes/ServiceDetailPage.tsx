@@ -1,25 +1,27 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { Link, Navigate, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { Icon, type IconName } from '@/components/icons'
 import { Accordion, Badge, ButtonAnchor, ButtonLink, SectionHeader } from '@/components/ui'
 import { MagneticButton, ParallaxDrift, ScrollReveal, SplitReveal } from '@/motion'
 import { useBrand } from '@/brand/BrandProvider'
 import type { SiteServiceOverride, SiteWorkCase } from '@hvac/shared'
 import { categoryLabels, type CatalogueService } from '@/content/services'
-import {
-  getServiceDetail,
-  type Pair,
-  type ServiceDetail,
-} from '@/content/serviceDetails'
+import { getServiceDetail, type Pair, type ServiceDetail } from '@/content/serviceDetails'
 import { useSiteContent, useSiteServices } from '@/content/SiteContentProvider'
 import { useSeo } from '@/lib/seo'
+import { NotFound } from '@/routes/NotFound'
 import { EnquiryForm } from '@/routes/contact/EnquiryForm'
 import { ServiceCalculator } from '@/routes/services/ServiceCalculator'
 import { ServiceDiagram } from '@/routes/services/ServiceDiagram'
 
 type FullService = ServiceDetail & { catalogue: CatalogueService }
 
-const defaultStandards = ['ISHRAE comfort data', 'ASHRAE fundamentals', 'BIS practice', 'ISO 9001:2015']
+const defaultStandards = [
+  'ISHRAE comfort data',
+  'ASHRAE fundamentals',
+  'BIS practice',
+  'ISO 9001:2015',
+]
 
 const projectByService: Record<string, string> = {
   'vrf-systems': 'VRF',
@@ -42,7 +44,7 @@ function fallbackService(override: SiteServiceOverride): FullService {
     index: override.index || '—',
     name,
     category: override.category,
-                  icon: 'airflow' as const,
+    icon: 'airflow' as const,
 
     capacity: override.capacity || 'On survey',
     timeline: override.timeline || 'Scheduled after survey',
@@ -66,35 +68,31 @@ function fallbackService(override: SiteServiceOverride): FullService {
     warranty: override.warranty || '12 months on workmanship',
     startingFrom: override.startingFrom || 'Quoted after survey',
     priceBasis: override.priceBasis || 'the surveyed scope',
-    priceFactors:
-      override.priceFactors?.length
-        ? override.priceFactors
-        : [
-            'Capacity and equipment selection',
-            'Access, containment and pipe route',
-            'Lead time and site phasing',
-          ],
-    includes:
-      override.includes?.length
-        ? override.includes
-        : [
-            'Site survey and measured load',
-            'Equipment supply and installation',
-            'Commissioning record and handover file',
-          ],
-    excludes:
-      override.excludes?.length
-        ? override.excludes
-        : [
-            'Civil work and structural openings',
-            'Electrical point to the unit',
-            'Society NOC and lift charges',
-          ],
+    priceFactors: override.priceFactors?.length
+      ? override.priceFactors
+      : [
+          'Capacity and equipment selection',
+          'Access, containment and pipe route',
+          'Lead time and site phasing',
+        ],
+    includes: override.includes?.length
+      ? override.includes
+      : [
+          'Site survey and measured load',
+          'Equipment supply and installation',
+          'Commissioning record and handover file',
+        ],
+    excludes: override.excludes?.length
+      ? override.excludes
+      : [
+          'Civil work and structural openings',
+          'Electrical point to the unit',
+          'Society NOC and lift charges',
+        ],
     specs,
-    selection:
-      override.selection?.length
-        ? override.selection.map((entry): Pair => [entry.title, entry.body])
-        : [['Selection spec', catalogue.specification]],
+    selection: override.selection?.length
+      ? override.selection.map((entry): Pair => [entry.title, entry.body])
+      : [['Selection spec', catalogue.specification]],
     site: override.site ?? [],
     steps: (override.steps ?? []).map((entry): Pair => [entry.title, entry.body]),
     faqs: (override.faqs ?? []).map((entry): Pair => [entry.question, entry.answer]),
@@ -171,7 +169,7 @@ export function ServiceDetailPage() {
       : undefined,
   })
 
-  if (!service) return <Navigate to="/services" replace />
+  if (!service) return <NotFound />
 
   const { catalogue } = service
   const liveById = new Map(liveServices.map((entry) => [entry.id, entry]))
@@ -214,8 +212,8 @@ export function ServiceDetailPage() {
             <span className="annot">Sizing helper</span>
             <h2 className="t-h2 mt-5 max-w-[12ch] text-fg">Start with the load.</h2>
             <p className="mt-5 max-w-[34ch] text-sm leading-relaxed text-fg-dim">
-              An indicative figure to frame the survey. Change the inputs, then send the numbers with
-              your brief — the lead arrives with the service and the calculation attached.
+              An indicative figure to frame the survey. Change the inputs, then send the numbers
+              with your brief — the lead arrives with the service and the calculation attached.
             </p>
             <ul className="mt-6 flex flex-col gap-2 border-t border-line pt-4 font-mono text-[9px] uppercase leading-relaxed tracking-[0.1em] text-fg-faint">
               <li>· Not a substitute for a measured load</li>
@@ -255,16 +253,25 @@ export function ServiceDetailPage() {
                 <span className="t-label">What happens next</span>
                 <ol className="mt-4 flex flex-col">
                   {[
-                    ['01', 'Lead logged', `Routed to the ${catalogue.name} desk with its service slug.`],
+                    [
+                      '01',
+                      'Lead logged',
+                      `Routed to the ${catalogue.name} desk with its service slug.`,
+                    ],
                     ['02', 'Engineer call', 'Within one working hour, during business hours.'],
                     ['03', 'Survey', `Scheduled in ${catalogue.timeline} where access allows.`],
                     ['04', 'Fixed quote', 'Itemised, with exclusions and GST shown.'],
                   ].map(([index, title, body]) => (
-                    <li key={index} className="flex gap-3 border-t border-line/70 py-3 first:border-t-0 first:pt-0">
+                    <li
+                      key={index}
+                      className="flex gap-3 border-t border-line/70 py-3 first:border-t-0 first:pt-0"
+                    >
                       <span className="t-num text-[9px] text-cold">{index}</span>
                       <span>
                         <span className="block text-[12px] text-fg">{title}</span>
-                        <span className="mt-0.5 block text-[11px] leading-snug text-fg-faint">{body}</span>
+                        <span className="mt-0.5 block text-[11px] leading-snug text-fg-faint">
+                          {body}
+                        </span>
                       </span>
                     </li>
                   ))}
@@ -298,7 +305,8 @@ export function ServiceDetailPage() {
                 </div>
                 <div className="thread mt-5" />
                 <p className="mt-4 text-[11px] leading-relaxed text-fg-faint">
-                  Cash, cheque, bank transfer or card on site. No payment gateway, no processing fee.
+                  Cash, cheque, bank transfer or card on site. No payment gateway, no processing
+                  fee.
                 </p>
               </div>
 
@@ -318,11 +326,41 @@ export function ServiceDetailPage() {
 
   const sectionOrder =
     catalogue.category === 'residential'
-      ? ['scope', 'calculator', 'technical', 'specs', 'process', 'pricing', 'faq', 'related', 'enquire']
+      ? [
+          'scope',
+          'calculator',
+          'technical',
+          'specs',
+          'process',
+          'pricing',
+          'faq',
+          'related',
+          'enquire',
+        ]
       : catalogue.category === 'commercial'
-        ? ['technical', 'specs', 'scope', 'calculator', 'process', 'pricing', 'faq', 'related', 'enquire']
+        ? [
+            'technical',
+            'specs',
+            'scope',
+            'calculator',
+            'process',
+            'pricing',
+            'faq',
+            'related',
+            'enquire',
+          ]
         : catalogue.category === 'industrial'
-          ? ['specs', 'technical', 'scope', 'calculator', 'process', 'pricing', 'faq', 'related', 'enquire']
+          ? [
+              'specs',
+              'technical',
+              'scope',
+              'calculator',
+              'process',
+              'pricing',
+              'faq',
+              'related',
+              'enquire',
+            ]
           : ['scope', 'process', 'specs', 'pricing', 'faq', 'related', 'enquire']
 
   return (
@@ -459,10 +497,7 @@ function ScopeBlock({ service }: { service: FullService }) {
             </ul>
           </ScrollReveal>
 
-          <ScrollReveal
-            delay={0.06}
-            className="border border-line/80 border-dashed bg-base/40 p-6"
-          >
+          <ScrollReveal delay={0.06} className="border border-line/80 border-dashed bg-base/40 p-6">
             <div className="flex items-center justify-between gap-3">
               <span className="t-label">Not included · priced separately</span>
               <span className="t-num text-[10px] text-fg-faint">
@@ -487,7 +522,13 @@ function ScopeBlock({ service }: { service: FullService }) {
   )
 }
 
-function TechnicalBlock({ service, equipmentBrands }: { service: FullService; equipmentBrands: string[] }) {
+function TechnicalBlock({
+  service,
+  equipmentBrands,
+}: {
+  service: FullService
+  equipmentBrands: string[]
+}) {
   const standards = service.standards ?? defaultStandards
   return (
     <section className="section border-b border-line bg-panel/20">
@@ -589,10 +630,7 @@ function SpecsBlock({ service }: { service: FullService }) {
           <ScrollReveal className="md:col-span-7">
             <dl className="border-t border-line">
               {service.specs.map(([label, value]) => (
-                <div
-                  key={label}
-                  className="grid grid-cols-2 gap-4 border-b border-line/70 py-3.5"
-                >
+                <div key={label} className="grid grid-cols-2 gap-4 border-b border-line/70 py-3.5">
                   <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">
                     {label}
                   </dt>
@@ -652,7 +690,15 @@ function ProcessBlock({ service }: { service: FullService }) {
                       {String(index + 1).padStart(2, '0')}
                     </span>
                     <Icon
-                      name={index === 0 ? 'search' : index === 1 ? 'gauge' : index === 2 ? 'wrench' : 'check'}
+                      name={
+                        index === 0
+                          ? 'search'
+                          : index === 1
+                            ? 'gauge'
+                            : index === 2
+                              ? 'wrench'
+                              : 'check'
+                      }
                       size={16}
                       className="text-fg-faint"
                     />
@@ -724,7 +770,9 @@ function PricingBlock({ service }: { service: FullService }) {
                   key={factor}
                   className="flex gap-3 border-t border-line/70 py-3 first:border-t-0 first:pt-0"
                 >
-                  <span className="t-num text-[9px] text-cold">{String(index + 1).padStart(2, '0')}</span>
+                  <span className="t-num text-[9px] text-cold">
+                    {String(index + 1).padStart(2, '0')}
+                  </span>
                   <span className="text-[12px] leading-snug text-fg-dim">{factor}</span>
                 </li>
               ))}
@@ -734,7 +782,13 @@ function PricingBlock({ service }: { service: FullService }) {
               Cash · cheque · bank transfer · card on site. No payment gateway.
             </p>
             <div className="mt-5">
-              <ButtonLink to={`/contact?service=${service.id}`} variant="secondary" size="sm" full icon="arrow-right">
+              <ButtonLink
+                to={`/contact?service=${service.id}`}
+                variant="secondary"
+                size="sm"
+                full
+                icon="arrow-right"
+              >
                 Send the brief
               </ButtonLink>
             </div>
@@ -806,7 +860,11 @@ function RelatedBlock({ service, related, project }: RelatedBlockProps) {
               className="wash group flex flex-col justify-between gap-5 border border-line bg-panel/60 p-5 transition-colors duration-2 hover:border-cold/40"
             >
               <div className="flex items-start justify-between gap-3">
-                <Icon name={entry.catalogue.icon} size={24} className="text-fg-dim transition-colors duration-2 group-hover:text-cold" />
+                <Icon
+                  name={entry.catalogue.icon}
+                  size={24}
+                  className="text-fg-dim transition-colors duration-2 group-hover:text-cold"
+                />
                 <span className="t-num text-[9px] text-fg-faint">{entry.catalogue.index}</span>
               </div>
               <div>

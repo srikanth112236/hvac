@@ -36,13 +36,15 @@ The App Service expects a deployment package that contains the monorepo
 
 ```bash
 npm ci
-npm run build:prerender        # public HTML + meta/JSON-LD in apps/web/dist
+npm run build                  # client assets + dist/server SSR entry
+# npm run build:prerender      # optional static fallbacks for hosts without Node
 # package the repository, then deploy to the API and web App Services
 ```
 
-The web app proxies `/api`, `/uploads`, `/sitemap.xml`, `/robots.txt`,
-`/llms.txt` and `/feed.xml` to `API_ORIGIN`, so crawlable files stay on the site
-origin.
+The web App Service must run `npm run serve -w @hvac/web` with
+`API_ORIGIN=http://<api-host>`; it server-renders public routes and proxies
+`/api`, `/uploads`, `/sitemap.xml`, `/robots.txt`, `/llms.txt` and `/feed.xml` to
+the API, so crawlable files stay on the site origin.
 
 ## Important limits
 

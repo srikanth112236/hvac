@@ -1,14 +1,14 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
+import type { SiteContent } from '@hvac/shared'
 import { useBrand } from '@/brand/BrandProvider'
 import { useSiteContent } from '@/content/SiteContentProvider'
+import type { BrandConfig } from '@/brand/brand.config'
 
-/** Runtime SEO for the client-rendered site. The admin owns the metadata
- * document; this hook resolves the current route against it and writes the
- * title, description, canonical, Open Graph, Twitter and JSON-LD records.
- *
- * Rendering happens in the browser, so crawlers that execute JavaScript (and
- * the Googlebot renderer) see the same tags as a visitor. The API also serves
- * sitemap.xml and robots.txt from the same content document.
+/**
+ * SEO is built once per route in a pure payload, then applied to the DOM on the
+ * client or captured by the SSR entry and injected into the first HTML response.
+ * Crawlers therefore see the same title, description, canonical and JSON-LD as
+ * a visitor after hydration.
  */
 
 export interface SeoServiceInput {
@@ -17,11 +17,8 @@ export interface SeoServiceInput {
   category: string
 }
 export interface SeoOptions {
-  /** Exact public route, e.g. "/services/vrf-systems". */
   path: string
-  /** Page-level title that overrides the metadata record. */
   title?: string
-  /** Page-level description that overrides the metadata record. */
   description?: string
   noindex?: boolean
   type?: 'website' | 'article'
@@ -43,7 +40,220 @@ export interface SeoArticleInput {
   tags: string[]
 }
 
+export interface SeoPayload {
+  documentTitle: string
+  description: string
+  keywords: string
+  robots: string
+  canonical: string
+  image: string
+  type: 'website' | 'article'
+  siteName: string
+  locale: string
+  author: string
+  jsonLd: Record<string, unknown>
+}
+
 const META_ATTR = 'data-hvac-seo'
+let captured: SeoPayload | null = null
+
+export function beginSeoCapture(): void {
+  captured = null
+}
+
+export function takeSeoCapture(): SeoPayload | null {
+  return captured
+}
+
+function absoluteUrl(base: string, value: string): string {
+  if (!value) return base
+  if (/^https?:\/\//i.test(value)) return value
+  return `${base}${value.startsWith('/') ? '' : '/'}${value}`
+}
+
+function applyTemplate(template: string, page: string, brand: string): string {
+  const source = template.trim() || '{page} · {brand}'
+  const withPage = source.split('{page}').join(page)
+  return withPage.split('{brand}').join(brand)
+}
+
+export function buildSeoPayload(
+  options: SeoOptions,
+  content: SiteContent,
+  brand: BrandConfig,
+): SeoPayload {
+  const {
+    path,
+    title,
+    description,
+    noindex = false,
+    type = 'website',
+    faqs,
+    service,
+    article,
+    breadcrumbs,
+    itemList,
+  } = options
+  const seo = content.seo
+  const page = seo.pages.find((entry) => entry.path === path) ?? null
+  const base = seo.canonicalBase.replace(/\/+$/, '')
+  const resolvedTitle = title ?? page?.title ?? ''
+  const documentTitle = resolvedTitle
+    ? applyTemplate(seo.titleTemplate, resolvedTitle, brand.name)
+    : `${brand.name} — ${brand.tagline}`
+  const resolvedDescription = description ?? page?.description ?? seo.defaultDescription
+  const canonical = `${base}${path.startsWith('/') ? path : `/${path}`}`
+  const image = absoluteUrl(base, seo.ogImage)
+  const robots = noindex ? 'noindex, nofollow' : seo.robots
+
+  const trail = breadcrumbs
+    ? breadcrumbs
+    : path === '/'
+      ? []
+      : [{ name: resolvedTitle || brand.name, path }]
+
+  const graph: Record<string, unknown>[] = [
+    {
+      '@type': ['Organization', 'HVACBusiness'],
+      '@id': `${base}/#organization`,
+      name: brand.name,
+      legalName: brand.legalName,
+      url: base,
+      description: brand.description,
+      telephone: brand.contact.phone,
+      email: brand.contact.email,
+      image,
+      logo: { '@type': 'ImageObject', url: image },
+      address: {
+        '@type': 'PostalAddress',
+        streetAddress: [brand.address.line1, brand.address.line2].filter(Boolean).join(', '),
+        addressLocality: brand.address.locality,
+        addressRegion: brand.address.region,
+        postalCode: brand.address.postalCode,
+        addressCountry: brand.address.country,
+      },
+      areaServed: brand.serviceAreas.map((area) => ({
+        '@type': 'City',
+        name: area.city,
+      })),
+      openingHoursSpecification: [
+        {
+          '@type': 'OpeningHoursSpecification',
+          dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+          description: brand.hours.weekdays,
+        },
+        {
+          '@type': 'OpeningHoursSpecification',
+          dayOfWeek: 'Saturday',
+          description: brand.hours.saturday,
+        },
+      ],
+      knowsAbout: seo.keywords,
+      slogan: brand.tagline,
+    },
+    {
+      '@type': 'WebSite',
+      '@id': `${base}/#website`,
+      url: base,
+      name: brand.name,
+      description: seo.defaultDescription,
+      inLanguage: 'en-US',
+      publisher: { '@id': `${base}/#organization` },
+    },
+    {
+      '@type': 'BreadcrumbList',
+      '@id': `${canonical}#breadcrumb`,
+      itemListElement: [
+        {
+          '@type': 'ListItem',
+          position: 1,
+          name: 'Home',
+          item: `${base}/`,
+        },
+        ...trail.map((crumb, index) => ({
+          '@type': 'ListItem',
+          position: index + 2,
+          name: crumb.name,
+          item: `${base}${crumb.path.startsWith('/') ? crumb.path : `/${crumb.path}`}`,
+        })),
+      ],
+    },
+  ]
+
+  if (faqs?.length) {
+    graph.push({
+      '@type': 'FAQPage',
+      '@id': `${canonical}#faq`,
+      mainEntity: faqs.map((faq) => ({
+        '@type': 'Question',
+        name: faq.question,
+        acceptedAnswer: { '@type': 'Answer', text: faq.answer },
+      })),
+    })
+  }
+  if (service) {
+    graph.push({
+      '@type': 'Service',
+      '@id': `${canonical}#service`,
+      name: service.name,
+      description: service.description,
+      serviceType: service.category,
+      url: canonical,
+      provider: { '@id': `${base}/#organization` },
+      areaServed: brand.serviceAreas.map((area) => ({ '@type': 'City', name: area.city })),
+    })
+  }
+  if (article) {
+    graph.push({
+      '@type': 'Article',
+      '@id': `${canonical}#article`,
+      headline: article.title,
+      description: article.description,
+      datePublished: article.publishedAt,
+      dateModified: article.updatedAt || article.publishedAt,
+      articleSection: article.category,
+      keywords: article.tags.join(', '),
+      inLanguage: 'en-US',
+      mainEntityOfPage: { '@type': 'WebPage', '@id': canonical },
+      author: {
+        '@type': 'Person',
+        name: article.authorName,
+        jobTitle: article.authorRole,
+      },
+      publisher: { '@id': `${base}/#organization` },
+      image,
+    })
+  }
+  if (itemList?.length) {
+    graph.push({
+      '@type': 'ItemList',
+      '@id': `${canonical}#items`,
+      name: resolvedTitle || brand.name,
+      numberOfItems: itemList.length,
+      itemListElement: itemList.map((entry, index) => ({
+        '@type': 'ListItem',
+        position: index + 1,
+        name: entry.name,
+        url: `${base}${entry.path.startsWith('/') ? entry.path : `/${entry.path}`}`,
+        ...(entry.description ? { description: entry.description } : {}),
+      })),
+    })
+  }
+
+  return {
+    documentTitle,
+    description: resolvedDescription,
+    keywords: seo.keywords.join(', '),
+    robots,
+    canonical,
+    image,
+    type,
+    siteName: brand.name,
+    locale: 'en_US',
+    author: brand.legalName,
+    jsonLd: { '@context': 'https://schema.org', '@graph': graph },
+  }
+}
 
 function upsertMeta(attr: 'name' | 'property', key: string, content: string): void {
   let element = document.head.querySelector<HTMLMetaElement>(`meta[${attr}="${key}"]`)
@@ -67,16 +277,40 @@ function upsertCanonical(href: string): void {
   link.href = href
 }
 
-function absoluteUrl(base: string, value: string): string {
-  if (!value) return base
-  if (/^https?:\/\//i.test(value)) return value
-  return `${base}${value.startsWith('/') ? '' : '/'}${value}`
-}
+function applySeo(payload: SeoPayload): void {
+  document.title = payload.documentTitle
+  upsertMeta('name', 'description', payload.description)
+  upsertMeta('name', 'keywords', payload.keywords)
+  upsertMeta('name', 'robots', payload.robots)
+  upsertMeta('name', 'author', payload.author)
+  upsertCanonical(payload.canonical)
 
-function applyTemplate(template: string, page: string, brand: string): string {
-  const source = template.trim() || '{page} · {brand}'
-  const withPage = source.split('{page}').join(page)
-  return withPage.split('{brand}').join(brand)
+  upsertMeta('property', 'og:type', payload.type)
+  upsertMeta('property', 'og:site_name', payload.siteName)
+  upsertMeta('property', 'og:title', payload.documentTitle)
+  upsertMeta('property', 'og:description', payload.description)
+  upsertMeta('property', 'og:url', payload.canonical)
+  upsertMeta('property', 'og:image', payload.image)
+  upsertMeta(
+    'property',
+    'og:image:alt',
+    `${payload.siteName} — ${payload.description.slice(0, 120)}`,
+  )
+  upsertMeta('property', 'og:locale', payload.locale)
+
+  upsertMeta('name', 'twitter:card', 'summary_large_image')
+  upsertMeta('name', 'twitter:title', payload.documentTitle)
+  upsertMeta('name', 'twitter:description', payload.description)
+  upsertMeta('name', 'twitter:image', payload.image)
+
+  let script = document.getElementById('hvac-jsonld') as HTMLScriptElement | null
+  if (!script) {
+    script = document.createElement('script')
+    script.id = 'hvac-jsonld'
+    script.type = 'application/ld+json'
+    document.head.appendChild(script)
+  }
+  script.textContent = JSON.stringify(payload.jsonLd)
 }
 
 export function useSeo(options: SeoOptions): void {
@@ -95,208 +329,43 @@ export function useSeo(options: SeoOptions): void {
     itemList,
   } = options
 
-  // Stable primitive dependencies so the effect does not re-run on unrelated renders.
   const faqsKey = faqs && faqs.length ? JSON.stringify(faqs) : ''
   const serviceKey = service ? JSON.stringify(service) : ''
   const articleKey = article ? JSON.stringify(article) : ''
   const breadcrumbsKey = breadcrumbs ? JSON.stringify(breadcrumbs) : ''
   const itemListKey = itemList ? JSON.stringify(itemList) : ''
 
+  const payload = useMemo(
+    () =>
+      buildSeoPayload(
+        { path, title, description, noindex, type, faqs, service, article, breadcrumbs, itemList },
+        content,
+        brand,
+      ),
+    // Stable primitives keep this cheap while still rebuilding on content edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      content.seo,
+      brand,
+      path,
+      title,
+      description,
+      noindex,
+      type,
+      faqsKey,
+      serviceKey,
+      articleKey,
+      breadcrumbsKey,
+      itemListKey,
+    ],
+  )
+
+  if (typeof window === 'undefined') capture(payload)
   useEffect(() => {
-    const seo = content.seo
-    const page = seo.pages.find((entry) => entry.path === path) ?? null
-    const base = seo.canonicalBase.replace(/\/+$/, '')
-    const resolvedTitle = title ?? page?.title ?? ''
-    const documentTitle = resolvedTitle
-      ? applyTemplate(seo.titleTemplate, resolvedTitle, brand.name)
-      : `${brand.name} — ${brand.tagline}`
-    const resolvedDescription = description ?? page?.description ?? seo.defaultDescription
-    const canonical = `${base}${path.startsWith('/') ? path : `/${path}`}`
-    const image = absoluteUrl(base, seo.ogImage)
-    const robots = noindex ? 'noindex, nofollow' : seo.robots
+    applySeo(payload)
+  }, [payload])
+}
 
-    document.title = documentTitle
-    upsertMeta('name', 'description', resolvedDescription)
-    upsertMeta('name', 'keywords', seo.keywords.join(', '))
-    upsertMeta('name', 'robots', robots)
-    upsertMeta('name', 'author', brand.legalName)
-    upsertCanonical(canonical)
-
-    upsertMeta('property', 'og:type', type)
-    upsertMeta('property', 'og:site_name', brand.name)
-    upsertMeta('property', 'og:title', documentTitle)
-    upsertMeta('property', 'og:description', resolvedDescription)
-    upsertMeta('property', 'og:url', canonical)
-    upsertMeta('property', 'og:image', image)
-    upsertMeta('property', 'og:image:alt', `${brand.name} — ${brand.tagline}`)
-    upsertMeta('property', 'og:locale', 'en_US')
-
-    upsertMeta('name', 'twitter:card', 'summary_large_image')
-    upsertMeta('name', 'twitter:title', documentTitle)
-    upsertMeta('name', 'twitter:description', resolvedDescription)
-    upsertMeta('name', 'twitter:image', image)
-
-    const trail = breadcrumbsKey
-      ? (JSON.parse(breadcrumbsKey) as { name: string; path: string }[])
-      : path === '/'
-        ? []
-        : [{ name: resolvedTitle || brand.name, path }]
-
-    const graph: Record<string, unknown>[] = [
-      {
-        '@type': ['Organization', 'HVACBusiness'],
-        '@id': `${base}/#organization`,
-        name: brand.name,
-        legalName: brand.legalName,
-        url: base,
-        description: brand.description,
-        telephone: brand.contact.phone,
-        email: brand.contact.email,
-        image,
-        logo: { '@type': 'ImageObject', url: image },
-        address: {
-          '@type': 'PostalAddress',
-          streetAddress: [brand.address.line1, brand.address.line2].filter(Boolean).join(', '),
-          addressLocality: brand.address.locality,
-          addressRegion: brand.address.region,
-          postalCode: brand.address.postalCode,
-          addressCountry: brand.address.country,
-        },
-        areaServed: brand.serviceAreas.map((area) => ({
-          '@type': 'City',
-          name: area.city,
-        })),
-        openingHoursSpecification: [
-          {
-            '@type': 'OpeningHoursSpecification',
-            dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
-            description: brand.hours.weekdays,
-          },
-          {
-            '@type': 'OpeningHoursSpecification',
-            dayOfWeek: 'Saturday',
-            description: brand.hours.saturday,
-          },
-        ],
-        knowsAbout: seo.keywords,
-        slogan: brand.tagline,
-      },
-      {
-        '@type': 'WebSite',
-        '@id': `${base}/#website`,
-        url: base,
-        name: brand.name,
-        description: seo.defaultDescription,
-        inLanguage: 'en-US',
-        publisher: { '@id': `${base}/#organization` },
-      },
-      {
-        '@type': 'BreadcrumbList',
-        '@id': `${canonical}#breadcrumb`,
-        itemListElement: [
-          {
-            '@type': 'ListItem',
-            position: 1,
-            name: 'Home',
-            item: `${base}/`,
-          },
-          ...trail.map((crumb, index) => ({
-            '@type': 'ListItem',
-            position: index + 2,
-            name: crumb.name,
-            item: `${base}${crumb.path.startsWith('/') ? crumb.path : `/${crumb.path}`}`,
-          })),
-        ],
-      },
-    ]
-
-    if (faqsKey) {
-      const parsed = JSON.parse(faqsKey) as { question: string; answer: string }[]
-      graph.push({
-        '@type': 'FAQPage',
-        '@id': `${canonical}#faq`,
-        mainEntity: parsed.map((faq) => ({
-          '@type': 'Question',
-          name: faq.question,
-          acceptedAnswer: { '@type': 'Answer', text: faq.answer },
-        })),
-      })
-    }
-
-    if (serviceKey) {
-      const parsed = JSON.parse(serviceKey) as SeoServiceInput
-      graph.push({
-        '@type': 'Service',
-        '@id': `${canonical}#service`,
-        name: parsed.name,
-        description: parsed.description,
-        serviceType: parsed.category,
-        url: canonical,
-        provider: { '@id': `${base}/#organization` },
-        areaServed: brand.serviceAreas.map((area) => ({ '@type': 'City', name: area.city })),
-      })
-    }
-
-    if (articleKey) {
-      const parsed = JSON.parse(articleKey) as SeoArticleInput
-      graph.push({
-        '@type': 'Article',
-        '@id': `${canonical}#article`,
-        headline: parsed.title,
-        description: parsed.description,
-        datePublished: parsed.publishedAt,
-        dateModified: parsed.updatedAt || parsed.publishedAt,
-        articleSection: parsed.category,
-        keywords: parsed.tags.join(', '),
-        inLanguage: 'en-US',
-        mainEntityOfPage: { '@type': 'WebPage', '@id': canonical },
-        author: {
-          '@type': 'Person',
-          name: parsed.authorName,
-          jobTitle: parsed.authorRole,
-        },
-        publisher: { '@id': `${base}/#organization` },
-        image,
-      })
-    }
-
-    if (itemListKey) {
-      const parsed = JSON.parse(itemListKey) as { name: string; path: string; description?: string }[]
-      graph.push({
-        '@type': 'ItemList',
-        '@id': `${canonical}#items`,
-        name: resolvedTitle || brand.name,
-        numberOfItems: parsed.length,
-        itemListElement: parsed.map((entry, index) => ({
-          '@type': 'ListItem',
-          position: index + 1,
-          name: entry.name,
-          url: `${base}${entry.path.startsWith('/') ? entry.path : `/${entry.path}`}`,
-          ...(entry.description ? { description: entry.description } : {}),
-        })),
-      })
-    }
-
-    let script = document.getElementById('hvac-jsonld') as HTMLScriptElement | null
-    if (!script) {
-      script = document.createElement('script')
-      script.id = 'hvac-jsonld'
-      script.type = 'application/ld+json'
-      document.head.appendChild(script)
-    }
-    script.textContent = JSON.stringify({ '@context': 'https://schema.org', '@graph': graph })
-  }, [
-    content.seo,
-    brand,
-    path,
-    title,
-    description,
-    noindex,
-    type,
-    faqsKey,
-    serviceKey,
-    articleKey,
-    breadcrumbsKey,
-    itemListKey,
-  ])
+function capture(payload: SeoPayload): void {
+  captured = payload
 }
