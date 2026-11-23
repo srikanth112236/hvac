@@ -17,3 +17,7 @@ apps/web/.turbo/
 .freebuff/
 playwright-report/
 test-results/
+infra/terraform/.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars

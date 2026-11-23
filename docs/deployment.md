@@ -1,14 +1,18 @@
 # Deployment and upgrade runbook
 
-## Topology
+## Architecture
 
 ```
 Internet
   └─ TLS / WAF / CDN
-       ├─ /            → static build of apps/web (dist/)
+       ├─ /            → Node web host (apps/web/server.mjs, prerendered dist)
        ├─ /uploads     → API (or object storage with the same path contract)
        └─ /api/v1      → Node API (apps/api)
 ```
+
+`infra/terraform` contains the Azure template for staging/production workspaces,
+including Key Vault, App Insights, 5xx alerts and availability tests. It is a
+template and must be validated against a sandbox subscription before applying.
 
 Serving the web build and the API under one origin avoids CORS entirely and keeps
 cookies `SameSite=Strict`. If they must be separate origins, set

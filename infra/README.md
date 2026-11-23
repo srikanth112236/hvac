@@ -1,11 +1,13 @@
 # Infrastructure
 
-Azure resources, Bicep templates and GitHub Actions live here from **Phase 10**:
+- `terraform/` — Azure App Service staging/production template: API + web host,
+  Key Vault, App Insights/Log Analytics, 5xx alerts, availability tests, storage
+  container reserved for backups.
+- `docs/deployment.md` — environment variables, build/prerender, same-origin SEO
+  files, upgrades, restore.
+- `docs/data-retention.md` — retention, erasure, backups.
 
-- App Service (Node 20) for SSR + API, staging and production slots
-- Azure Blob Storage + Front Door/CDN for media
-- Cosmos DB for MongoDB (vCore) or Atlas connection configuration
-- Azure Communication Services Email or SMTP settings
-- Key Vault, Application Insights, alerts and backups
-
-Nothing in this folder is deployed yet. Do not add credentials to the repository.
+The Terraform template is **not applied** in this repository. Validate it against
+a sandbox Azure subscription before production. The current JSON stores assume a
+single API instance with persistent `/home` storage; move to PostgreSQL/Azure
+Files before scaling out.

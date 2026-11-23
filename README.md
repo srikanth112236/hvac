@@ -42,17 +42,19 @@ development the floating switcher also flips it live; the choice is stored in
 
 - Public site: home, services + 22 detail pages, products, about, process, work,
   AMC, journal, contact, quote, book, legal, 404, both themes.
-- Admin: overview, leads, customers + full customer file, invoices, expenses,
-  team/payroll, reminders, newsletters, coupons, content studio, revisions,
-  journal, media, settings, audit log, data health, GDPR erasure, backup export.
+- Admin: overview, leads, customers + full customer file, **dispatch**, invoices,
+  expenses, team/payroll, reminders, newsletters, coupons, content studio,
+  revisions, journal, media, settings, **global search (Ctrl K), CSV exports**,
+  **RBAC users**, audit log, data health, GDPR erasure, backup export.
 - Customer portal: overview, bookings (book, reschedule, cancel), invoices and
   print, quotations (accept / request changes / print), equipment + service
   history, AMC cover + renewal request, job reports (checklist/photos), support
   tickets, profile, multiple sites, notification preferences, password reset,
   email verification.
 - Operations: live admin refresh, cross-tab content sync, 10 s content polling with
-  ETag/304, background jobs (reminders, AMC windows, digest, backups, retention),
-  encrypted JSON stores, rate limiting, CSP/consent, audit trail.
+  ETag/304, **prerendered public HTML with meta/JSON-LD**, same-origin sitemap/
+  robots/feed, background jobs (reminders, AMC windows, digest, backups,
+  retention), encrypted JSON stores, rate limiting, CSP/consent, audit trail.
 
 ## Security
 

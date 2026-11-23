@@ -26,7 +26,7 @@ ownership cannot be verified.
 
 | Area | Control |
 |---|---|
-| Admin auth | Single owner, HttpOnly + SameSite=Strict cookie, 12 h sessions persisted server-side, 8 attempts/IP/15 min, mutation origin + header checks |
+| Admin auth | Multi-user RBAC (`owner`, `admin`, `manager`, `accountant`, `viewer`) with scrypt password hashes; environment owner is the recovery account; HttpOnly + SameSite=Strict cookie, 12 h persisted sessions, per-IP and per-account throttling, origin + header checks; write-role enforcement on the API |
 | Customer auth | Password + admin approval; production requires email verification token (hashed, 24 h, single use); reset tokens (hashed, 1 h, single use) revoke sessions |
 | Authorization | Customer routes scope every record by `customerId`; admin routes require a live session; no public admin reads |
 | Public intake | Per-route limits (leads 10/10 min, callbacks 6/10 min, registration 6/h, forgot 5/h, reset 10/h, verification 3–10/h) plus 300 req/min/IP global |
@@ -37,7 +37,7 @@ ownership cannot be verified.
 | Web headers | CSP (meta at build + `_headers`), HSTS, `X-Frame-Options: DENY`, Referrer-Policy, Permissions-Policy |
 | Privacy | Consent banner, analytics opt-in only; erasure endpoint; retention windows for audit/email logs; export and 7-day backups exclude sessions/resets |
 | Reliability | `express-async-errors`; structured request logs with ids; `/health` and `/ready`; migrations; daily backups |
-| Dependencies | Zod 4.6.7, Vite 8.3.8, `npm audit` gated at high/critical in CI |
+| Dependencies | Zod 4.6.7, React Router 7.18, Vite 8.3; unused Tiptap removed; `npm audit` reports 0 advisories and CI gates high/critical |
 
 ## Residual risks
 
@@ -45,10 +45,11 @@ ownership cannot be verified.
   The JSON business/PII stores are encrypted at rest when the production key is set.
 - Sessions, rate limits and jobs are process-local. Run one API instance until a
   shared store is introduced.
-- 32 moderate dependency advisories remain (Tiptap 2 admin editor, React Router 6,
-  dev-only Vite paths). None is high or critical.
+- The Azure Terraform template has not been applied or validated against a
+  subscription in this workspace.
 - A formal penetration test has not been performed.
-- The deployment is not a multi-tenant RBAC system; there is one owner account.
+- The deployment is not a multi-tenant system; roles are staff roles inside one
+  works desk, not tenants.
 
 See `docs/security-verification.md` for the tested checks and
 `docs/data-retention.md` for the data policy.

@@ -19,6 +19,8 @@ checks, build verification. **Not** a formal penetration test.
 | 8 | PII retention/export/delete | Erasure endpoint + UI, retention jobs, export, backups excluding sessions | Erase returned counts and removed customer/site/quote; `/admin/export` downloads a bundle; `/admin/data-health` reports 0 issues |
 | 9 | Async handler failures | `express-async-errors` before route registration | Forced async throw → JSON `500`; process remained healthy |
 | 10 | Plaintext PII at rest | AES-256-GCM store encryption; production requires a 32+ char key | Fresh production boot wrote `ENC1:` files; restart with the correct key read them; a wrong key refused to start |
+| 11 | Single shared admin account | Multi-user RBAC with write-role enforcement | Viewer can read metrics, gets `403` on writes and user management; disable revokes the session |
+| 12 | Dependency advisories | Zod 4, React Router 7, Vite 8, unused Tiptap removed | `npm audit` reports 0 vulnerabilities |
 
 Additional checks:
 
@@ -32,7 +34,7 @@ Additional checks:
 | `npm run typecheck` | Pass |
 | `npm run lint` | Pass |
 | `npm run build` | Pass |
-| `npm run audit` (`--audit-level=high`) | Exit 0; 0 high / 0 critical; 32 moderate |
+| `npm run audit` (`--audit-level=high`) | Exit 0; **0 vulnerabilities** |
 | Vite dev + preview | `200`; API proxy `200` |
 | Test data after run | Removed; stores returned to seed/empty state |
 
@@ -41,8 +43,8 @@ Additional checks:
 - Media files under `uploads/` are public images and are not encrypted.
 - Sessions, rate limits and jobs are process-local; one API instance until a
   shared store is added.
-- 32 moderate advisories remain (admin Tiptap 2, React Router 6, dev-only Vite
-  advisories). No high or critical.
+- The Azure Terraform template has not been applied or validated against a
+  subscription in this workspace.
 - No third-party penetration test has been performed.
-- The original 10-phase gap matrix still has product-level items outside this
-  security pass: SSR, RBAC/multi-user, technician PWA, database migration.
+- Remaining product gaps: a true job model/AMC auto-scheduling and a
+  multi-instance database. SSR/prerendering and RBAC are implemented.
