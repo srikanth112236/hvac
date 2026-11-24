@@ -18,7 +18,9 @@ npm run dev       # web on http://127.0.0.1:5175, api on http://127.0.0.1:4000
 npm run build && npm run serve:web   # production SSR + hydration on :3000
 ```
 
-- Design system: **http://127.0.0.1:5175/__styleguide** (development only, noindex)
+- Design system: **http://127.0.0.1:5175/__styleguide** (development only, noindex).
+  All selects and date/time fields are custom searchable listboxes and calendar
+  pickers — no native browser pickers. See `docs/ui-controls.md`.
 - API health: **http://127.0.0.1:4000/api/v1/health**
 - API readiness: **http://127.0.0.1:4000/api/v1/ready**
 

@@ -29,15 +29,18 @@ test('newsletter platform shows all campaigns, suppression and advanced schedule
   await page.getByRole('button', { name: 'Schedule', exact: true }).click()
   await expect(page.getByText('Send schedule')).toBeVisible()
 
-  await page.getByLabel('Repeat').selectOption('weekly')
+  await page.getByLabel('Repeat').click()
+  await page.getByRole('option', { name: 'Weekly', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Mon' })).toBeVisible()
   await expect(page.getByLabel('End date')).toBeVisible()
 
-  await page.getByLabel('Repeat').selectOption('monthly')
-  await page.getByLabel('Monthly pattern').selectOption('nth-weekday')
+  await page.getByLabel('Repeat').click()
+  await page.getByRole('option', { name: 'Monthly', exact: true }).click()
+  await page.getByLabel('Monthly pattern').click()
+  await page.getByRole('option', { name: 'Nth weekday', exact: true }).click()
   await expect(page.getByLabel('Week', { exact: true })).toBeVisible()
   await expect(page.getByLabel('Weekday', { exact: true })).toBeVisible()
 
-  await page.getByLabel('First send').fill('2026-12-01T09:00')
+  await page.getByRole('button', { name: 'Tomorrow 9am', exact: true }).click()
   await expect(page.getByText(/Every month/i)).toBeVisible()
 })

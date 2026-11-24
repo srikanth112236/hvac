@@ -3,11 +3,11 @@ import {
   useId,
   type InputHTMLAttributes,
   type ReactNode,
-  type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from 'react'
 import { cn } from '@/lib/cn'
 import { Icon } from '@/components/icons'
+import { DateValueField } from './Picker'
 
 /* -------------------------------------------------------------------------- */
 /*  Shared field chrome                                                       */
@@ -82,6 +82,24 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
 ) {
   const autoId = useId()
   const inputId = id ?? autoId
+  if (rest.type === 'date' || rest.type === 'datetime-local' || rest.type === 'time') {
+    const { type, value, defaultValue, ...pickerProps } = rest
+    return (
+      <DateValueField
+        {...pickerProps}
+        type={type as 'date' | 'datetime-local' | 'time'}
+        label={label}
+        hint={hint}
+        error={error}
+        labelAction={labelAction}
+        required={required}
+        id={inputId}
+        className={className}
+        value={typeof value === 'string' ? value : undefined}
+        defaultValue={typeof defaultValue === 'string' ? defaultValue : undefined}
+      />
+    )
+  }
   return (
     <Field
       label={label}
@@ -133,93 +151,6 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
     </Field>
   )
 })
-
-interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
-  label?: ReactNode
-  hint?: ReactNode
-  error?: string
-  options: { value: string; label: string; disabled?: boolean }[]
-  placeholder?: string
-}
-
-export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(
-  { label, hint, error, options, placeholder, className, id, required, ...rest },
-  ref,
-) {
-  const autoId = useId()
-  const inputId = id ?? autoId
-  return (
-    <Field label={label} hint={hint} error={error} required={required} htmlFor={inputId}>
-      <div className="relative">
-        <select
-          ref={ref}
-          id={inputId}
-          aria-invalid={error ? true : undefined}
-          className={cn(
-            controlBase,
-            stateClasses(error),
-            'h-[var(--btn-h-md)] appearance-none pr-10',
-            className,
-          )}
-          {...rest}
-        >
-          {placeholder ? (
-            <option value="" disabled>
-              {placeholder}
-            </option>
-          ) : null}
-          {options.map((option) => (
-            <option key={option.value} value={option.value} disabled={option.disabled}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        <Icon
-          name="chevron-down"
-          size={16}
-          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-fg-faint"
-        />
-      </div>
-    </Field>
-  )
-})
-
-/* -------------------------------------------------------------------------- */
-/*  Date + time                                                               */
-/* -------------------------------------------------------------------------- */
-
-interface DatePickerProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {
-  label?: ReactNode
-  hint?: ReactNode
-  error?: string
-}
-
-export function DatePicker({ label, hint, error, className, id, required, ...rest }: DatePickerProps) {
-  const autoId = useId()
-  const inputId = id ?? autoId
-  return (
-    <Field label={label} hint={hint} error={error} required={required} htmlFor={inputId}>
-      <div className="relative">
-        <input
-          id={inputId}
-          type="date"
-          className={cn(
-            controlBase,
-            stateClasses(error),
-            'h-[var(--btn-h-md)] pr-10 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0',
-            className,
-          )}
-          {...rest}
-        />
-        <Icon
-          name="calendar"
-          size={16}
-          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-fg-faint"
-        />
-      </div>
-    </Field>
-  )
-}
 
 export interface TimeSlot {
   value: string

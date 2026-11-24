@@ -669,21 +669,23 @@ export function AdminReminders() {
                   >
                     <Icon name="check" size={11} /> Done
                   </button>
-                  <select
+                  <Select
                     aria-label={`Snooze ${reminder.title}`}
                     value=""
+                    placeholder="Snooze"
+                    containerClassName="w-24"
+                    className="h-8 px-2 text-[8px]"
                     onChange={(event) => {
                       const minutes = Number(event.target.value)
                       if (minutes) void snooze(reminder, minutes)
                     }}
-                    className="h-8 border border-line bg-transparent px-2 font-mono text-[8px] uppercase tracking-[0.08em] text-fg-dim outline-none hover:border-cold/50 hover:text-cold"
-                  >
-                    <option value="">Snooze</option>
-                    <option value="60">1 hour</option>
-                    <option value="1440">1 day</option>
-                    <option value="4320">3 days</option>
-                    <option value="10080">1 week</option>
-                  </select>
+                    options={[
+                      { value: '60', label: '1 hour' },
+                      { value: '1440', label: '1 day' },
+                      { value: '4320', label: '3 days' },
+                      { value: '10080', label: '1 week' },
+                    ]}
+                  />
                 </>
               )}
               <button

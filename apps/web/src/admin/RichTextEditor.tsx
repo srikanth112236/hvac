@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SiteMediaAsset } from '@hvac/shared'
 import { cn } from '@/lib/cn'
+import { Select } from '@/components/ui'
 import { MediaPicker } from '@/admin/MediaPicker'
 
 interface RichTextEditorProps {
@@ -176,24 +177,25 @@ export function RichTextEditor({
       <div className="sticky top-0 z-10 flex flex-wrap items-center gap-1 border-b border-line bg-panel/95 px-2 py-1.5 backdrop-blur">
         {mode === 'visual' ? (
           <>
-            <select
+            <Select
               aria-label="Text style"
               value={formatValue}
-              onMouseDown={rememberSelection}
+              containerClassName="w-28"
+              className="h-7 px-1.5 py-0 text-[9px]"
               onChange={(event) => {
                 const value = event.target.value
                 setFormatValue(value)
                 if (value) exec('formatBlock', `<${value}>`)
               }}
-              className="h-7 border border-line bg-base px-1.5 font-mono text-[9px] uppercase tracking-[0.06em] text-fg-dim outline-none hover:border-cold/50"
-            >
-              <option value="">Format</option>
-              <option value="p">Paragraph</option>
-              <option value="h1">Heading 1</option>
-              <option value="h2">Heading 2</option>
-              <option value="h3">Heading 3</option>
-              <option value="h4">Heading 4</option>
-            </select>
+              options={[
+                { value: 'p', label: 'Paragraph' },
+                { value: 'h1', label: 'Heading 1' },
+                { value: 'h2', label: 'Heading 2' },
+                { value: 'h3', label: 'Heading 3' },
+                { value: 'h4', label: 'Heading 4' },
+              ]}
+              placeholder="Format"
+            />
             <span aria-hidden className="mx-1 h-4 w-px bg-line" />
             {tools.map((tool, index) =>
               tool === 'divider' ? (

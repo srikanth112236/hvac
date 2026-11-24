@@ -1,12 +1,12 @@
 import { expect, test } from '@playwright/test'
 import { loginAdmin } from './helpers'
 
-function localDueTomorrow(): string {
-  const date = new Date()
-  date.setDate(date.getDate() + 1)
-  date.setHours(9, 0, 0, 0)
-  const pad = (value: number) => String(value).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T09:00`
+function dateDisplay(date: Date): string {
+  return new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(date)
 }
 
 test('reminders queue segments, filters, prioritises and completes', async ({ page }) => {
@@ -21,9 +21,18 @@ test('reminders queue segments, filters, prioritises and completes', async ({ pa
 
   const composer = page.locator('aside')
   await composer.getByLabel('Title').fill(title)
-  await composer.getByLabel('Due').fill(localDueTomorrow())
-  await composer.getByLabel('Priority').selectOption('urgent')
-  await composer.getByLabel('Category').selectOption('payment')
+  await composer.getByLabel('Due').click()
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  if (tomorrow.getMonth() !== new Date().getMonth()) {
+    await page.getByRole('button', { name: 'Next month', exact: true }).click()
+  }
+  await page.getByRole('button', { name: dateDisplay(tomorrow), exact: true }).click()
+  await page.getByRole('button', { name: 'Apply', exact: true }).click()
+  await composer.getByLabel('Priority').click()
+  await page.getByRole('option', { name: 'Urgent', exact: true }).click()
+  await composer.getByLabel('Category').click()
+  await page.getByRole('option', { name: 'Payment', exact: true }).click()
   await composer.getByRole('button', { name: /Add reminder/i }).click()
 
   const card = page.getByRole('listitem').filter({ hasText: title })
@@ -36,7 +45,8 @@ test('reminders queue segments, filters, prioritises and completes', async ({ pa
 
   await card.getByRole('button', { name: 'Edit' }).click()
   await expect(page.getByRole('heading', { name: 'Edit reminder' })).toBeVisible()
-  await page.getByRole('dialog').getByLabel('Priority').selectOption('high')
+  await page.getByRole('dialog').getByLabel('Priority').click()
+  await page.getByRole('option', { name: 'High', exact: true }).click()
   await page.getByRole('button', { name: /Save changes/i }).click()
   await expect(card.getByText('High priority')).toBeVisible()
 
