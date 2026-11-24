@@ -571,6 +571,32 @@ export function AdminNewsletters() {
     }
   }
 
+  const scheduleCampaign = async (
+    campaign: NewsletterRecord,
+    scheduledAtIso: string,
+    recurrence: NewsletterRecurrence | null,
+  ): Promise<string | null> => {
+    setBusyId(campaign.id)
+    try {
+      const patched = await adminApi.patchNewsletter(campaign.id, { recurrence })
+      applyFeed(patched)
+      const result = await adminApi.scheduleNewsletter(campaign.id, scheduledAtIso)
+      applyFeed(result)
+      toast({
+        title: 'Campaign scheduled',
+        description: `${result.data.recipients.length} recipients · ${formatDateTime(
+          result.data.scheduledAt ?? scheduledAtIso,
+        )}${recurrence ? ` · ${recurrenceSummary(recurrence)}` : ''}`,
+        tone: 'success',
+      })
+      return null
+    } catch (caught) {
+      return caught instanceof Error ? caught.message : 'Could not schedule this campaign.'
+    } finally {
+      setBusyId('')
+    }
+  }
+
   const filteredCustomers = useMemo(() => {
     const term = audienceQuery.trim().toLowerCase()
     const list = audiences?.customers ?? []
@@ -647,6 +673,7 @@ export function AdminNewsletters() {
           busyId={busyId}
           onOpen={openCampaign}
           onAction={(campaign, action) => void runAction(campaign, action)}
+          onSchedule={scheduleCampaign}
         />
       )}
 
@@ -809,6 +836,7 @@ function CampaignTable({
   busyId,
   onOpen,
   onAction,
+  onSchedule,
 }: {
   campaigns: NewsletterRecord[]
   summary: NewsletterSummary | null
@@ -818,10 +846,16 @@ function CampaignTable({
     campaign: NewsletterRecord,
     action: 'pause' | 'resume' | 'duplicate' | 'delete',
   ) => void
+  onSchedule: (
+    campaign: NewsletterRecord,
+    scheduledAtIso: string,
+    recurrence: NewsletterRecurrence | null,
+  ) => Promise<string | null>
 }) {
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'all' | NewsletterStatus>('all')
   const [audience, setAudience] = useState<'all' | NewsletterAudience>('all')
+  const [scheduleTarget, setScheduleTarget] = useState<NewsletterRecord | null>(null)
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -1015,6 +1049,17 @@ function CampaignTable({
                             Open
                           </Button>
                         ) : null}
+                        {!locked && campaign.status !== 'sending' && campaign.status !== 'sent' ? (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            className="border-cold/40 text-cold hover:border-cold"
+                            disabled={working}
+                            onClick={() => setScheduleTarget(campaign)}
+                          >
+                            {campaign.status === 'scheduled' ? 'Reschedule' : 'Schedule'}
+                          </Button>
+                        ) : null}
                         {(campaign.status === 'sending' || campaign.status === 'scheduled') &&
                         !locked ? (
                           <Button
@@ -1062,7 +1107,136 @@ function CampaignTable({
           </table>
         )}
       </section>
+
+      <ScheduleCampaignModal
+        campaign={scheduleTarget}
+        onClose={() => setScheduleTarget(null)}
+        onSchedule={onSchedule}
+      />
     </div>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Schedule modal                                                            */
+/* -------------------------------------------------------------------------- */
+
+function ScheduleCampaignModal({
+  campaign,
+  onClose,
+  onSchedule,
+}: {
+  campaign: NewsletterRecord | null
+  onClose: () => void
+  onSchedule: (
+    campaign: NewsletterRecord,
+    scheduledAtIso: string,
+    recurrence: NewsletterRecurrence | null,
+  ) => Promise<string | null>
+}) {
+  const [scheduledAt, setScheduledAt] = useState('')
+  const [recurrence, setRecurrence] = useState<RecurrenceDraft>(blankRecurrence)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!campaign) return
+    setScheduledAt(campaign.scheduledAt ? toLocalInput(campaign.scheduledAt) : '')
+    setRecurrence(recurrenceFromRecord(campaign.recurrence))
+    setError('')
+  }, [campaign])
+
+  if (!campaign) return null
+
+  const submit = async () => {
+    const iso = fromLocalInput(scheduledAt)
+    if (!iso) {
+      setError('Choose the first send date and time.')
+      return
+    }
+    if (Date.parse(iso) <= Date.now()) {
+      setError('Choose a send time in the future.')
+      return
+    }
+    const rule = recurrenceFromDraft(recurrence)
+    if (rule?.kind === 'weekly' && rule.weekdays.length === 0) {
+      setError('Choose at least one weekday for a weekly schedule.')
+      return
+    }
+    if (rule?.endAt && Date.parse(rule.endAt) <= Date.parse(iso)) {
+      setError('The end date must be after the first send.')
+      return
+    }
+    setPending(true)
+    setError('')
+    const failure = await onSchedule(campaign, iso, rule)
+    setPending(false)
+    if (failure) {
+      setError(failure)
+      return
+    }
+    onClose()
+  }
+
+  return (
+    <Modal
+      open
+      onClose={() => {
+        if (!pending) onClose()
+      }}
+      title={campaign.status === 'scheduled' ? 'Reschedule campaign' : 'Schedule campaign'}
+      description={campaign.subject}
+      size="lg"
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose} disabled={pending}>
+            Cancel
+          </Button>
+          <Button onClick={() => void submit()} loading={pending} icon="calendar">
+            {campaign.status === 'scheduled' ? 'Save new schedule' : 'Schedule campaign'}
+          </Button>
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <div className="grid gap-2 border border-line bg-panel/40 p-3 text-[11px] sm:grid-cols-3">
+          <div>
+            <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-fg-faint">
+              Audience
+            </span>
+            <p className="mt-0.5 text-fg">{newsletterAudienceLabel[campaign.audience]}</p>
+          </div>
+          <div>
+            <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-fg-faint">
+              Recipients
+            </span>
+            <p className="mt-0.5 font-mono text-fg">{campaign.recipients.length}</p>
+          </div>
+          <div>
+            <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-fg-faint">
+              Suppressed
+            </span>
+            <p className="mt-0.5 font-mono text-warn">{campaign.suppressedCount ?? 0}</p>
+          </div>
+        </div>
+
+        {campaign.scheduledAt ? (
+          <p className="text-[11px] text-fg-faint">
+            Current schedule: {formatDateTime(campaign.scheduledAt)}
+            {campaign.recurrence ? ` · ${recurrenceSummary(campaign.recurrence)}` : ''}
+          </p>
+        ) : null}
+
+        <SchedulePlanner
+          scheduledAt={scheduledAt}
+          setScheduledAt={setScheduledAt}
+          recurrence={recurrence}
+          setRecurrence={setRecurrence}
+        />
+
+        {error ? <InlineError message={error} /> : null}
+      </div>
+    </Modal>
   )
 }
 
@@ -1121,6 +1295,7 @@ function Composer({
     [coupons],
   )
   const [couponCode, setCouponCode] = useState(activeCoupons[0]?.code ?? '')
+  const [panel, setPanel] = useState<'delivery' | 'schedule' | 'coupon'>('delivery')
 
   useEffect(() => {
     if (!activeCoupons.some((coupon) => coupon.code === couponCode)) {
@@ -1280,111 +1455,152 @@ function Composer({
           </div>
         </Panel>
 
-        <Panel title="Delivery">
-          <div className="grid gap-4">
-            <Select
-              label="Audience"
-              value={draft.audience}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  audience: event.target.value as NewsletterAudience,
-                }))
-              }
-              options={(['all', 'portal', 'open-balance', 'prospects', 'selected'] as const).map(
-                (entry) => ({
-                  value: entry,
-                  label: `${newsletterAudienceLabel[entry]}${
-                    entry === 'selected' ? '' : ` · ${audiences?.counts[entry] ?? 0}`
-                  }`,
-                }),
-              )}
-              hint="Audience counts exclude suppressed addresses unless override is on."
-            />
+        <Panel
+          title="Campaign controls"
+          description="Delivery, schedule and coupon tools are kept together behind one control strip."
+        >
+          <div className="flex flex-wrap gap-1 border-b border-line pb-3">
+            {(
+              [
+                ['delivery', 'Delivery'],
+                ['schedule', 'Schedule'],
+                ['coupon', 'Coupon'],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={panel === id}
+                onClick={() => setPanel(id)}
+                className={`border px-3 py-1.5 font-mono text-[9px] uppercase tracking-[0.08em] transition-colors ${panel === id ? 'border-cold bg-cold/[0.08] text-cold' : 'border-line text-fg-faint hover:border-cold/40 hover:text-cold'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 border border-line bg-panel-2 px-3 py-2">
-              <span className="text-[11px] text-fg-dim">
-                {audiences?.suppressedCount ?? 0} suppressed email
-                {(audiences?.suppressedCount ?? 0) === 1 ? '' : 's'}
-              </span>
-              <Badge tone={draft.overrideSuppression ? 'warn' : 'success'}>
-                {draft.overrideSuppression ? 'Override on' : 'Suppression guard on'}
-              </Badge>
-            </div>
+          {panel === 'delivery' ? (
+            <div className="grid gap-4 pt-3">
+              <Select
+                label="Audience"
+                value={draft.audience}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    audience: event.target.value as NewsletterAudience,
+                  }))
+                }
+                options={(['all', 'portal', 'open-balance', 'prospects', 'selected'] as const).map(
+                  (entry) => ({
+                    value: entry,
+                    label: `${newsletterAudienceLabel[entry]}${entry === 'selected' ? '' : ` ? ${audiences?.counts[entry] ?? 0}`}`,
+                  }),
+                )}
+                hint="Audience counts exclude suppressed addresses unless override is on."
+              />
 
-            <Toggle
-              checked={draft.overrideSuppression}
-              onChange={(value) =>
-                setDraft((current) => ({ ...current, overrideSuppression: value }))
-              }
-              label="Override suppression"
-              description="Allow this campaign to send to unsubscribed or marketing-disabled addresses."
-            />
-
-            {draft.audience === 'selected' ? (
-              <div className="flex items-center justify-between gap-3 border border-line bg-panel-2 px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-3 border border-line bg-panel-2 px-3 py-2">
                 <span className="text-[11px] text-fg-dim">
-                  {draft.recipients.length} selected · {estimate} sendable
+                  {audiences?.suppressedCount ?? 0} suppressed email
+                  {(audiences?.suppressedCount ?? 0) === 1 ? '' : 's'}
                 </span>
-                <Button variant="secondary" size="sm" onClick={onOpenAudience}>
-                  Choose
+                <Badge tone={draft.overrideSuppression ? 'warn' : 'success'}>
+                  {draft.overrideSuppression ? 'Override on' : 'Suppression guard on'}
+                </Badge>
+              </div>
+
+              <Toggle
+                checked={draft.overrideSuppression}
+                onChange={(value) =>
+                  setDraft((current) => ({ ...current, overrideSuppression: value }))
+                }
+                label="Override suppression"
+                description="Allow this campaign to send to unsubscribed or marketing-disabled addresses."
+              />
+
+              {draft.audience === 'selected' ? (
+                <div className="flex items-center justify-between gap-3 border border-line bg-panel-2 px-3 py-2">
+                  <span className="text-[11px] text-fg-dim">
+                    {draft.recipients.length} selected ? {estimate} sendable
+                  </span>
+                  <Button variant="secondary" size="sm" onClick={onOpenAudience}>
+                    Choose
+                  </Button>
+                </div>
+              ) : null}
+
+              <div className="grid grid-cols-3 gap-2">
+                <Input
+                  label="Per minute"
+                  type="number"
+                  min={1}
+                  max={600}
+                  value={draft.perMinute}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      perMinute: Math.max(1, Math.min(600, Number(event.target.value) || 1)),
+                    }))
+                  }
+                />
+                <Input
+                  label="Per hour"
+                  type="number"
+                  min={1}
+                  max={50_000}
+                  value={draft.perHour}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      perHour: Math.max(1, Math.min(50_000, Number(event.target.value) || 1)),
+                    }))
+                  }
+                />
+                <Input
+                  label="Per day"
+                  type="number"
+                  min={1}
+                  max={200_000}
+                  value={draft.perDay}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      perDay: Math.max(1, Math.min(200_000, Number(event.target.value) || 1)),
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Button icon="send" loading={busy} disabled={Boolean(lock)} onClick={onSend} full>
+                  Send now
+                </Button>
+                <Button
+                  variant="quiet"
+                  loading={saving}
+                  disabled={Boolean(lock)}
+                  onClick={onSave}
+                  full
+                >
+                  {record && record.status !== 'draft' ? 'Save changes' : 'Save draft'}
                 </Button>
               </div>
-            ) : null}
 
-            <div className="grid grid-cols-3 gap-2">
-              <Input
-                label="Per minute"
-                type="number"
-                min={1}
-                max={600}
-                value={draft.perMinute}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    perMinute: Math.max(1, Math.min(600, Number(event.target.value) || 1)),
-                  }))
-                }
-              />
-              <Input
-                label="Per hour"
-                type="number"
-                min={1}
-                max={50_000}
-                value={draft.perHour}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    perHour: Math.max(1, Math.min(50_000, Number(event.target.value) || 1)),
-                  }))
-                }
-              />
-              <Input
-                label="Per day"
-                type="number"
-                min={1}
-                max={200_000}
-                value={draft.perDay}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    perDay: Math.max(1, Math.min(200_000, Number(event.target.value) || 1)),
-                  }))
-                }
-              />
+              <p className="text-[10px] leading-relaxed text-fg-faint">
+                The queue lives on the server: closing this tab does not stop delivery. Open the
+                Schedule control for a one-time or recurring send.
+              </p>
             </div>
+          ) : null}
 
-            <SchedulePlanner
-              scheduledAt={scheduledAt}
-              setScheduledAt={setScheduledAt}
-              recurrence={draft.recurrence}
-              setRecurrence={(recurrence) => setDraft((current) => ({ ...current, recurrence }))}
-            />
-
-            <div className="flex flex-col gap-2">
-              <Button icon="send" loading={busy} disabled={Boolean(lock)} onClick={onSend} full>
-                Send now
-              </Button>
+          {panel === 'schedule' ? (
+            <div className="grid gap-4 pt-3">
+              <SchedulePlanner
+                scheduledAt={scheduledAt}
+                setScheduledAt={setScheduledAt}
+                recurrence={draft.recurrence}
+                setRecurrence={(recurrence) => setDraft((current) => ({ ...current, recurrence }))}
+              />
               <Button
                 variant="secondary"
                 icon="calendar"
@@ -1395,51 +1611,42 @@ function Composer({
               >
                 {draft.recurrence.kind === 'none' ? 'Schedule send' : 'Start schedule'}
               </Button>
-              <Button
-                variant="quiet"
-                loading={saving}
-                disabled={Boolean(lock)}
-                onClick={onSave}
-                full
-              >
-                {record && record.status !== 'draft' ? 'Save changes' : 'Save draft'}
-              </Button>
-            </div>
-
-            <p className="text-[10px] leading-relaxed text-fg-faint">
-              The queue lives on the server: closing this tab does not stop delivery. Editing and
-              deleting close five minutes before a scheduled send; pause is also locked inside that
-              window.
-            </p>
-          </div>
-        </Panel>
-
-        <Panel title="Coupon promotion">
-          {activeCoupons.length === 0 ? (
-            <p className="text-[11px] leading-relaxed text-fg-faint">
-              Create an active coupon first, then insert its code into this campaign for individual
-              or all-customer sends.
-            </p>
-          ) : (
-            <div className="grid gap-3">
-              <Select
-                label="Coupon"
-                value={couponCode}
-                onChange={(event) => setCouponCode(event.target.value)}
-                options={activeCoupons.map((coupon) => ({
-                  value: coupon.code,
-                  label: `${coupon.code} · ${couponValueLabel(coupon)}`,
-                }))}
-              />
-              <Button variant="secondary" size="sm" onClick={insertCoupon}>
-                Insert coupon block into body
-              </Button>
               <p className="text-[10px] leading-relaxed text-fg-faint">
-                Appends a styled promotion card with the code, value, minimum spend and expiry.
-                Choose a selected audience to send it to specific customers.
+                Editing and deleting close five minutes before a scheduled send. Pause is also
+                locked inside that window.
               </p>
             </div>
-          )}
+          ) : null}
+
+          {panel === 'coupon' ? (
+            <div className="pt-3">
+              {activeCoupons.length === 0 ? (
+                <p className="text-[11px] leading-relaxed text-fg-faint">
+                  Create an active coupon first, then insert its code into this campaign for
+                  individual or all-customer sends.
+                </p>
+              ) : (
+                <div className="grid gap-3">
+                  <Select
+                    label="Coupon"
+                    value={couponCode}
+                    onChange={(event) => setCouponCode(event.target.value)}
+                    options={activeCoupons.map((coupon) => ({
+                      value: coupon.code,
+                      label: `${coupon.code} ? ${couponValueLabel(coupon)}`,
+                    }))}
+                  />
+                  <Button variant="secondary" size="sm" onClick={insertCoupon}>
+                    Insert coupon block into body
+                  </Button>
+                  <p className="text-[10px] leading-relaxed text-fg-faint">
+                    Appends a styled promotion card with the code, value, minimum spend and expiry.
+                    Choose a selected audience to send it to specific customers.
+                  </p>
+                </div>
+              )}
+            </div>
+          ) : null}
         </Panel>
       </div>
     </div>
