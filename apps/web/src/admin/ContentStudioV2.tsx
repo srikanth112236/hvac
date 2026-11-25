@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   siteContentPayloadSchema,
   type SiteContent,
@@ -139,11 +139,13 @@ function pageHasDraft(content: SiteContent, published: SiteContent | null, id: s
 export function ContentStudioV2() {
   const { toast } = useToast()
   const navigateTo = useNavigate()
+  const [searchParams] = useSearchParams()
+  const requestedService = searchParams.get('service')?.trim() ?? ''
   const [draft, setDraft] = useState<SiteContent | null>(null)
   const [published, setPublished] = useState<SiteContent | null>(null)
   const [workspace, setWorkspace] = useState<Workspace>('pages')
-  const [selectedId, setSelectedId] = useState('home')
-  const [serviceId, setServiceId] = useState('')
+  const [selectedId, setSelectedId] = useState(requestedService ? 'services-detail' : 'home')
+  const [serviceId, setServiceId] = useState(requestedService)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
@@ -162,7 +164,6 @@ export function ContentStudioV2() {
         const normalized = normalizeStudioDraft(content)
         setDraft(normalized)
         setPublished(normalized)
-        setServiceId(content.services[0]?.id ?? '')
       })
       .catch((caught) => {
         if (active) setError(caught instanceof Error ? caught.message : 'Could not load content.')
@@ -174,6 +175,13 @@ export function ContentStudioV2() {
       active = false
     }
   }, [])
+
+  useEffect(() => {
+    if (!requestedService) return
+    setWorkspace('pages')
+    setSelectedId('services-detail')
+    setServiceId(requestedService)
+  }, [requestedService])
 
   const update: Update = (recipe) => {
     setDraft((current) => (current ? recipe(current) : current))
@@ -557,7 +565,11 @@ export function ContentStudioV2() {
                   key={entry.id}
                   type="button"
                   data-page-id={entry.id}
-                  onClick={() => setSelectedId(entry.id)}
+                  onClick={() => {
+                    setSelectedId(entry.id)
+                    if (entry.id === 'services-detail') setServiceId('')
+                    if (requestedService) navigateTo('/admin/content', { replace: true })
+                  }}
                   className={`border-b border-line/60 px-2 py-2 text-left text-[11px] ${selectedId === entry.id ? 'bg-cold/[0.08] text-cold' : 'text-fg-dim hover:text-fg'}`}
                 >
                   <span className="flex items-center justify-between gap-2">
@@ -614,7 +626,13 @@ export function ContentStudioV2() {
                 draft={draft}
                 update={update}
                 selected={draft.services.find((entry) => entry.id === serviceId) ?? null}
-                onSelect={setServiceId}
+                onSelect={(id) => {
+                  setServiceId(id)
+                  navigateTo(
+                    id ? `/admin/content?service=${encodeURIComponent(id)}` : '/admin/content',
+                    { replace: true },
+                  )
+                }}
               />
             ) : selected.editor === 'work' ? (
               <WorkTab draft={draft} update={update} />

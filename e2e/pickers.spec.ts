@@ -22,7 +22,7 @@ test('custom select and date pickers replace native controls', async ({ page }) 
   await expect(page.getByRole('table')).toBeVisible()
   await expect(nativePickers(page)).toHaveCount(0)
 
-  await page.getByRole('button', { name: 'Schedule', exact: true }).first().click()
+  await page.getByRole('button', { name: /^Schedule / }).first().click()
   await expect(page.getByRole('heading', { name: 'Schedule campaign' })).toBeVisible()
   await expect(nativePickers(page)).toHaveCount(0)
   await page.getByLabel('First send').click()

@@ -1,5 +1,6 @@
-import { useCallback, useState, type FormEvent } from 'react'
+import { useCallback, useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
+import { useRecordDeepLink } from '@/admin/useDeepLink'
 import {
   quotationStatusLabel,
   type AdminLead,
@@ -16,6 +17,9 @@ import {
   EmptyState,
   Input,
   Modal,
+  RecordDrawer,
+  RecordViewButton,
+  SearchSuggest,
   Select,
   Textarea,
   useToast,
@@ -52,6 +56,7 @@ function parseLines(value: string) {
 export function AdminQuotations() {
   const { toast } = useToast()
   const [quotes, setQuotes] = useState<Row[]>([])
+  const [viewing, setViewing] = useState<Row | null>(null)
   const [meta, setMeta] = useState<{
     count: number
     totals: { counts: Record<string, number>; value: number }
@@ -101,6 +106,26 @@ export function AdminQuotations() {
 
   const totalValue = meta?.totals.value ?? 0
   const counts = meta?.totals.counts ?? {}
+
+  const suggestions = useMemo(
+    () =>
+      quotes.map((quote) => ({
+        id: quote.id,
+        label: quote.ref,
+        value: quote.ref,
+        description: `${quote.customerName} · ${quote.title}`,
+        meta: quotationStatusLabel[quote.status],
+        keywords: `${quote.customerEmail} ${quote.service} ${quote.leadName ?? ''}`,
+      })),
+    [quotes],
+  )
+
+  useRecordDeepLink({
+    param: 'open',
+    records: quotes,
+    resolve: (value) => quotes.find((quote) => quote.id === value || quote.ref === value),
+    onOpen: setViewing,
+  })
 
   const openCreate = () => {
     setForm((current) => ({
@@ -225,11 +250,18 @@ export function AdminQuotations() {
           />
         </div>
         <div className="min-w-[240px] flex-1">
-          <Input
+          <SearchSuggest
             label="Search"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={setQuery}
+            suggestions={suggestions}
+            onSelect={(suggestion) => {
+              setQuery(suggestion.label)
+              const quote = quotes.find((entry) => entry.id === suggestion.id)
+              if (quote) setViewing(quote)
+            }}
             placeholder="Quote, customer, lead, service"
+            emptyMessage="No quotation matches that reference or customer."
           />
         </div>
         <Badge tone="neutral">{meta?.count ?? 0} matching</Badge>
@@ -296,6 +328,10 @@ export function AdminQuotations() {
                 <p className="text-[10px] text-fg-faint">{quote.lines.length} lines</p>
               </div>
               <div className="flex flex-wrap justify-end gap-2">
+                <RecordViewButton
+                  label={`quotation ${quote.ref}`}
+                  onClick={() => setViewing(quote)}
+                />
                 {quote.status === 'draft' ? (
                   <Button
                     size="sm"
@@ -303,6 +339,15 @@ export function AdminQuotations() {
                     onClick={() => void setQuoteStatus(quote, 'sent')}
                   >
                     Send
+                  </Button>
+                ) : null}
+                {quote.status === 'changes-requested' ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void setQuoteStatus(quote, 'sent')}
+                  >
+                    Reissue
                   </Button>
                 ) : null}
                 {quote.status === 'sent' ? (
@@ -459,6 +504,71 @@ export function AdminQuotations() {
           </div>
         </form>
       </Modal>
+
+      <RecordDrawer
+        open={Boolean(viewing)}
+        onClose={() => setViewing(null)}
+        title={viewing?.ref ?? 'Quotation'}
+        subtitle={viewing ? `${viewing.title} · ${viewing.customerName}` : undefined}
+        badge={
+          viewing ? (
+            <Badge
+              tone={
+                viewing.status === 'accepted'
+                  ? 'success'
+                  : viewing.status === 'sent'
+                    ? 'cold'
+                    : viewing.status === 'expired'
+                      ? 'danger'
+                      : 'neutral'
+              }
+            >
+              {quotationStatusLabel[viewing.status]}
+            </Badge>
+          ) : undefined
+        }
+        record={
+          viewing
+            ? {
+                reference: viewing.ref,
+                title: viewing.title,
+                status: quotationStatusLabel[viewing.status],
+                customer: viewing.customerName,
+                email: viewing.customerEmail,
+                lead: viewing.leadName ?? viewing.leadRef,
+                service: viewing.service,
+                customerId: viewing.customerId,
+                validUntil: viewing.validUntil,
+                createdAt: viewing.createdAt,
+                updatedAt: viewing.updatedAt,
+                totals: viewing.totals,
+                lines: viewing.lines,
+                notes: viewing.notes,
+                terms: viewing.terms,
+                changeRequest: viewing.changeRequest,
+              }
+            : null
+        }
+        actions={
+          viewing ? (
+            <>
+              <ButtonAnchor
+                href={`/api/v1/admin/customers/${viewing.customerId}/quotations/${viewing.id}/pdf`}
+                download
+                variant="secondary"
+              >
+                Download PDF
+              </ButtonAnchor>
+              <Link
+                to={`/admin/customers/${viewing.customerId}`}
+                className="flex h-9 items-center border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:border-cold/50 hover:text-cold"
+              >
+                Open customer
+              </Link>
+            </>
+          ) : undefined
+        }
+      />
     </div>
   )
 }

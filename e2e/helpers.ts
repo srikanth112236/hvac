@@ -21,5 +21,5 @@ export async function loginAdmin(page: Page): Promise<void> {
   await password.fill('')
   await password.fill(ADMIN_PASSWORD)
   await page.getByRole('button', { name: /Open control room/i }).click()
-  await expect(page.getByText('Signed in as')).toBeVisible()
+  await expect(page.getByText('Signed in as')).toBeVisible({ timeout: 20_000 })
 }

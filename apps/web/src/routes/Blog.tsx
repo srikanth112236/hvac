@@ -22,9 +22,9 @@ export function Blog() {
     () => sortByPublished(content.posts.filter((post) => post.published)),
     [content.posts],
   )
-  const featured = posts.find((post) => post.featured) ?? posts[0]
   const categories = ['All', ...Array.from(new Set(posts.map((post) => post.category)))]
   const filtered = category === 'All' ? posts : posts.filter((post) => post.category === category)
+  const featured = filtered.find((post) => post.featured) ?? filtered[0]
 
   const itemList = useMemo(
     () =>
@@ -85,7 +85,9 @@ export function Blog() {
                   <dt className="font-mono text-[8px] uppercase tracking-[0.12em] text-fg-faint">
                     Published
                   </dt>
-                  <dd className="t-num mt-1 text-[20px] text-fg">{String(posts.length).padStart(2, '0')}</dd>
+                  <dd className="t-num mt-1 text-[20px] text-fg">
+                    {String(posts.length).padStart(2, '0')}
+                  </dd>
                 </div>
                 <div>
                   <dt className="font-mono text-[8px] uppercase tracking-[0.12em] text-fg-faint">
@@ -118,8 +120,8 @@ export function Blog() {
               </dl>
               <div className="thread mt-4" />
               <p className="mt-3 text-[11px] leading-relaxed text-fg-faint">
-                Every guide states the measurement, the standard or manufacturer reference, and
-                the assumption that would change the answer.
+                Every guide states the measurement, the standard or manufacturer reference, and the
+                assumption that would change the answer.
               </p>
             </div>
           </div>
@@ -194,7 +196,11 @@ export function Blog() {
             label="Technical notes"
             title={sections.articles.title}
             description={sections.articles.body}
-            action={<Badge tone="cold" dot>{posts.length} published</Badge>}
+            action={
+              <Badge tone="cold" dot>
+                {posts.length} published
+              </Badge>
+            }
           />
         </div>
 
@@ -216,7 +222,10 @@ export function Blog() {
                 className="min-w-max border-b-0"
               />
             </div>
-            <p aria-live="polite" className="shrink-0 pb-1 font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">
+            <p
+              aria-live="polite"
+              className="shrink-0 pb-1 font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint"
+            >
               {filtered.length} of {posts.length} files
             </p>
           </div>

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useLiveRefresh } from '@/admin/useLiveRefresh'
+import { useDetailBack } from '@/admin/useDetailBack'
 import { Icon } from '@/components/icons'
 import {
   Button,
@@ -49,6 +51,9 @@ const cardTheme: Record<(typeof columns)[number], string> = {
 
 export function AdminLeads() {
   const { toast } = useToast()
+  const [searchParams] = useSearchParams()
+  const leadDeepLink = searchParams.get('lead')
+  const deepHandled = useRef('')
   const [leads, setLeads] = useState<AdminLead[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -120,6 +125,30 @@ export function AdminLeads() {
     }, 180)
     return () => window.clearTimeout(timer)
   }, [query])
+
+  useEffect(() => {
+    if (!leadDeepLink || deepHandled.current === leadDeepLink) return
+    const current = [...leads, ...suggestionResults].find((lead) => lead.ref === leadDeepLink)
+    if (current) {
+      deepHandled.current = leadDeepLink
+      setSelected(current)
+      return
+    }
+    let active = true
+    adminApi
+      .lead(leadDeepLink)
+      .then((lead) => {
+        if (!active) return
+        deepHandled.current = leadDeepLink
+        setSelected(lead)
+      })
+      .catch(() => {
+        if (active) deepHandled.current = leadDeepLink
+      })
+    return () => {
+      active = false
+    }
+  }, [leadDeepLink, leads, suggestionResults])
 
   const parseCsv = (text: string): Record<string, string>[] => {
     const rows: string[][] = []
@@ -444,6 +473,15 @@ export function AdminLeads() {
                           </button>
 
                           <div className="mt-2 flex flex-wrap gap-1 opacity-0 transition-opacity duration-2 group-hover:opacity-100 focus-within:opacity-100">
+                            <button
+                              type="button"
+                              onClick={() => setSelected(lead)}
+                              aria-label={`View ${lead.name}, ${lead.ref}`}
+                              title={`View ${lead.name}`}
+                              className="flex h-6 items-center gap-1 border border-line px-2 font-mono text-[8px] uppercase text-fg-faint hover:text-cold"
+                            >
+                              <Icon name="eye" size={10} /> View
+                            </button>
                             {lead.phone ? (
                               <a
                                 href={`tel:${lead.phone}`}
@@ -543,6 +581,7 @@ function LeadDrawer({
   onMoved: (ref: string, status: string) => void
 }) {
   const { toast } = useToast()
+  const { back, cancel } = useDetailBack(onClose)
   const [status, setStatus] = useState(lead?.status ?? 'new')
   const [owner, setOwner] = useState(lead?.owner ?? '')
   const [value, setValue] = useState(lead?.value ? String(lead.value) : '')
@@ -591,9 +630,20 @@ function LeadDrawer({
   return (
     <Drawer
       open={Boolean(lead)}
-      onClose={onClose}
+      onClose={cancel}
+      onBack={back}
       title={lead ? `${lead.name} · ${lead.ref}` : 'Lead'}
       description={lead?.serviceName ?? 'Unallocated service'}
+      footer={
+        <div className="flex w-full flex-wrap items-center justify-end gap-2">
+          <Button variant="secondary" onClick={back} icon="chevron-left">
+            Back
+          </Button>
+          <Button variant="secondary" onClick={cancel}>
+            Cancel
+          </Button>
+        </div>
+      }
     >
       {lead ? (
         <div className="flex flex-col gap-6">
@@ -713,6 +763,32 @@ function LeadDrawer({
           >
             {pending ? 'Saving…' : 'Save lead'}
           </Button>
+
+          {lead.attachments?.length ? (
+            <div>
+              <div className="flex items-center justify-between border-b border-line pb-2">
+                <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">
+                  Attachments
+                </span>
+                <span className="t-num text-[10px] text-fg-faint">{lead.attachments.length}</span>
+              </div>
+              <ul className="mt-2 flex flex-col">
+                {lead.attachments.map((attachment) => (
+                  <li key={attachment.url} className="border-b border-line/60 py-2 last:border-0">
+                    <a
+                      href={attachment.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center justify-between gap-3 text-[11px] text-cold hover:text-fg"
+                    >
+                      <span className="truncate">{attachment.name}</span>
+                      <Icon name="external" size={11} />
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           <div>
             <div className="flex items-center justify-between border-b border-line pb-2">

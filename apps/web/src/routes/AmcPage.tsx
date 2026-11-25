@@ -1,18 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Icon } from '@/components/icons'
-import {
-  Accordion,
-  Badge,
-  ButtonAnchor,
-  ButtonLink,
-  SectionHeader,
-} from '@/components/ui'
-import {
-  MagneticButton,
-  ScrollReveal,
-  SplitReveal,
-} from '@/motion'
+import { Accordion, Badge, ButtonAnchor, ButtonLink, SectionHeader } from '@/components/ui'
+import { MagneticButton, ScrollReveal, SplitReveal } from '@/motion'
 import { useBrand } from '@/brand/BrandProvider'
 import { useSiteContent, useSitePlans } from '@/content/SiteContentProvider'
 import { useSeo } from '@/lib/seo'
@@ -66,7 +56,12 @@ export function AmcPage() {
                   Compare plans
                 </ButtonAnchor>
               </MagneticButton>
-              <ButtonAnchor href={`tel:${brand.contact.emergencyPhone}`} variant="secondary" size="lg" icon="bolt">
+              <ButtonAnchor
+                href={`tel:${brand.contact.emergencyPhone}`}
+                variant="secondary"
+                size="lg"
+                icon="bolt"
+              >
                 Dispatch · {brand.contact.emergencyPhone}
               </ButtonAnchor>
             </div>
@@ -132,7 +127,11 @@ export function AmcPage() {
             label="Plans"
             title={sections.plans.title}
             description={sections.plans.body}
-            action={<Badge tone="heat" dot>24 × 7 dispatch</Badge>}
+            action={
+              <Badge tone="heat" dot>
+                24 × 7 dispatch
+              </Badge>
+            }
           />
         </div>
 
@@ -146,11 +145,15 @@ export function AmcPage() {
                   key={plan.id}
                   className={cn(
                     'relative flex h-full flex-col gap-5 border p-6',
-                    plan.featured ? 'border-cold/40 bg-panel-2 md:-translate-y-4' : 'border-line bg-panel/60',
+                    plan.featured
+                      ? 'border-cold/40 bg-panel-2 md:-translate-y-4'
+                      : 'border-line bg-panel/60',
                     selected && 'ring-1 ring-cold/50',
                   )}
                 >
-                  {plan.featured ? <span aria-hidden className="thread absolute inset-x-0 top-0" /> : null}
+                  {plan.featured ? (
+                    <span aria-hidden className="thread absolute inset-x-0 top-0" />
+                  ) : null}
 
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -258,7 +261,12 @@ export function AmcPage() {
               <caption className="sr-only">AMC visit schedule by plan</caption>
               <thead>
                 <tr className="border-b border-line">
-                  {['Period', 'Essential', 'Comprehensive', 'Precision'].map((heading) => (
+                  {[
+                    'Period',
+                    content.plans[0]?.name || 'Plan 1',
+                    content.plans[1]?.name || 'Plan 2',
+                    content.plans[2]?.name || 'Plan 3',
+                  ].map((heading) => (
                     <th
                       key={heading}
                       scope="col"
@@ -369,7 +377,12 @@ export function AmcPage() {
               {sections.questions.body}
             </p>
             <div className="mt-6">
-              <ButtonLink to="/contact?service=amc" variant="secondary" size="sm" icon="arrow-right">
+              <ButtonLink
+                to="/contact?service=amc"
+                variant="secondary"
+                size="sm"
+                icon="arrow-right"
+              >
                 Ask about cover
               </ButtonLink>
             </div>
@@ -410,7 +423,10 @@ export function AmcPage() {
                     ['30 days', 'Price held; scope changes agreed in writing.'],
                     ['7 days', 'Final reminder; cover lapses without written renewal.'],
                   ].map(([when, what]) => (
-                    <li key={when} className="border-t border-line/70 py-3 first:border-t-0 first:pt-0">
+                    <li
+                      key={when}
+                      className="border-t border-line/70 py-3 first:border-t-0 first:pt-0"
+                    >
                       <span className="t-num text-[10px] text-cold">{when}</span>
                       <p className="mt-1 text-[11px] leading-snug text-fg-dim">{what}</p>
                     </li>
@@ -462,7 +478,12 @@ export function AmcPage() {
             <ButtonLink to="/contact?service=amc" size="lg" icon="arrow-up-right">
               Request an AMC survey
             </ButtonLink>
-            <ButtonAnchor href={`tel:${brand.contact.phone}`} variant="secondary" size="lg" icon="phone">
+            <ButtonAnchor
+              href={`tel:${brand.contact.phone}`}
+              variant="secondary"
+              size="lg"
+              icon="phone"
+            >
               {brand.contact.phoneDisplay}
             </ButtonAnchor>
           </div>
@@ -472,11 +493,17 @@ export function AmcPage() {
       <div className="shell py-8">
         <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">
           Also read ·{' '}
-          <Link to="/services/chiller-maintenance" className="text-cold transition-colors duration-2 hover:text-fg">
+          <Link
+            to="/services/chiller-maintenance"
+            className="text-cold transition-colors duration-2 hover:text-fg"
+          >
             chiller &amp; tower service
           </Link>{' '}
           ·{' '}
-          <Link to="/services/ac-servicing" className="text-cold transition-colors duration-2 hover:text-fg">
+          <Link
+            to="/services/ac-servicing"
+            className="text-cold transition-colors duration-2 hover:text-fg"
+          >
             deep cleaning
           </Link>{' '}
           ·{' '}

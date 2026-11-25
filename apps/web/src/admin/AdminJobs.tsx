@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   JOB_STATUSES,
   jobStatusLabel,
@@ -14,6 +15,9 @@ import {
   EmptyState,
   Input,
   Modal,
+  RecordDrawer,
+  RecordViewButton,
+  SearchSuggest,
   Select,
   Textarea,
   useToast,
@@ -126,6 +130,9 @@ function draftFor(job: JobRecord): JobDraft {
 
 export function AdminJobs() {
   const { toast } = useToast()
+  const [searchParams] = useSearchParams()
+  const openDeepLink = searchParams.get('open')
+  const deepHandled = useRef('')
   const [jobs, setJobs] = useState<JobRecord[]>([])
   const [meta, setMeta] = useState<{
     total: number
@@ -139,6 +146,7 @@ export function AdminJobs() {
   const [status, setStatus] = useState('')
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<JobRecord | null>(null)
+  const [viewing, setViewing] = useState<JobRecord | null>(null)
   const [draft, setDraft] = useState<JobDraft>(blankDraft)
   const [modalOpen, setModalOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -164,6 +172,43 @@ export function AdminJobs() {
     }
   }, [page, query, status])
   useLiveRefresh(load, 20_000)
+
+  const suggestions = useMemo(
+    () =>
+      jobs.map((job) => ({
+        id: job.id,
+        label: `${job.ref} · ${job.title}`,
+        value: job.ref,
+        description: `${job.customerName} · ${job.service || 'Service work'}`,
+        meta: jobStatusLabel[job.status],
+        keywords: `${job.technician} ${job.address} ${job.customerEmail}`,
+      })),
+    [jobs],
+  )
+
+  useEffect(() => {
+    if (!openDeepLink || deepHandled.current === openDeepLink) return
+    const current = jobs.find((job) => job.id === openDeepLink || job.ref === openDeepLink)
+    if (current) {
+      deepHandled.current = openDeepLink
+      setViewing(current)
+      return
+    }
+    let active = true
+    adminApi
+      .job(openDeepLink)
+      .then((job) => {
+        if (!active) return
+        deepHandled.current = openDeepLink
+        setViewing(job)
+      })
+      .catch(() => {
+        if (active) deepHandled.current = openDeepLink
+      })
+    return () => {
+      active = false
+    }
+  }, [jobs, openDeepLink])
 
   const openNew = () => {
     setSelected(null)
@@ -290,14 +335,21 @@ export function AdminJobs() {
           />
         </div>
         <div className="min-w-[220px] flex-1">
-          <Input
+          <SearchSuggest
             label="Search"
             value={query}
-            onChange={(event) => {
-              setQuery(event.target.value)
+            onChange={(value) => {
+              setQuery(value)
               setPage(1)
             }}
+            suggestions={suggestions}
+            onSelect={(suggestion) => {
+              setQuery(suggestion.value ?? suggestion.label)
+              const job = jobs.find((entry) => entry.id === suggestion.id)
+              if (job) setViewing(job)
+            }}
             placeholder="Job, customer, technician"
+            emptyMessage="No job matches that reference or customer."
           />
         </div>
         <Badge tone="neutral">{meta?.total ?? 0} jobs</Badge>
@@ -351,6 +403,7 @@ export function AdminJobs() {
                 {formatMoney(partsTotal(job.parts))}
               </span>
               <div className="flex gap-3">
+                <RecordViewButton label={`job ${job.ref}`} onClick={() => setViewing(job)} />
                 <button
                   type="button"
                   onClick={() => openEdit(job)}
@@ -511,6 +564,45 @@ export function AdminJobs() {
           </div>
         </form>
       </Modal>
+
+      <RecordDrawer
+        open={Boolean(viewing)}
+        onClose={() => setViewing(null)}
+        title={viewing ? `${viewing.ref} · ${viewing.title}` : 'Job'}
+        subtitle={viewing ? `${viewing.customerName} · ${viewing.service || 'Service work'}` : undefined}
+        record={viewing as unknown as Record<string, unknown> | null}
+        exclude={['id']}
+        badge={
+          viewing ? (
+            <Badge
+              tone={
+                viewing.status === 'completed'
+                  ? 'success'
+                  : viewing.status === 'cancelled'
+                    ? 'danger'
+                    : viewing.status === 'in-progress'
+                      ? 'warn'
+                      : 'neutral'
+              }
+            >
+              {jobStatusLabel[viewing.status]}
+            </Badge>
+          ) : undefined
+        }
+        actions={
+          viewing ? (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                openEdit(viewing)
+                setViewing(null)
+              }}
+            >
+              Edit job
+            </Button>
+          ) : undefined
+        }
+      />
     </div>
   )
 }

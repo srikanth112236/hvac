@@ -30,7 +30,7 @@ const upload = multer({
  * extension are both client-controlled. Only these five signatures are
  * accepted, and the stored extension comes from the signature.
  */
-function detectImage(buffer: Buffer): { mime: string; extension: string } | null {
+export function detectImage(buffer: Buffer): { mime: string; extension: string } | null {
   if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
     return { mime: 'image/jpeg', extension: '.jpg' }
   }
@@ -62,7 +62,7 @@ function detectImage(buffer: Buffer): { mime: string; extension: string } | null
   return null
 }
 
-function safeOriginalName(name: string): string {
+export function safeOriginalName(name: string): string {
   return Array.from(name)
     .map((character) => {
       const code = character.charCodeAt(0)
@@ -98,7 +98,10 @@ mediaRouter.post(
     }
     if (files.length > MEDIA_MAX_FILES) {
       res.status(400).json({
-        error: { code: 'too_many_files', message: `Upload up to ${MEDIA_MAX_FILES} images at a time.` },
+        error: {
+          code: 'too_many_files',
+          message: `Upload up to ${MEDIA_MAX_FILES} images at a time.`,
+        },
       })
       return
     }
@@ -150,51 +153,63 @@ mediaRouter.post(
   },
 )
 
-mediaRouter.patch('/admin/media/:id', requireAdmin, requirePermission('content.write'), requireAdminMutation, async (req, res) => {
-  const parsed = mediaPatchSchema.safeParse(req.body)
-  if (!parsed.success) {
-    res.status(400).json({ error: { code: 'validation_error', message: 'Invalid media details.' } })
-    return
-  }
-  const current = (await mediaStore.read()).find((asset) => asset.id === req.params.id)
-  if (!current) {
-    res.status(404).json({ error: { code: 'not_found', message: 'Image not found.' } })
-    return
-  }
-  let updated: SiteMediaAsset | undefined
-  await mediaStore.mutate((assets) =>
-    assets.map((asset) => {
-      if (asset.id !== req.params.id) return asset
-      updated = { ...asset, alt: parsed.data.alt }
-      return updated
-    }),
-  )
-  if (!updated) {
-    res.status(404).json({ error: { code: 'not_found', message: 'Image not found.' } })
-    return
-  }
-  res.json({ data: updated })
-})
+mediaRouter.patch(
+  '/admin/media/:id',
+  requireAdmin,
+  requirePermission('content.write'),
+  requireAdminMutation,
+  async (req, res) => {
+    const parsed = mediaPatchSchema.safeParse(req.body)
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ error: { code: 'validation_error', message: 'Invalid media details.' } })
+      return
+    }
+    const current = (await mediaStore.read()).find((asset) => asset.id === req.params.id)
+    if (!current) {
+      res.status(404).json({ error: { code: 'not_found', message: 'Image not found.' } })
+      return
+    }
+    let updated: SiteMediaAsset | undefined
+    await mediaStore.mutate((assets) =>
+      assets.map((asset) => {
+        if (asset.id !== req.params.id) return asset
+        updated = { ...asset, alt: parsed.data.alt }
+        return updated
+      }),
+    )
+    if (!updated) {
+      res.status(404).json({ error: { code: 'not_found', message: 'Image not found.' } })
+      return
+    }
+    res.json({ data: updated })
+  },
+)
 
-mediaRouter.delete('/admin/media/:id', requireAdmin, requirePermission('content.write'), requireAdminMutation, async (req, res) => {
-  const assets = await mediaStore.read()
-  const asset = assets.find((entry) => entry.id === req.params.id)
-  if (!asset) {
-    res.status(404).json({ error: { code: 'not_found', message: 'Image not found.' } })
-    return
-  }
-  const file = path.resolve(UPLOAD_ROOT, asset.folder, asset.filename)
-  if (!file.startsWith(`${path.resolve(UPLOAD_ROOT)}${path.sep}`)) {
-    res.status(400).json({ error: { code: 'invalid_path', message: 'Image path is invalid.' } })
-    return
-  }
-  try {
-    await unlink(file)
-  } catch {
-    // The record can still be removed if the file was already cleaned up.
-  }
-  await mediaStore.mutate((assets) =>
-    assets.filter((entry) => entry.id !== asset.id),
-  )
-  res.json({ data: { deleted: asset.id } })
-})
+mediaRouter.delete(
+  '/admin/media/:id',
+  requireAdmin,
+  requirePermission('content.write'),
+  requireAdminMutation,
+  async (req, res) => {
+    const assets = await mediaStore.read()
+    const asset = assets.find((entry) => entry.id === req.params.id)
+    if (!asset) {
+      res.status(404).json({ error: { code: 'not_found', message: 'Image not found.' } })
+      return
+    }
+    const file = path.resolve(UPLOAD_ROOT, asset.folder, asset.filename)
+    if (!file.startsWith(`${path.resolve(UPLOAD_ROOT)}${path.sep}`)) {
+      res.status(400).json({ error: { code: 'invalid_path', message: 'Image path is invalid.' } })
+      return
+    }
+    try {
+      await unlink(file)
+    } catch {
+      // The record can still be removed if the file was already cleaned up.
+    }
+    await mediaStore.mutate((assets) => assets.filter((entry) => entry.id !== asset.id))
+    res.json({ data: { deleted: asset.id } })
+  },
+)

@@ -9,9 +9,6 @@ import { PageBackdrop } from '@/components/site/PageBackdrop'
 import { CoveragePlate } from '@/routes/contact/CoveragePlate'
 import { EnquiryForm } from '@/routes/contact/EnquiryForm'
 
-const mapUrl =
-  'https://www.openstreetmap.org/?mlat=19.1364&mlon=72.8296#map=15/19.1364/72.8296'
-
 /** Contact: the form is the slow path, the phone is the emergency path. */
 export function Contact() {
   const brand = useBrand()
@@ -19,6 +16,18 @@ export function Contact() {
   const services = useSiteServices()
   const copy = content.pages.contact
   const sections = content.pageSections.contact
+  const mapQuery = [
+    brand.name,
+    brand.address.line1,
+    brand.address.line2,
+    brand.address.locality,
+    brand.address.region,
+    brand.address.postalCode,
+    brand.address.country,
+  ]
+    .filter(Boolean)
+    .join(', ')
+  const mapUrl = `https://www.openstreetmap.org/search?query=${encodeURIComponent(mapQuery)}`
   useSeo({ path: '/contact' })
 
   return (
@@ -211,9 +220,7 @@ export function Contact() {
           <div className="md:col-span-4 md:col-start-9">
             <span className="annot">Coverage</span>
             <h2 className="t-h3 mt-4 text-fg">{sections.coverage.title}</h2>
-            <p className="mt-4 text-sm leading-relaxed text-fg-dim">
-              {sections.coverage.body}
-            </p>
+            <p className="mt-4 text-sm leading-relaxed text-fg-dim">{sections.coverage.body}</p>
 
             <ul className="mt-6 border-t border-line">
               {brand.serviceAreas.map((area) => (

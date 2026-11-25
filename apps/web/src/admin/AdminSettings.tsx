@@ -2,8 +2,9 @@ import { useCallback, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { ADMIN_ROLES, adminRoleLabel, type AdminRole } from '@hvac/shared'
 import { useLiveRefresh } from '@/admin/useLiveRefresh'
+import { useRecordDeepLink } from '@/admin/useDeepLink'
 import { Icon } from '@/components/icons'
-import { Badge, Button, Input, Select, useToast } from '@/components/ui'
+import { Badge, Button, Input, RecordDrawer, RecordViewButton, Select, useToast } from '@/components/ui'
 import { useSiteContent } from '@/content/SiteContentProvider'
 import {
   adminApi,
@@ -39,6 +40,15 @@ export function AdminSettings() {
     role: 'viewer' as AdminRole,
   })
   const [userBusy, setUserBusy] = useState(false)
+  const [viewingUser, setViewingUser] = useState<PublicAdminUser | null>(null)
+  const [viewingAudit, setViewingAudit] = useState<AuditEntry | null>(null)
+
+  useRecordDeepLink({
+    param: 'user',
+    records: users,
+    resolve: (value) => users.find((entry) => entry.id === value),
+    onOpen: setViewingUser,
+  })
 
   const load = useCallback(() => {
     adminApi
@@ -356,6 +366,10 @@ export function AdminSettings() {
                       <p className="truncate text-[10px] text-fg-faint">{entry.email}</p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
+                      <RecordViewButton
+                        label={`user ${entry.email}`}
+                        onClick={() => setViewingUser(entry)}
+                      />
                       <Select
                         aria-label={`Role for ${entry.email}`}
                         value={entry.role}
@@ -675,15 +689,21 @@ export function AdminSettings() {
                         </p>
                       </div>
                       <div className="shrink-0 text-right">
-                        <span
-                          className={
-                            entry.status >= 400
-                              ? 'font-mono text-[10px] text-danger'
-                              : 'font-mono text-[10px] text-success'
-                          }
-                        >
-                          {entry.status}
-                        </span>
+                        <div className="flex items-center justify-end gap-2">
+                          <RecordViewButton
+                            label={`audit entry ${entry.path}`}
+                            onClick={() => setViewingAudit(entry)}
+                          />
+                          <span
+                            className={
+                              entry.status >= 400
+                                ? 'font-mono text-[10px] text-danger'
+                                : 'font-mono text-[10px] text-success'
+                            }
+                          >
+                            {entry.status}
+                          </span>
+                        </div>
                         <p className="mt-0.5 text-[10px] text-fg-faint">
                           {formatDateTime(entry.at)}
                         </p>
@@ -703,6 +723,24 @@ export function AdminSettings() {
           and restarting the service; existing sessions expire within twelve hours.
         </p>
       </div>
+
+      <RecordDrawer
+        open={Boolean(viewingUser)}
+        onClose={() => setViewingUser(null)}
+        title={viewingUser?.name ?? 'Admin user'}
+        subtitle={viewingUser?.email}
+        record={viewingUser as unknown as Record<string, unknown> | null}
+        exclude={['id']}
+      />
+
+      <RecordDrawer
+        open={Boolean(viewingAudit)}
+        onClose={() => setViewingAudit(null)}
+        title={viewingAudit ? `${viewingAudit.method} ${viewingAudit.path}` : 'Audit entry'}
+        subtitle={viewingAudit ? `${viewingAudit.actor ?? 'Unauthenticated'} · ${formatDateTime(viewingAudit.at)}` : undefined}
+        record={viewingAudit as unknown as Record<string, unknown> | null}
+        exclude={['id']}
+      />
     </div>
   )
 }

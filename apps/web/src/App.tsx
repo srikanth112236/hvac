@@ -30,6 +30,11 @@ const AdminLayout = lazy(() =>
 const AdminOverview = lazy(() =>
   import('@/admin/AdminOverview').then((module) => ({ default: module.AdminOverview })),
 )
+const AdminNotifications = lazy(() =>
+  import('@/admin/AdminNotifications').then((module) => ({
+    default: module.AdminNotifications,
+  })),
+)
 const AdminLeads = lazy(() =>
   import('@/admin/AdminLeads').then((module) => ({ default: module.AdminLeads })),
 )
@@ -145,6 +150,7 @@ export function App() {
           }
         >
           <Route index element={<AdminOverview />} />
+          <Route path="notifications" element={<AdminNotifications />} />
           <Route path="leads" element={<AdminLeads />} />
           <Route path="customers" element={<AdminCustomers />} />
           <Route path="customers/:customerId" element={<AdminCustomerFile />} />

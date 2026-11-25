@@ -9,6 +9,7 @@ import type {
   CustomerSite,
   CustomerSiteInput,
   InvoiceWithTotals,
+  JobReport,
   NotificationPreferences,
   NotificationPreferencesPatch,
   QuotationRecord,
@@ -39,7 +40,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
     ...init,
-    headers: { ...mutationHeaders(init.body !== undefined), ...init.headers },
+    headers: {
+      ...mutationHeaders(init.body !== undefined && !(init.body instanceof FormData)),
+      ...init.headers,
+    },
   })
   let payload: { data?: T; error?: { message?: string } } = {}
   try {
@@ -48,7 +52,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new PortalError('The portal response could not be read.', response.status)
   }
   if (!response.ok) {
-    throw new PortalError(payload.error?.message ?? `Request failed (${response.status}).`, response.status)
+    throw new PortalError(
+      payload.error?.message ?? `Request failed (${response.status}).`,
+      response.status,
+    )
   }
   return payload.data as T
 }
@@ -127,6 +134,19 @@ export const portalApi = {
       `/portal/quotations/${encodeURIComponent(id)}/changes`,
       { method: 'POST', body: JSON.stringify({ note }) },
     ),
+  patchReportChecklist: (id: string, checklist: { id: string; done: boolean }[]) =>
+    request<JobReport>(`/portal/reports/${encodeURIComponent(id)}/checklist`, {
+      method: 'PATCH',
+      body: JSON.stringify({ checklist }),
+    }),
+  uploadReportPhotos: (id: string, files: File[]) => {
+    const body = new FormData()
+    for (const file of files) body.append('files', file)
+    return request<JobReport>(`/portal/reports/${encodeURIComponent(id)}/photos`, {
+      method: 'POST',
+      body,
+    })
+  },
   renewAmc: (id: string) =>
     request<SupportTicket>(`/portal/amc/${encodeURIComponent(id)}/renew`, { method: 'POST' }),
   createTicket: (input: TicketInput) =>

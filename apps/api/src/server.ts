@@ -4,6 +4,7 @@ import { assertProductionConfig, mailerConfigured } from './config.js'
 import { startJobs } from './jobs.js'
 import { tickNewsletters } from './marketing.js'
 import { runMigrations } from './migrations.js'
+import { attachNotificationSocket } from './notifications.js'
 
 // Refuse to boot a production deployment with development credentials, no
 // allowed origin or no encryption key. Failing at start is safer.
@@ -23,6 +24,7 @@ function shutdown(signal: string): void {
 async function start(): Promise<void> {
   await runMigrations()
   server = app.listen(PORT, () => {
+    attachNotificationSocket(server as Server)
     console.log(`[hvac-api] listening on http://127.0.0.1:${PORT}/api/v1/health`)
     if (!mailerConfigured()) {
       console.warn(

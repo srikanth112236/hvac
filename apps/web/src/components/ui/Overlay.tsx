@@ -196,6 +196,8 @@ export function Modal({
 
 interface DrawerProps extends OverlayShellProps {
   side?: 'left' | 'right'
+  onBack?: () => void
+  backLabel?: string
 }
 
 export function Drawer({
@@ -206,6 +208,8 @@ export function Drawer({
   children,
   footer,
   side = 'right',
+  onBack,
+  backLabel = 'Back',
   className,
 }: DrawerProps) {
   const titleId = useId()
@@ -244,15 +248,28 @@ export function Drawer({
             )}
           >
             <div className="flex shrink-0 items-start justify-between gap-6 border-b border-line px-6 py-5">
-              <div className="flex flex-col gap-1.5">
-                <h2 id={titleId} className="t-h4 text-fg">
-                  {title}
-                </h2>
-                {description ? (
-                  <p id={descriptionId} className="text-[13px] leading-snug text-fg-dim">
-                    {description}
-                  </p>
+              <div className="flex min-w-0 items-start gap-3">
+                {onBack ? (
+                  <button
+                    type="button"
+                    onClick={onBack}
+                    aria-label={backLabel}
+                    title={backLabel}
+                    className="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center border border-line text-fg-faint transition-colors duration-2 hover:border-cold/50 hover:text-cold"
+                  >
+                    <Icon name="chevron-left" size={14} />
+                  </button>
                 ) : null}
+                <div className="flex min-w-0 flex-col gap-1.5">
+                  <h2 id={titleId} className="t-h4 text-fg">
+                    {title}
+                  </h2>
+                  {description ? (
+                    <p id={descriptionId} className="text-[13px] leading-snug text-fg-dim">
+                      {description}
+                    </p>
+                  ) : null}
+                </div>
               </div>
               <button
                 type="button"

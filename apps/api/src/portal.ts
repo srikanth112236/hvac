@@ -33,7 +33,7 @@ import { BUSINESS_TIMEZONE } from './config.js'
 import { customerWantsEmail } from './customerPreferences.js'
 import { createStore } from './store.js'
 import { appointmentConfirmation, sendMail } from './mailer.js'
-import { createJob } from './jobStore.js'
+import { createJob, jobStore } from './jobStore.js'
 import { streamInvoicePdf } from './pdf.js'
 import { hourInZone, startOfTodayInZone, zonedTimeToUtc } from './time.js'
 
@@ -453,6 +453,27 @@ portalRouter.patch(
       res.status(404).json({ error: { code: 'not_found', message: 'That visit was not found.' } })
       return
     }
+    await jobStore.mutate((jobs) =>
+      jobs.map((job) => {
+        if (job.appointmentId !== current.id) return job
+        const updatedAt = nowIso()
+        if (parsed.data.action === 'cancel') {
+          return {
+            ...job,
+            status: 'cancelled',
+            notes: job.notes ? `${job.notes} ? Cancelled by customer` : 'Cancelled by customer',
+            updatedAt,
+          }
+        }
+        return {
+          ...job,
+          scheduledAt,
+          status: job.status === 'draft' || job.status === 'scheduled' ? 'scheduled' : job.status,
+          notes: job.notes,
+          updatedAt,
+        }
+      }),
+    )
     res.json({ data: saved })
   },
 )
@@ -557,10 +578,7 @@ customersRouter.patch('/customers/:id', async (req, res) => {
       return
     }
   }
-  if (
-    parsed.data.status === 'active' &&
-    (existing.status ?? 'active') === 'unverified'
-  ) {
+  if (parsed.data.status === 'active' && (existing.status ?? 'active') === 'unverified') {
     res.status(400).json({
       error: {
         code: 'email_unverified',
@@ -698,5 +716,25 @@ customersRouter.patch('/appointments/:id', async (req, res) => {
     res.status(404).json({ error: { code: 'not_found', message: 'Appointment not found.' } })
     return
   }
+  await jobStore.mutate((jobs) =>
+    jobs.map((job) => {
+      if (job.appointmentId !== current.id) return job
+      const status =
+        saved?.status === 'cancelled'
+          ? 'cancelled'
+          : saved?.status === 'completed'
+            ? 'completed'
+            : job.status === 'completed' || job.status === 'cancelled'
+              ? job.status
+              : 'scheduled'
+      return {
+        ...job,
+        scheduledAt: saved?.scheduledAt ?? job.scheduledAt,
+        technician: saved?.technician || job.technician,
+        status,
+        updatedAt: nowIso(),
+      }
+    }),
+  )
   res.json({ data: saved })
 })

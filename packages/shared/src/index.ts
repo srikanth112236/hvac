@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { LeadAttachment } from './site'
 
 /* -------------------------------------------------------------------------- */
 /*  Domain vocabulary shared by web, API and admin                            */
@@ -184,6 +185,8 @@ export const LEAD_SOURCES = [
   'service-page',
   'amc-page',
   'calculator',
+  'booking-page',
+  'quote-page',
   'customer-portal',
 ] as const
 export type LeadSource = (typeof LEAD_SOURCES)[number]
@@ -194,6 +197,21 @@ export const leadSubmissionSchema = contactEnquirySchema.extend({
   serviceName: z.string().trim().max(120).optional(),
   context: z.string().trim().max(1200).optional(),
   plan: z.string().trim().max(60).optional(),
+  attachments: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(180),
+        url: z.string().trim().min(1).max(500),
+        mimeType: z.string().trim().max(80),
+        size: z
+          .number()
+          .int()
+          .min(0)
+          .max(12 * 1024 * 1024),
+      }),
+    )
+    .max(3)
+    .optional(),
   /** Hidden field; real visitors never fill it. */
   honeypot: z.string().max(200).optional(),
 })
@@ -222,6 +240,7 @@ export interface LeadRecord {
   urgency: Urgency
   plan: string | null
   context: string | null
+  attachments?: LeadAttachment[]
 }
 
 /** ENQ-2026-0001, numbered per calendar year. */
@@ -258,3 +277,4 @@ export * from './portal'
 export * from './portalModules'
 export * from './jobs'
 export * from './marketing'
+export * from './notifications'

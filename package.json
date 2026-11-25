@@ -27,9 +27,11 @@
     "test": "npm run test -w @hvac/api",
     "test:ssr": "npm run test:ssr -w @hvac/web",
     "test:e2e": "playwright test",
+    "seed:demo": "npm run seed:demo -w @hvac/api",
     "verify": "npm run typecheck && npm run lint && npm run test && npm run build && npm run audit",
     "format": "prettier --write .",
-    "setup:hooks": "husky"
+    "setup:hooks": "husky",
+    "catalog:industries": "node scripts/generate-industry-catalog.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.1",

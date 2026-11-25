@@ -141,6 +141,83 @@ function withSectionCopy<K extends keyof SitePageSections>(
   return { ...base, [key]: target[key] }
 }
 
+function upsertRecord<T extends { id: string }>(current: T[], record: T): T[] {
+  const exists = current.some((entry) => entry.id === record.id)
+  return exists
+    ? current.map((entry) => (entry.id === record.id ? record : entry))
+    : [...current, record]
+}
+
+/** Restore one collection record without replacing its sibling records. */
+export function restoreRecordPayload(
+  base: SiteContentPayload,
+  old: SiteContentPayload,
+  pageId: string,
+): SiteContentPayload | null {
+  const prefixes = {
+    'service:': 'services',
+    'work-case:': 'workCases',
+    'product:': 'products',
+    'plan:': 'plans',
+    'post:': 'posts',
+  } as const
+  for (const [prefix, root] of Object.entries(prefixes)) {
+    if (!pageId.startsWith(prefix)) continue
+    const id = pageId.slice(prefix.length)
+    if (!id) return null
+    const target = (old[root] as { id: string }[]).find((entry) => entry.id === id)
+    if (!target) return null
+    if (root === 'services') {
+      return {
+        ...base,
+        services: upsertRecord(base.services, target as SiteContentPayload['services'][number]),
+      }
+    }
+    if (root === 'workCases') {
+      return {
+        ...base,
+        workCases: upsertRecord(base.workCases, target as SiteContentPayload['workCases'][number]),
+      }
+    }
+    if (root === 'products') {
+      return {
+        ...base,
+        products: upsertRecord(base.products, target as SiteContentPayload['products'][number]),
+      }
+    }
+    if (root === 'plans') {
+      return {
+        ...base,
+        plans: upsertRecord(base.plans, target as SiteContentPayload['plans'][number]),
+      }
+    }
+    return {
+      ...base,
+      posts: upsertRecord(base.posts, target as SiteContentPayload['posts'][number]),
+    }
+  }
+  return null
+}
+
+function recordPageLabel(pageId: string, content: SiteContent): string | null {
+  const prefixes = [
+    ['service:', 'services', 'name'],
+    ['work-case:', 'workCases', 'name'],
+    ['product:', 'products', 'name'],
+    ['plan:', 'plans', 'name'],
+    ['post:', 'posts', 'title'],
+  ] as const
+  for (const [prefix, root, labelKey] of prefixes) {
+    if (!pageId.startsWith(prefix)) continue
+    const id = pageId.slice(prefix.length)
+    const record = (content[root] as unknown as Record<string, unknown>[]).find(
+      (entry) => entry.id === id,
+    )
+    return typeof record?.[labelKey] === 'string' ? String(record[labelKey]) : null
+  }
+  return null
+}
+
 /** Replace only the content owned by one page, leaving every other page live. */
 function restorePagePayload(
   current: SiteContent,
@@ -149,6 +226,8 @@ function restorePagePayload(
 ): SiteContentPayload | null {
   const base = toPayload(current)
   const old = toPayload(target)
+  const record = restoreRecordPayload(base, old, pageId)
+  if (record) return record
 
   switch (pageId) {
     case 'home':
@@ -480,6 +559,7 @@ export async function restoreContentRevision(
     const pageLabel =
       pageId &&
       (target.changes.find((change) => change.pageId === pageId)?.pageLabel ??
+        recordPageLabel(pageId, target.content) ??
         contentPageLabel(pageId))
     const note = selected.length
       ? `Restored ${selected.length} field${selected.length === 1 ? '' : 's'}${

@@ -9,7 +9,7 @@ function dateDisplay(date: Date): string {
   }).format(date)
 }
 
-test('reminders queue segments, filters, prioritises and completes', async ({ page }) => {
+test('reminders queue segments, filters, prioritises, completes and locks', async ({ page }) => {
   const title = `E2E urgent reminder ${Date.now()}`
   page.on('dialog', (dialog) => void dialog.accept())
 
@@ -31,7 +31,7 @@ test('reminders queue segments, filters, prioritises and completes', async ({ pa
   await page.getByRole('button', { name: 'Apply', exact: true }).click()
   await composer.getByLabel('Priority').click()
   await page.getByRole('option', { name: 'Urgent', exact: true }).click()
-  await composer.getByLabel('Category').click()
+  await composer.getByLabel('Action type').click()
   await page.getByRole('option', { name: 'Payment', exact: true }).click()
   await composer.getByRole('button', { name: /Add reminder/i }).click()
 
@@ -50,11 +50,13 @@ test('reminders queue segments, filters, prioritises and completes', async ({ pa
   await page.getByRole('button', { name: /Save changes/i }).click()
   await expect(card.getByText('High priority')).toBeVisible()
 
-  await card.getByRole('button', { name: /Done/ }).click()
-  await expect(card.getByText('Completed', { exact: true })).toBeVisible()
-
-  await card.getByRole('button', { name: `Delete reminder ${title}` }).click()
-  await expect(page.getByText(title)).toHaveCount(0)
+  await card.getByRole('button', { name: /Complete/ }).click()
+  await expect(card.getByText('Locked', { exact: true })).toBeVisible()
+  await expect(card.getByText(/Locked audit record/i)).toBeVisible()
+  await expect(card.getByRole('button', { name: 'Edit' })).toHaveCount(0)
+  await expect(card.getByRole('button', { name: `Delete reminder ${title}` })).toHaveCount(0)
+  await expect(card.getByRole('button', { name: 'Reopen' })).toHaveCount(0)
 
   await page.getByRole('button', { name: 'Reset filters' }).click()
+  await expect(card).toBeVisible()
 })

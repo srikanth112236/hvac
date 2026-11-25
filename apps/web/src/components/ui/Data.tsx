@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { cn } from '@/lib/cn'
 import { Icon, type IconName } from '@/components/icons'
 
@@ -65,11 +66,15 @@ export function Stat({ label, value, unit, note, className, size = 'md' }: StatP
   const valueSize = size === 'lg' ? 'text-h2' : size === 'sm' ? 'text-h4' : 'text-h3'
   return (
     <div className={cn('flex flex-col gap-2', className)}>
-      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-faint">{label}</span>
+      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-faint">
+        {label}
+      </span>
       <span className="flex items-baseline gap-1.5">
         <span className={cn('t-num font-medium leading-none text-fg', valueSize)}>{value}</span>
         {unit ? (
-          <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">{unit}</span>
+          <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+            {unit}
+          </span>
         ) : null}
       </span>
       {note ? <span className="text-[11px] leading-snug text-fg-faint">{note}</span> : null}
@@ -90,12 +95,85 @@ export interface Column<T> {
   mono?: boolean
 }
 
+export type TableActionTone = 'default' | 'cold' | 'heat' | 'success' | 'danger'
+
+const actionTones: Record<TableActionTone, string> = {
+  default: 'text-fg-faint hover:border-line-strong hover:text-fg',
+  cold: 'text-fg-faint hover:border-cold/50 hover:text-cold',
+  heat: 'text-fg-faint hover:border-heat/50 hover:text-heat',
+  success: 'text-fg-faint hover:border-success/50 hover:text-success',
+  danger: 'text-fg-faint hover:border-danger/50 hover:text-danger',
+}
+
+const actionButtonBase =
+  'inline-flex h-7 w-7 shrink-0 items-center justify-center border border-line transition-colors duration-2 disabled:cursor-not-allowed disabled:opacity-40'
+
+export function TableActions({ children }: { children: ReactNode }) {
+  return <div className="flex flex-wrap items-center justify-end gap-1">{children}</div>
+}
+
+export function TableActionButton({
+  label,
+  icon,
+  onClick,
+  tone = 'default',
+  disabled,
+}: {
+  label: string
+  icon: IconName
+  onClick: () => void
+  tone?: TableActionTone
+  disabled?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+      className={cn(actionButtonBase, actionTones[tone])}
+    >
+      <Icon name={icon} size={11} />
+    </button>
+  )
+}
+
+export function TableActionLink({
+  to,
+  label,
+  icon,
+  tone = 'default',
+  external,
+}: {
+  to: string
+  label: string
+  icon: IconName
+  tone?: TableActionTone
+  external?: boolean
+}) {
+  return (
+    <Link
+      to={to}
+      aria-label={label}
+      title={label}
+      target={external ? '_blank' : undefined}
+      rel={external ? 'noreferrer' : undefined}
+      className={cn(actionButtonBase, actionTones[tone])}
+    >
+      <Icon name={icon} size={11} />
+    </Link>
+  )
+}
+
 interface TableProps<T extends { id: string }> {
   columns: Column<T>[]
   rows: T[]
   caption?: string
   dense?: boolean
   onRowClick?: (row: T) => void
+  onRowView?: (row: T) => void
+  viewLabel?: (row: T) => string
   className?: string
 }
 
@@ -105,6 +183,8 @@ export function Table<T extends { id: string }>({
   caption,
   dense,
   onRowClick,
+  onRowView,
+  viewLabel,
   className,
 }: TableProps<T>) {
   return (
@@ -119,7 +199,7 @@ export function Table<T extends { id: string }>({
                 scope="col"
                 style={column.width ? { width: column.width } : undefined}
                 className={cn(
-                  'px-4 py-3 font-mono text-[10px] font-medium uppercase tracking-[0.12em] text-fg-faint',
+                  'px-3 py-2.5 font-mono text-[9px] font-medium uppercase tracking-[0.12em] text-fg-faint',
                   column.align === 'right' && 'text-right',
                   column.align === 'center' && 'text-center',
                 )}
@@ -127,6 +207,14 @@ export function Table<T extends { id: string }>({
                 {column.header}
               </th>
             ))}
+            {onRowView ? (
+              <th
+                scope="col"
+                className="w-11 px-2 py-2.5 text-right font-mono text-[9px] font-medium uppercase tracking-[0.12em] text-fg-faint"
+              >
+                <span className="sr-only">Details</span>
+              </th>
+            ) : null}
           </tr>
         </thead>
         <tbody>
@@ -145,8 +233,8 @@ export function Table<T extends { id: string }>({
                   <td
                     key={column.key}
                     className={cn(
-                      'px-4 align-middle text-[13px] text-fg',
-                      dense ? 'py-2' : 'py-3.5',
+                      'px-3 align-middle text-[12px] text-fg',
+                      dense ? 'py-1.5' : 'py-2.5',
                       column.align === 'right' && 'text-right',
                       column.align === 'center' && 'text-center',
                       column.mono && 't-num text-[12px] text-fg-dim',
@@ -156,11 +244,30 @@ export function Table<T extends { id: string }>({
                   </td>
                 )
               })}
+              {onRowView ? (
+                <td className={cn('px-4 text-right align-middle', dense ? 'py-1.5' : 'py-2.5')}>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onRowView(row)
+                    }}
+                    aria-label={`View ${viewLabel?.(row) ?? row.id}`}
+                    title={`View ${viewLabel?.(row) ?? row.id}`}
+                    className="inline-flex h-7 w-7 items-center justify-center border border-line text-fg-faint transition-colors duration-2 hover:border-cold/50 hover:text-cold"
+                  >
+                    <Icon name="eye" size={13} />
+                  </button>
+                </td>
+              ) : null}
             </tr>
           ))}
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} className="px-4 py-10 text-center text-sm text-fg-faint">
+              <td
+                colSpan={columns.length + (onRowView ? 1 : 0)}
+                className="px-4 py-10 text-center text-sm text-fg-faint"
+              >
                 No records.
               </td>
             </tr>
@@ -204,7 +311,10 @@ export function Pagination({ page, pageCount, onPageChange, className }: Paginat
         aria-label="Previous page"
         disabled={page <= 1}
         onClick={() => onPageChange?.(page - 1)}
-        className={cn(cell, 'border-line text-fg-dim hover:border-line-strong hover:text-fg disabled:opacity-30')}
+        className={cn(
+          cell,
+          'border-line text-fg-dim hover:border-line-strong hover:text-fg disabled:opacity-30',
+        )}
       >
         <Icon name="chevron-left" size={14} />
       </button>
@@ -235,7 +345,10 @@ export function Pagination({ page, pageCount, onPageChange, className }: Paginat
         aria-label="Next page"
         disabled={page >= pageCount}
         onClick={() => onPageChange?.(page + 1)}
-        className={cn(cell, 'border-line text-fg-dim hover:border-line-strong hover:text-fg disabled:opacity-30')}
+        className={cn(
+          cell,
+          'border-line text-fg-dim hover:border-line-strong hover:text-fg disabled:opacity-30',
+        )}
       >
         <Icon name="chevron-right" size={14} />
       </button>
@@ -266,7 +379,10 @@ export function Breadcrumbs({ items, className }: BreadcrumbsProps) {
                   {item.label}
                 </a>
               ) : (
-                <span aria-current={last ? 'page' : undefined} className={last ? 'text-fg-dim' : undefined}>
+                <span
+                  aria-current={last ? 'page' : undefined}
+                  className={last ? 'text-fg-dim' : undefined}
+                >
                   {item.label}
                 </span>
               )}
@@ -290,7 +406,13 @@ interface EmptyStateProps {
   className?: string
 }
 
-export function EmptyState({ icon = 'filter', title, description, action, className }: EmptyStateProps) {
+export function EmptyState({
+  icon = 'filter',
+  title,
+  description,
+  action,
+  className,
+}: EmptyStateProps) {
   return (
     <div
       className={cn(
@@ -303,7 +425,9 @@ export function EmptyState({ icon = 'filter', title, description, action, classN
       </span>
       <div className="flex flex-col gap-1.5">
         <p className="t-h4 text-fg">{title}</p>
-        {description ? <p className="max-w-xs text-[13px] leading-relaxed text-fg-dim">{description}</p> : null}
+        {description ? (
+          <p className="max-w-xs text-[13px] leading-relaxed text-fg-dim">{description}</p>
+        ) : null}
       </div>
       {action}
     </div>
@@ -323,10 +447,7 @@ export function SkeletonBlock({ lines = 3, className }: SkeletonProps) {
   return (
     <div className={cn('flex flex-col gap-2', className)} aria-hidden>
       {Array.from({ length: lines }).map((_, index) => (
-        <Skeleton
-          key={index}
-          className={cn('h-3', index === lines - 1 ? 'w-2/3' : 'w-full')}
-        />
+        <Skeleton key={index} className={cn('h-3', index === lines - 1 ? 'w-2/3' : 'w-full')} />
       ))}
     </div>
   )

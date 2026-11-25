@@ -45,6 +45,7 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:4000',
         changeOrigin: false,
+        ws: true,
       },
       '/uploads': {
         target: 'http://127.0.0.1:4000',
@@ -75,6 +76,7 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:4000',
         changeOrigin: false,
+        ws: true,
       },
       '/uploads': {
         target: 'http://127.0.0.1:4000',

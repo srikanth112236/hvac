@@ -132,6 +132,16 @@ jobsRouter.get('/admin/jobs', async (req, res) => {
   })
 })
 
+jobsRouter.get('/admin/jobs/:id', async (req, res) => {
+  const jobs = await jobStore.read()
+  const job = jobs.find((entry) => entry.id === req.params.id || entry.ref === req.params.id)
+  if (!job) {
+    res.status(404).json({ error: { code: 'not_found', message: 'Job not found.' } })
+    return
+  }
+  res.json({ data: job })
+})
+
 jobsRouter.post('/admin/jobs', async (req, res) => {
   const parsed = jobInputSchema.safeParse(req.body)
   if (!parsed.success) {

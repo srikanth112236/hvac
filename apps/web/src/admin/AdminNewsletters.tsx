@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useLiveRefresh } from '@/admin/useLiveRefresh'
+import { useRecordDeepLink } from '@/admin/useDeepLink'
 import {
   couponValueLabel,
   newsletterAudienceLabel,
@@ -14,6 +16,7 @@ import {
   type NewsletterRecurrenceKind,
   type NewsletterStatus,
   type NewsletterSummary,
+  type NewsletterSuppression,
 } from '@hvac/shared'
 import {
   Badge,
@@ -22,12 +25,16 @@ import {
   EmptyState,
   Input,
   Modal,
+  RecordDrawer,
+  RecordViewButton,
+  SearchSuggest,
   Select,
+  TableActionButton,
+  TableActions,
   Textarea,
   Toggle,
   useToast,
 } from '@/components/ui'
-import { Icon } from '@/components/icons'
 import { adminApi } from '@/admin/api'
 import {
   AdminLoading,
@@ -244,6 +251,7 @@ function audienceEstimate(draft: Draft, audiences: NewsletterAudienceFeed | null
 
 export function AdminNewsletters() {
   const { toast } = useToast()
+  const [searchParams] = useSearchParams()
   const [campaigns, setCampaigns] = useState<NewsletterRecord[]>([])
   const [summary, setSummary] = useState<NewsletterSummary | null>(null)
   const [audiences, setAudiences] = useState<NewsletterAudienceFeed | null>(null)
@@ -259,6 +267,7 @@ export function AdminNewsletters() {
   const [audienceOpen, setAudienceOpen] = useState(false)
   const [audienceQuery, setAudienceQuery] = useState('')
   const [suppressionOpen, setSuppressionOpen] = useState(false)
+  const [suppressedViewing, setSuppressedViewing] = useState<NewsletterSuppression | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -280,6 +289,10 @@ export function AdminNewsletters() {
   }, [])
 
   useLiveRefresh(load, 20_000)
+
+  useEffect(() => {
+    if (searchParams.get('open')) setView('list')
+  }, [searchParams])
 
   const queueActive = campaigns.some(
     (campaign) => campaign.status === 'sending' || campaign.status === 'scheduled',
@@ -606,6 +619,20 @@ export function AdminNewsletters() {
     )
   }, [audiences, audienceQuery])
 
+  const customerSuggestions = useMemo(
+    () =>
+      (audiences?.customers ?? []).map((customer) => ({
+        id: customer.email,
+        label: customer.name,
+        value: customer.name,
+        description: `${customer.email}${customer.reason ? ` · ${customer.reason}` : ''}`,
+        meta: customer.suppressed ? 'Suppressed' : 'Eligible',
+        keywords: customer.email,
+        icon: (customer.suppressed ? 'shield' : 'mail') as 'shield' | 'mail',
+      })),
+    [audiences],
+  )
+
   if (loading) return <AdminLoading rows={6} />
 
   return (
@@ -705,11 +732,27 @@ export function AdminNewsletters() {
           />
         </div>
         <div className="flex flex-wrap items-center gap-2 pb-3">
-          <Input
+          <SearchSuggest
             aria-label="Search customers"
             placeholder="Search name or email"
             value={audienceQuery}
-            onChange={(event) => setAudienceQuery(event.target.value)}
+            onChange={setAudienceQuery}
+            suggestions={customerSuggestions}
+            onSelect={(suggestion) => {
+              setAudienceQuery(suggestion.label)
+              const customer = audiences?.customers.find((entry) => entry.email === suggestion.id)
+              if (
+                customer &&
+                (draft.overrideSuppression || !customer.suppressed) &&
+                !draft.recipients.includes(customer.email)
+              ) {
+                setDraft((current) => ({
+                  ...current,
+                  recipients: [...current.recipients, customer.email],
+                }))
+              }
+            }}
+            emptyMessage="No customer matches that name or email."
             className="max-w-[320px]"
           />
           <Button
@@ -802,6 +845,9 @@ export function AdminNewsletters() {
                   <th className="px-3 py-2 font-normal">Email</th>
                   <th className="px-3 py-2 font-normal">Name / source</th>
                   <th className="px-3 py-2 font-normal">Reason</th>
+                  <th className="px-3 py-2 text-right font-normal">
+                    <span className="sr-only">Details</span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line/70">
@@ -815,6 +861,12 @@ export function AdminNewsletters() {
                       </span>
                     </td>
                     <td className="px-3 py-2 text-[11px] text-fg-dim">{entry.reason}</td>
+                    <td className="px-3 py-2 text-right">
+                      <RecordViewButton
+                        label={`suppression ${entry.email}`}
+                        onClick={() => setSuppressedViewing(entry)}
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -822,6 +874,27 @@ export function AdminNewsletters() {
           </div>
         )}
       </Modal>
+
+      <RecordDrawer
+        open={Boolean(suppressedViewing)}
+        onClose={() => setSuppressedViewing(null)}
+        title={suppressedViewing?.email ?? 'Suppressed address'}
+        subtitle={
+          suppressedViewing
+            ? `${suppressedViewing.source} · ${suppressedViewing.reason}`
+            : undefined
+        }
+        record={
+          suppressedViewing
+            ? {
+                email: suppressedViewing.email,
+                name: suppressedViewing.name,
+                source: suppressedViewing.source,
+                reason: suppressedViewing.reason,
+              }
+            : null
+        }
+      />
     </>
   )
 }
@@ -856,6 +929,7 @@ function CampaignTable({
   const [status, setStatus] = useState<'all' | NewsletterStatus>('all')
   const [audience, setAudience] = useState<'all' | NewsletterAudience>('all')
   const [scheduleTarget, setScheduleTarget] = useState<NewsletterRecord | null>(null)
+  const [viewing, setViewing] = useState<NewsletterRecord | null>(null)
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -869,6 +943,33 @@ function CampaignTable({
         .includes(needle)
     })
   }, [campaigns, query, status, audience])
+
+  const suggestions = useMemo(
+    () =>
+      campaigns
+        .filter((campaign) => {
+          if (status !== 'all' && campaign.status !== status) return false
+          if (audience !== 'all' && campaign.audience !== audience) return false
+          return true
+        })
+        .map((campaign) => ({
+          id: campaign.id,
+          label: campaign.subject,
+          value: campaign.subject,
+          description: `${campaign.preheader || newsletterAudienceLabel[campaign.audience]} · ${campaign.recipients.length} recipients`,
+          meta: newsletterStatusLabel[campaign.status],
+          keywords: `${campaign.fromName} ${campaign.replyTo} ${campaign.recipients.join(' ')}`,
+          icon: 'mail' as const,
+        })),
+    [audience, campaigns, status],
+  )
+
+  useRecordDeepLink({
+    param: 'open',
+    records: campaigns,
+    resolve: (value) => campaigns.find((campaign) => campaign.id === value),
+    onOpen: setViewing,
+  })
 
   const paused = campaigns.filter((campaign) => campaign.status === 'paused').length
 
@@ -898,11 +999,18 @@ function CampaignTable({
 
       <div className="flex flex-col gap-3 border border-line bg-panel/25 p-3">
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_170px_190px]">
-          <Input
+          <SearchSuggest
             label="Search campaigns"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={setQuery}
+            suggestions={suggestions}
+            onSelect={(suggestion) => {
+              setQuery(suggestion.label)
+              const campaign = campaigns.find((entry) => entry.id === suggestion.id)
+              if (campaign) setViewing(campaign)
+            }}
             placeholder="Subject, preheader, sender or recipient"
+            emptyMessage="No campaign matches that subject or recipient."
           />
           <Select
             label="Status"
@@ -966,7 +1074,7 @@ function CampaignTable({
                   campaign.status === 'paused'
                 return (
                   <tr key={campaign.id} className="align-top hover:bg-cold/[0.02]">
-                    <td className="max-w-[270px] px-3 py-3">
+                    <td className="max-w-[270px] px-3 py-2.5">
                       <p className="truncate text-[12px] text-fg">{campaign.subject}</p>
                       <p className="mt-0.5 truncate text-[10px] text-fg-dim">
                         {campaign.preheader || 'No preheader'}
@@ -987,7 +1095,7 @@ function CampaignTable({
                         ) : null}
                       </div>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-2.5">
                       <div className="flex flex-col items-start gap-1">
                         <Badge tone={STATUS_TONE[campaign.status]} dot>
                           {newsletterStatusLabel[campaign.status]}
@@ -995,10 +1103,10 @@ function CampaignTable({
                         {lock ? <Badge tone="warn">{lock}</Badge> : null}
                       </div>
                     </td>
-                    <td className="px-3 py-3 text-[10px] text-fg-dim">
+                    <td className="px-3 py-2.5 text-[10px] text-fg-dim">
                       {newsletterAudienceLabel[campaign.audience]}
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-2.5">
                       <span className="font-mono text-[10px] text-fg">{total}</span>
                       {campaign.suppressedCount ? (
                         <span className="mt-0.5 block text-[9px] text-warn">
@@ -1006,7 +1114,7 @@ function CampaignTable({
                         </span>
                       ) : null}
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-2.5">
                       <div className="flex items-center gap-2">
                         <div className="h-1 w-24 bg-line/60">
                           <div className="h-full bg-cold" style={{ width: `${percent}%` }} />
@@ -1021,7 +1129,7 @@ function CampaignTable({
                         </span>
                       ) : null}
                     </td>
-                    <td className="px-3 py-3 text-[10px] text-fg-dim">
+                    <td className="px-3 py-2.5 text-[10px] text-fg-dim">
                       {campaign.scheduledAt ? (
                         <>
                           <span className="block">{formatDateTime(campaign.scheduledAt)}</span>
@@ -1037,68 +1145,64 @@ function CampaignTable({
                         <span>Not scheduled</span>
                       )}
                     </td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-wrap justify-end gap-1.5">
+                    <td className="px-3 py-2">
+                      <TableActions>
+                        <RecordViewButton
+                          label={`campaign ${campaign.subject}`}
+                          onClick={() => setViewing(campaign)}
+                        />
                         {canOpen ? (
-                          <Button
-                            variant="secondary"
-                            size="sm"
+                          <TableActionButton
+                            label={`Open ${campaign.subject}`}
+                            icon="arrow-right"
+                            tone="cold"
                             disabled={locked}
                             onClick={() => onOpen(campaign)}
-                          >
-                            Open
-                          </Button>
+                          />
                         ) : null}
                         {!locked && campaign.status !== 'sending' && campaign.status !== 'sent' ? (
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            className="border-cold/40 text-cold hover:border-cold"
+                          <TableActionButton
+                            label={`${campaign.status === 'scheduled' ? 'Reschedule' : 'Schedule'} ${campaign.subject}`}
+                            icon="calendar"
+                            tone="cold"
                             disabled={working}
                             onClick={() => setScheduleTarget(campaign)}
-                          >
-                            {campaign.status === 'scheduled' ? 'Reschedule' : 'Schedule'}
-                          </Button>
+                          />
                         ) : null}
                         {(campaign.status === 'sending' || campaign.status === 'scheduled') &&
                         !locked ? (
-                          <Button
-                            variant="quiet"
-                            size="sm"
-                            loading={working}
+                          <TableActionButton
+                            label={`${campaign.status === 'scheduled' ? 'Cancel schedule' : 'Pause'} ${campaign.subject}`}
+                            icon="minus"
+                            tone="heat"
+                            disabled={working}
                             onClick={() => onAction(campaign, 'pause')}
-                          >
-                            {campaign.status === 'scheduled' ? 'Cancel schedule' : 'Pause'}
-                          </Button>
+                          />
                         ) : null}
                         {campaign.status === 'paused' ? (
-                          <Button
-                            variant="quiet"
-                            size="sm"
-                            loading={working}
+                          <TableActionButton
+                            label={`Resume ${campaign.subject}`}
+                            icon="refresh"
+                            tone="success"
+                            disabled={working}
                             onClick={() => onAction(campaign, 'resume')}
-                          >
-                            Resume
-                          </Button>
+                          />
                         ) : null}
-                        <Button
-                          variant="quiet"
-                          size="sm"
-                          loading={working}
+                        <TableActionButton
+                          label={`Duplicate ${campaign.subject}`}
+                          icon="plus"
+                          tone="cold"
+                          disabled={working}
                           onClick={() => onAction(campaign, 'duplicate')}
-                        >
-                          Copy
-                        </Button>
-                        <button
-                          type="button"
-                          aria-label={`Delete ${campaign.subject}`}
+                        />
+                        <TableActionButton
+                          label={`Delete ${campaign.subject}`}
+                          icon="close"
+                          tone="danger"
                           disabled={working || campaign.status === 'sending' || locked}
                           onClick={() => onAction(campaign, 'delete')}
-                          className="flex h-8 w-8 items-center justify-center border border-line text-fg-faint transition-colors duration-2 hover:border-danger/50 hover:text-danger disabled:opacity-40"
-                        >
-                          <Icon name="close" size={12} />
-                        </button>
-                      </div>
+                        />
+                      </TableActions>
                     </td>
                   </tr>
                 )
@@ -1112,6 +1216,49 @@ function CampaignTable({
         campaign={scheduleTarget}
         onClose={() => setScheduleTarget(null)}
         onSchedule={onSchedule}
+      />
+
+      <RecordDrawer
+        open={Boolean(viewing)}
+        onClose={() => setViewing(null)}
+        title={viewing?.subject ?? 'Campaign'}
+        subtitle={viewing ? newsletterAudienceLabel[viewing.audience] : undefined}
+        badge={
+          viewing ? (
+            <Badge tone={STATUS_TONE[viewing.status]} dot>
+              {newsletterStatusLabel[viewing.status]}
+            </Badge>
+          ) : undefined
+        }
+        record={
+          viewing
+            ? {
+                subject: viewing.subject,
+                preheader: viewing.preheader,
+                fromName: viewing.fromName,
+                replyTo: viewing.replyTo,
+                audience: newsletterAudienceLabel[viewing.audience],
+                status: newsletterStatusLabel[viewing.status],
+                schedule: viewing.scheduledAt
+                  ? formatDateTime(viewing.scheduledAt)
+                  : 'Not scheduled',
+                recurrence: recurrenceSummary(viewing.recurrence) ?? 'One-time send',
+                recipients: viewing.recipients.length,
+                suppressed: viewing.suppressedCount ?? 0,
+                sent: viewing.sentCount,
+                failed: viewing.failedCount,
+                perMinute: viewing.perMinute,
+                perHour: viewing.perHour,
+                perDay: viewing.perDay,
+                overrideSuppression: viewing.overrideSuppression ?? false,
+                seriesRun: viewing.runNumber || null,
+                lastRunAt: viewing.lastRunAt,
+                createdAt: viewing.createdAt,
+                updatedAt: viewing.updatedAt,
+                completedAt: viewing.completedAt,
+              }
+            : null
+        }
       />
     </div>
   )

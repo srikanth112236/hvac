@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLiveRefresh } from '@/admin/useLiveRefresh'
+import { useRecordDeepLink } from '@/admin/useDeepLink'
 import {
   couponStatusLabel,
   couponValueLabel,
@@ -14,6 +15,9 @@ import {
   EmptyState,
   Input,
   Modal,
+  RecordDrawer,
+  RecordViewButton,
+  SearchSuggest,
   Select,
   Textarea,
   Toggle,
@@ -99,6 +103,7 @@ export function AdminCoupons() {
   const [query, setQuery] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<CouponWithStats | null>(null)
+  const [viewing, setViewing] = useState<CouponWithStats | null>(null)
   const [form, setForm] = useState<CouponForm>(BLANK)
   const [saving, setSaving] = useState(false)
   const [busyId, setBusyId] = useState('')
@@ -133,6 +138,27 @@ export function AdminCoupons() {
       `${coupon.code} ${coupon.description}`.toLowerCase().includes(term),
     )
   }, [coupons, query])
+
+  const suggestions = useMemo(
+    () =>
+      coupons.map((coupon) => ({
+        id: coupon.id,
+        label: coupon.code,
+        value: coupon.code,
+        description: `${couponValueLabel(coupon)} · ${coupon.usageCount} redeemed`,
+        meta: couponStatusLabel[coupon.status],
+        keywords: coupon.description,
+        icon: 'tag' as const,
+      })),
+    [coupons],
+  )
+
+  useRecordDeepLink({
+    param: 'open',
+    records: coupons,
+    resolve: (value) => coupons.find((coupon) => coupon.id === value || coupon.code === value),
+    onOpen: setViewing,
+  })
 
   const expiringSoon = useMemo(
     () =>
@@ -312,11 +338,18 @@ export function AdminCoupons() {
           <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
             Discount ledger
           </h2>
-          <Input
+          <SearchSuggest
             aria-label="Search coupons"
             placeholder="Search code or description"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={setQuery}
+            suggestions={suggestions}
+            onSelect={(suggestion) => {
+              setQuery(suggestion.label)
+              const coupon = coupons.find((entry) => entry.id === suggestion.id)
+              if (coupon) setViewing(coupon)
+            }}
+            emptyMessage="No coupon matches that code or description."
             className="max-w-[280px]"
           />
         </div>
@@ -395,6 +428,10 @@ export function AdminCoupons() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-1.5 lg:justify-end">
+                    <RecordViewButton
+                      label={`coupon ${coupon.code}`}
+                      onClick={() => setViewing(coupon)}
+                    />
                     <Button variant="secondary" size="sm" onClick={() => openEdit(coupon)}>
                       Edit
                     </Button>
@@ -609,6 +646,55 @@ export function AdminCoupons() {
           </div>
         </div>
       </Modal>
+
+      <RecordDrawer
+        open={Boolean(viewing)}
+        onClose={() => setViewing(null)}
+        title={viewing?.code ?? 'Coupon'}
+        subtitle={viewing ? couponValueLabel(viewing) : undefined}
+        badge={
+          viewing ? (
+            <Badge tone={STATUS_TONE[viewing.status]} dot>
+              {couponStatusLabel[viewing.status]}
+            </Badge>
+          ) : undefined
+        }
+        record={
+          viewing
+            ? {
+                code: viewing.code,
+                description: viewing.description,
+                offer: couponValueLabel(viewing),
+                status: couponStatusLabel[viewing.status],
+                appliesTo: viewing.appliesTo,
+                minimumSpend: viewing.minSubtotal,
+                usage: viewing.usageCount,
+                maximumRedemptions: viewing.maxRedemptions || 'Unlimited',
+                remaining: viewing.remaining ?? 'Unlimited',
+                customerSavings: viewing.savedTotal,
+                startsAt: viewing.startsAt,
+                expiresAt: viewing.expiresAt,
+                active: viewing.active,
+                redemptions: viewing.redemptions,
+                createdAt: viewing.createdAt,
+                updatedAt: viewing.updatedAt,
+              }
+            : null
+        }
+        actions={
+          viewing ? (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                openEdit(viewing)
+                setViewing(null)
+              }}
+            >
+              Edit coupon
+            </Button>
+          ) : undefined
+        }
+      />
     </>
   )
 }

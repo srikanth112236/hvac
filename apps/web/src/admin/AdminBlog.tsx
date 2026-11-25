@@ -11,13 +11,19 @@ import {
   Button,
   EmptyState,
   Input,
+  RecordDrawer,
+  RecordViewButton,
+  SearchSuggest,
   Select,
+  TableActionLink,
+  TableActions,
   Textarea,
   Toggle,
   useToast,
 } from '@/components/ui'
 import { Icon } from '@/components/icons'
 import { adminApi, ApiError } from '@/admin/api'
+import { useBackTarget } from '@/admin/useBackTarget'
 import {
   AdminLoading,
   AdminPageHeader,
@@ -157,6 +163,7 @@ export function AdminBlog() {
   const { postId } = useParams<{ postId: string }>()
   const navigate = useNavigate()
   const { toast } = useToast()
+  const back = useBackTarget('/admin/blog', 'All articles')
   const [content, setContent] = useState<SiteContent | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -164,6 +171,7 @@ export function AdminBlog() {
   const [issues, setIssues] = useState<{ path: string; message: string }[]>([])
   const [draft, setDraft] = useState<SitePost | null>(null)
   const [bodyHtml, setBodyHtml] = useState('')
+  const [viewing, setViewing] = useState<SitePost | null>(null)
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'draft'>('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
@@ -231,6 +239,27 @@ export function AdminBlog() {
       })
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   }, [content, query, statusFilter, categoryFilter])
+
+  const suggestions = useMemo(
+    () =>
+      (content?.posts ?? [])
+        .filter((post) => {
+          if (statusFilter === 'published' && !post.published) return false
+          if (statusFilter === 'draft' && post.published) return false
+          if (categoryFilter !== 'all' && post.category !== categoryFilter) return false
+          return true
+        })
+        .map((post) => ({
+          id: post.id,
+          label: post.title,
+          value: post.title,
+          description: `${post.category} · ${post.authorName} · ${post.published ? 'Published' : 'Draft'}`,
+          meta: post.slug,
+          keywords: `${post.slug} ${post.category} ${post.authorName} ${post.tags.join(' ')}`,
+          icon: 'tag' as const,
+        })),
+    [content, statusFilter, categoryFilter],
+  )
 
   const metrics = useMemo(() => {
     const posts = content?.posts ?? []
@@ -406,11 +435,18 @@ export function AdminBlog() {
 
         <div className="flex flex-col gap-3 border border-line bg-panel/25 p-3">
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_170px_190px]">
-            <Input
+            <SearchSuggest
               label="Search articles"
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={setQuery}
+              suggestions={suggestions}
+              onSelect={(suggestion) => {
+                setQuery(suggestion.label)
+                const post = content?.posts.find((entry) => entry.id === suggestion.id)
+                if (post) setViewing(post)
+              }}
               placeholder="Title, slug, category, author or tag"
+              emptyMessage="No article matches that title, slug, author or tag."
             />
             <Select
               label="Status"
@@ -468,7 +504,7 @@ export function AdminBlog() {
               <tbody className="divide-y divide-line/70">
                 {filteredPosts.map((post) => (
                   <tr key={post.id} className="align-top hover:bg-cold/[0.02]">
-                    <td className="max-w-[360px] px-3 py-3">
+                    <td className="max-w-[360px] px-3 py-2.5">
                       <Link
                         to={`/admin/blog/${post.id}`}
                         title={post.title}
@@ -485,13 +521,13 @@ export function AdminBlog() {
                         </span>
                       ) : null}
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-2.5">
                       <Badge tone={post.published ? 'success' : 'neutral'} dot>
                         {post.published ? 'Published' : 'Draft'}
                       </Badge>
                     </td>
-                    <td className="px-3 py-3 text-[10px] text-fg-dim">{post.category}</td>
-                    <td className="px-3 py-3 text-[10px] text-fg-dim">
+                    <td className="px-3 py-2.5 text-[10px] text-fg-dim">{post.category}</td>
+                    <td className="px-3 py-2.5 text-[10px] text-fg-dim">
                       {post.authorName}
                       {post.authorRole ? (
                         <span className="mt-0.5 block text-[9px] text-fg-faint">
@@ -499,30 +535,34 @@ export function AdminBlog() {
                         </span>
                       ) : null}
                     </td>
-                    <td className="px-3 py-3 text-[10px] text-fg-faint">
+                    <td className="px-3 py-2.5 text-[10px] text-fg-faint">
                       {formatDate(post.publishedAt)}
                     </td>
-                    <td className="px-3 py-3 text-[10px] text-fg-faint">
+                    <td className="px-3 py-2.5 text-[10px] text-fg-faint">
                       {formatDateTime(post.updatedAt)}
                     </td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-wrap justify-end gap-1.5">
-                        <Link
+                    <td className="px-3 py-2">
+                      <TableActions>
+                        <RecordViewButton
+                          label={`article ${post.title}`}
+                          onClick={() => setViewing(post)}
+                        />
+                        <TableActionLink
                           to={`/admin/blog/${post.id}`}
-                          className="flex h-8 items-center border border-line px-2.5 font-mono text-[8px] uppercase tracking-[0.08em] text-fg-dim hover:border-cold/50 hover:text-cold"
-                        >
-                          Edit
-                        </Link>
+                          label={`Edit ${post.title}`}
+                          icon="edit"
+                          tone="cold"
+                        />
                         {post.published ? (
-                          <Link
+                          <TableActionLink
                             to={`/blog/${post.slug}`}
-                            target="_blank"
-                            className="flex h-8 items-center border border-line px-2.5 font-mono text-[8px] uppercase tracking-[0.08em] text-fg-dim hover:border-cold/50 hover:text-cold"
-                          >
-                            View <Icon name="external" size={10} />
-                          </Link>
+                            label={`View ${post.title} live`}
+                            icon="external"
+                            tone="cold"
+                            external
+                          />
                         ) : null}
-                      </div>
+                      </TableActions>
                     </td>
                   </tr>
                 ))}
@@ -530,6 +570,57 @@ export function AdminBlog() {
             </table>
           </section>
         )}
+
+        <RecordDrawer
+          open={Boolean(viewing)}
+          onClose={() => setViewing(null)}
+          title={viewing?.title ?? 'Article'}
+          subtitle={viewing ? `/blog/${viewing.slug}` : undefined}
+          badge={
+            viewing ? (
+              <Badge tone={viewing.published ? 'success' : 'neutral'} dot>
+                {viewing.published ? 'Published' : 'Draft'}
+              </Badge>
+            ) : undefined
+          }
+          record={
+            viewing
+              ? {
+                  title: viewing.title,
+                  slug: viewing.slug,
+                  category: viewing.category,
+                  author: viewing.authorName,
+                  authorRole: viewing.authorRole,
+                  status: viewing.published ? 'Published' : 'Draft',
+                  featured: viewing.featured,
+                  publishedAt: viewing.publishedAt,
+                  updatedAt: viewing.updatedAt,
+                  readingMinutes: viewing.readingMinutes,
+                  heroPlate: viewing.heroPlate,
+                  excerpt: viewing.excerpt,
+                  answer: viewing.answer,
+                  tags: viewing.tags,
+                  takeaways: viewing.takeaways,
+                  relatedServices: viewing.relatedServices,
+                  faqs: viewing.faqs,
+                  seoTitle: viewing.seoTitle,
+                  seoDescription: viewing.seoDescription,
+                  coverImage: viewing.coverImage,
+                  coverAlt: viewing.coverAlt,
+                }
+              : null
+          }
+          actions={
+            viewing ? (
+              <Link
+                to={`/admin/blog/${viewing.id}`}
+                className="flex h-9 items-center border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:border-cold/50 hover:text-cold"
+              >
+                Edit article
+              </Link>
+            ) : undefined
+          }
+        />
       </div>
     )
   }
@@ -538,10 +629,10 @@ export function AdminBlog() {
     return (
       <div className="flex flex-col gap-4">
         <Link
-          to="/admin/blog"
+          to={back.to}
           className="flex w-fit items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint hover:text-cold"
         >
-          <Icon name="arrow-right" size={11} className="rotate-180" /> All articles
+          <Icon name="arrow-right" size={11} className="rotate-180" /> {back.label}
         </Link>
         <InlineError message={error || 'Article not found.'} />
       </div>
@@ -568,10 +659,10 @@ export function AdminBlog() {
         actions={
           <div className="flex flex-wrap gap-2">
             <Link
-              to="/admin/blog"
+              to={back.to}
               className="flex h-9 items-center gap-2 border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:border-cold/50 hover:text-cold"
             >
-              <Icon name="arrow-right" size={12} className="rotate-180" /> All articles
+              <Icon name="arrow-right" size={12} className="rotate-180" /> {back.label}
             </Link>
             {draft.published ? (
               <Link

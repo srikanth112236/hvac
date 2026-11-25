@@ -38,7 +38,8 @@ export function SiteFooter() {
       setHoneypot('')
       toast({
         title: 'Thanks — you are on the list.',
-        description: 'Monthly notes on maintenance, coverage and the small decisions behind a comfortable building.',
+        description:
+          'Monthly notes on maintenance, coverage and the small decisions behind a comfortable building.',
         tone: 'success',
       })
     } catch (caught) {
@@ -69,15 +70,17 @@ export function SiteFooter() {
             {brand.description}
           </p>
           <nav aria-label="Company" className="mt-5 flex flex-wrap gap-x-4 gap-y-2">
-            {([
-              ['About', '/about'],
-              ['Process', '/process'],
-              ['Work', '/work'],
-              ['Systems', '/products'],
-              ['Maintenance', '/amc'],
-              ['Journal', '/blog'],
-              ['Contact', '/contact'],
-            ] as const).map(([label, to]) => (
+            {(
+              [
+                ['About', '/about'],
+                ['Process', '/process'],
+                ['Work', '/work'],
+                ['Systems', '/products'],
+                ['Maintenance', '/amc'],
+                ['Journal', '/blog'],
+                ['Contact', '/contact'],
+              ] as const
+            ).map(([label, to]) => (
               <Link
                 key={to}
                 to={to}
@@ -200,7 +203,10 @@ export function SiteFooter() {
           </dl>
 
           <form onSubmit={onSubmit} className="mt-6 border-t border-line/70 pt-5" noValidate>
-            <div aria-hidden="true" className="absolute left-[-9999px] top-auto h-px w-px overflow-hidden">
+            <div
+              aria-hidden="true"
+              className="absolute left-[-9999px] top-auto h-px w-px overflow-hidden"
+            >
               <label htmlFor="footer-company-website">Company website</label>
               <input
                 id="footer-company-website"
@@ -226,7 +232,14 @@ export function SiteFooter() {
               }}
             />
             <div className="mt-3">
-              <Button type="submit" variant="secondary" size="sm" full icon="arrow-right" disabled={pending}>
+              <Button
+                type="submit"
+                variant="secondary"
+                size="sm"
+                full
+                icon="arrow-right"
+                disabled={pending}
+              >
                 {pending ? 'Saving…' : 'Subscribe'}
               </Button>
             </div>
@@ -255,9 +268,11 @@ export function SiteFooter() {
           </nav>
           <span className="flex items-center gap-4">
             <span className="hidden sm:inline">Cash · cheque · card on site</span>
-            <Link to="/__styleguide" className="transition-colors duration-2 hover:text-cold">
-              Design system
-            </Link>
+            {import.meta.env.DEV ? (
+              <Link to="/__styleguide" className="transition-colors duration-2 hover:text-cold">
+                Design system
+              </Link>
+            ) : null}
           </span>
         </div>
       </div>

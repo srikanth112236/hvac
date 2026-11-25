@@ -50,7 +50,7 @@ test('lead → admin invoice → customer portal journey', async ({ page, browse
   // 4. Approve the pending account in the admin UI, then sign in to the portal.
   await page.goto('/admin/customers')
   await page.getByLabel('Search customers').fill(email)
-  await expect(page.getByText(email)).toBeVisible()
+  await expect(page.getByText(email, { exact: true })).toBeVisible()
   const approval = page.waitForResponse(
     (response) =>
       response.url().includes('/api/v1/admin/customers/') &&
@@ -68,6 +68,13 @@ test('lead → admin invoice → customer portal journey', async ({ page, browse
   await expect(portalInvoice).toBeVisible()
   await expect(portalInvoice).toContainText(/INV-\d{4}-\d{4}/)
   await expect(portalInvoice).toContainText('$1,475')
+
+  await portalInvoice.getByRole('button', { name: 'View' }).click()
+  const invoiceDialog = portal.getByRole('dialog', { name: /Invoice INV-/ })
+  await expect(invoiceDialog).toBeVisible()
+  await expect(invoiceDialog).toContainText('Journey cassette service')
+  await invoiceDialog.getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(invoiceDialog).toBeHidden()
 
   await portalContext.close()
 })

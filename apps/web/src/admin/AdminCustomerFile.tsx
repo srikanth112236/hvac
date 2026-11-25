@@ -1,6 +1,7 @@
-import { useCallback, useMemo, useState, type FormEvent } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useLiveRefresh } from '@/admin/useLiveRefresh'
+import { useBackTarget } from '@/admin/useBackTarget'
 import {
   quotationStatusLabel,
   ticketStatusLabel,
@@ -23,6 +24,8 @@ import {
   EmptyState,
   Input,
   Modal,
+  RecordDrawer,
+  RecordViewButton,
   Select,
   Textarea,
   useToast,
@@ -39,14 +42,7 @@ import {
 } from '@/admin/ui'
 
 type Tab =
-  | 'invoices'
-  | 'sites'
-  | 'equipment'
-  | 'quotations'
-  | 'amc'
-  | 'reports'
-  | 'tickets'
-  | 'preferences'
+  'invoices' | 'sites' | 'equipment' | 'quotations' | 'amc' | 'reports' | 'tickets' | 'preferences'
 
 const tabs: { id: Tab; label: string }[] = [
   { id: 'invoices', label: 'Invoices & payments' },
@@ -83,6 +79,9 @@ function parseQuotationLines(value: string) {
 export function AdminCustomerFile() {
   const { customerId = '' } = useParams()
   const navigate = useNavigate()
+  const back = useBackTarget('/admin/customers', 'Back to customers')
+  const [searchParams] = useSearchParams()
+  const deepHandled = useRef('')
   const { toast } = useToast()
   const [data, setData] = useState<{ customer: CustomerAccount; file: CustomerPortalFile } | null>(
     null,
@@ -91,6 +90,7 @@ export function AdminCustomerFile() {
   const [error, setError] = useState('')
   const [tab, setTab] = useState<Tab>('invoices')
   const [busy, setBusy] = useState(false)
+  const [prefsBusy, setPrefsBusy] = useState('')
   const [customerEditOpen, setCustomerEditOpen] = useState(false)
   const [customerForm, setCustomerForm] = useState({ name: '', email: '', phone: '', address: '' })
 
@@ -160,6 +160,12 @@ export function AdminCustomerFile() {
 
   const [ticketOpen, setTicketOpen] = useState<SupportTicket | null>(null)
   const [reply, setReply] = useState('')
+  const [viewRecord, setViewRecord] = useState<{
+    title: string
+    subtitle?: string
+    record: Record<string, unknown>
+    exclude?: string[]
+  } | null>(null)
 
   const load = useCallback(async () => {
     setError('')
@@ -174,6 +180,34 @@ export function AdminCustomerFile() {
   }, [customerId])
 
   useLiveRefresh(load)
+
+  const togglePreference = async (
+    key: 'emailService' | 'emailBilling' | 'emailAmc' | 'emailMarketing',
+    value: boolean,
+  ) => {
+    if (!data) return
+    setPrefsBusy(key)
+    try {
+      const updated = await adminApi.patchCustomerPreferences(customerId, { [key]: value })
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              file: { ...current.file, preferences: updated.data },
+            }
+          : current,
+      )
+      toast({ title: 'Preferences saved', tone: 'success' })
+    } catch (caught) {
+      toast({
+        title: 'Preferences not saved',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
+    } finally {
+      setPrefsBusy('')
+    }
+  }
 
   const openCustomerEdit = () => {
     if (!customer) return
@@ -207,6 +241,89 @@ export function AdminCustomerFile() {
 
   const file = data?.file
   const customer = data?.customer
+  const tabParam = searchParams.get('tab') as Tab | null
+  const openParam = searchParams.get('open')
+
+  useEffect(() => {
+    if (!tabParam) return
+    const tabs: Tab[] = [
+      'invoices',
+      'sites',
+      'equipment',
+      'quotations',
+      'amc',
+      'reports',
+      'tickets',
+      'preferences',
+    ]
+    if (tabs.includes(tabParam)) setTab(tabParam)
+  }, [tabParam])
+
+  useEffect(() => {
+    if (!file || !openParam || deepHandled.current === openParam) return
+    if (tabParam === 'sites') {
+      const site = file.sites.find((entry) => entry.id === openParam)
+      if (!site) return
+      deepHandled.current = openParam
+      setViewRecord({
+        title: site.label,
+        subtitle: site.isPrimary ? 'Primary service address' : 'Service address',
+        record: site as unknown as Record<string, unknown>,
+      })
+      return
+    }
+    if (tabParam === 'equipment') {
+      const item = file.equipment.find((entry) => entry.id === openParam)
+      if (!item) return
+      deepHandled.current = openParam
+      setViewRecord({
+        title: item.name,
+        subtitle: [item.brand, item.model].filter(Boolean).join(' · ') || 'Equipment',
+        record: item as unknown as Record<string, unknown>,
+      })
+      return
+    }
+    if (tabParam === 'quotations') {
+      const quote = file.quotations.find((entry) => entry.id === openParam)
+      if (!quote) return
+      deepHandled.current = openParam
+      setViewRecord({
+        title: quote.ref,
+        subtitle: quote.title,
+        record: quote as unknown as Record<string, unknown>,
+      })
+      return
+    }
+    if (tabParam === 'amc') {
+      const contract = file.amc.find((entry) => entry.id === openParam)
+      if (!contract) return
+      deepHandled.current = openParam
+      setViewRecord({
+        title: contract.ref,
+        subtitle: contract.plan,
+        record: contract as unknown as Record<string, unknown>,
+      })
+      return
+    }
+    if (tabParam === 'reports') {
+      const report = file.reports.find((entry) => entry.id === openParam)
+      if (!report) return
+      deepHandled.current = openParam
+      setViewRecord({
+        title: `${report.ref} · ${report.title}`,
+        subtitle: `${formatDate(report.completedAt)} · ${report.technician || 'Engineer not named'}`,
+        record: report as unknown as Record<string, unknown>,
+      })
+      return
+    }
+    if (tabParam === 'tickets') {
+      const ticket = file.tickets.find((entry) => entry.id === openParam)
+      if (!ticket) return
+      deepHandled.current = openParam
+      setTicketOpen(ticket)
+      setReply('')
+    }
+  }, [file, openParam, tabParam])
 
   const counts = useMemo(
     () => ({
@@ -568,10 +685,11 @@ export function AdminCustomerFile() {
         actions={
           <div className="flex flex-wrap gap-2">
             <Link
-              to="/admin/customers"
-              className="flex h-9 items-center border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:text-cold"
+              to={back.to}
+              className="flex h-9 items-center gap-1.5 border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:text-cold"
             >
-              Back to customers
+              <Icon name="chevron-left" size={12} />
+              {back.label}
             </Link>
             <Button variant="secondary" size="sm" onClick={openCustomerEdit}>
               Edit details
@@ -633,7 +751,10 @@ export function AdminCustomerFile() {
           </div>
           {file.invoices.length === 0 ? (
             <div className="p-4">
-              <EmptyState title="No invoices yet" description="Invoices addressed to this email appear here with every recorded payment." />
+              <EmptyState
+                title="No invoices yet"
+                description="Invoices addressed to this email appear here with every recorded payment."
+              />
             </div>
           ) : (
             <div className="divide-y divide-line">
@@ -642,36 +763,86 @@ export function AdminCustomerFile() {
                   <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-center">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <Link to={`/admin/invoices/${invoice.id}`} className="font-mono text-[9px] text-cold hover:text-fg">
+                        <Link
+                          to={`/admin/invoices/${invoice.id}`}
+                          className="font-mono text-[9px] text-cold hover:text-fg"
+                        >
                           {invoice.ref}
                         </Link>
-                        <Badge tone={invoice.totals.balance > 0 ? 'warn' : 'success'}>{invoice.totals.state}</Badge>
+                        <Badge tone={invoice.totals.balance > 0 ? 'warn' : 'success'}>
+                          {invoice.totals.state}
+                        </Badge>
                       </div>
-                      <p className="mt-1 text-[12px] text-fg">{invoice.service || 'Service invoice'}</p>
+                      <p className="mt-1 text-[12px] text-fg">
+                        {invoice.service || 'Service invoice'}
+                      </p>
                       <p className="text-[10px] text-fg-faint">
-                        Issued {formatDate(invoice.issueDate)} · due {formatDate(invoice.dueDate)} · {invoice.payments.length} payment{invoice.payments.length === 1 ? '' : 's'}
+                        Issued {formatDate(invoice.issueDate)} · due {formatDate(invoice.dueDate)} ·{' '}
+                        {invoice.payments.length} payment{invoice.payments.length === 1 ? '' : 's'}
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="font-mono text-[12px] text-fg">{formatMoney(invoice.totals.total)}</p>
-                      <p className={invoice.totals.balance > 0 ? 'text-[10px] text-heat' : 'text-[10px] text-success'}>
-                        {formatMoney(invoice.totals.balance)} {invoice.totals.balance > 0 ? 'due' : 'settled'}
+                      <p className="font-mono text-[12px] text-fg">
+                        {formatMoney(invoice.totals.total)}
+                      </p>
+                      <p
+                        className={
+                          invoice.totals.balance > 0
+                            ? 'text-[10px] text-heat'
+                            : 'text-[10px] text-success'
+                        }
+                      >
+                        {formatMoney(invoice.totals.balance)}{' '}
+                        {invoice.totals.balance > 0 ? 'due' : 'settled'}
                       </p>
                     </div>
-                    <ButtonAnchor
-                      href={`/api/v1/admin/invoices/${invoice.id}/pdf`}
-                      download
-                      variant="quiet"
-                      size="sm"
-                    >
-                      PDF
-                    </ButtonAnchor>
+                    <div className="flex items-center justify-end gap-1.5">
+                      <RecordViewButton
+                        label={`invoice ${invoice.ref}`}
+                        onClick={() =>
+                          setViewRecord({
+                            title: invoice.ref,
+                            subtitle: invoice.service || 'Service invoice',
+                            record: {
+                              reference: invoice.ref,
+                              service: invoice.service,
+                              issuedAt: invoice.issueDate,
+                              dueAt: invoice.dueDate,
+                              state: invoice.totals.state,
+                              subtotal: invoice.totals.subtotal,
+                              tax: invoice.totals.taxTotal,
+                              total: invoice.totals.total,
+                              paid: invoice.totals.paid,
+                              balance: invoice.totals.balance,
+                              lines: invoice.lines,
+                              payments: invoice.payments,
+                              notes: invoice.notes,
+                              terms: invoice.terms,
+                            },
+                          })
+                        }
+                      />
+                      <ButtonAnchor
+                        href={`/api/v1/admin/invoices/${invoice.id}/pdf`}
+                        download
+                        variant="quiet"
+                        size="sm"
+                      >
+                        PDF
+                      </ButtonAnchor>
+                    </div>
                   </div>
                   {invoice.payments.length ? (
                     <div className="mt-3 border-t border-line/60 pt-2">
                       {invoice.payments.map((payment) => (
-                        <p key={payment.id} className="flex flex-wrap justify-between gap-2 py-1 text-[10px] text-fg-dim">
-                          <span>{formatDate(payment.receivedAt)} · {payment.method}{payment.reference ? ` · ${payment.reference}` : ''}</span>
+                        <p
+                          key={payment.id}
+                          className="flex flex-wrap justify-between gap-2 py-1 text-[10px] text-fg-dim"
+                        >
+                          <span>
+                            {formatDate(payment.receivedAt)} · {payment.method}
+                            {payment.reference ? ` · ${payment.reference}` : ''}
+                          </span>
                           <span className="font-mono text-fg">{formatMoney(payment.amount)}</span>
                         </p>
                       ))}
@@ -715,7 +886,26 @@ export function AdminCustomerFile() {
                       {[site.city, site.region, site.postalCode].filter(Boolean).join(', ')}
                     </p>
                   </div>
-                  <div className="flex gap-3">
+                  <div className="flex items-center gap-3">
+                    <RecordViewButton
+                      label={`site ${site.label}`}
+                      onClick={() =>
+                        setViewRecord({
+                          title: site.label,
+                          subtitle: site.isPrimary ? 'Primary service address' : 'Service address',
+                          record: {
+                            label: site.label,
+                            address: site.address,
+                            city: site.city,
+                            region: site.region,
+                            postalCode: site.postalCode,
+                            primary: site.isPrimary,
+                            createdAt: site.createdAt,
+                            updatedAt: site.updatedAt,
+                          },
+                        })
+                      }
+                    />
                     <button
                       type="button"
                       onClick={() => openSite(site)}
@@ -791,6 +981,30 @@ export function AdminCustomerFile() {
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
+                    <RecordViewButton
+                      label={`equipment ${item.name}`}
+                      onClick={() =>
+                        setViewRecord({
+                          title: item.name,
+                          subtitle:
+                            [item.brand, item.model].filter(Boolean).join(' · ') || 'Equipment',
+                          record: {
+                            name: item.name,
+                            brand: item.brand,
+                            model: item.model,
+                            serial: item.serial,
+                            capacity: item.capacity,
+                            siteId: item.siteId,
+                            installedAt: item.installedAt,
+                            warrantyUntil: item.warrantyUntil,
+                            notes: item.notes,
+                            createdAt: item.createdAt,
+                            updatedAt: item.updatedAt,
+                          },
+                          exclude: ['siteId'],
+                        })
+                      }
+                    />
                     <button
                       type="button"
                       onClick={() => editEquipment(item)}
@@ -855,6 +1069,11 @@ export function AdminCustomerFile() {
                     <p className="text-[10px] text-fg-faint">
                       {quote.lines.length} lines · created {formatDate(quote.createdAt)}
                     </p>
+                    {quote.changeRequest ? (
+                      <p className="mt-1 border-l-2 border-warn/60 pl-2 text-[10px] leading-relaxed text-fg-dim">
+                        Change requested: {quote.changeRequest}
+                      </p>
+                    ) : null}
                   </div>
                   <span className="font-display text-lg text-fg">
                     {formatMoney(quote.totals.total)}
@@ -870,6 +1089,29 @@ export function AdminCustomerFile() {
                     )}
                   />
                   <div className="flex flex-wrap items-center gap-3">
+                    <RecordViewButton
+                      label={`quotation ${quote.ref}`}
+                      onClick={() =>
+                        setViewRecord({
+                          title: quote.ref,
+                          subtitle: quote.title,
+                          record: {
+                            reference: quote.ref,
+                            title: quote.title,
+                            status: quotationStatusLabel[quote.status],
+                            service: quote.service,
+                            validUntil: quote.validUntil,
+                            lines: quote.lines,
+                            totals: quote.totals,
+                            notes: quote.notes,
+                            terms: quote.terms,
+                            changeRequest: quote.changeRequest,
+                            createdAt: quote.createdAt,
+                            updatedAt: quote.updatedAt,
+                          },
+                        })
+                      }
+                    />
                     <button
                       type="button"
                       onClick={() => editQuotation(quote)}
@@ -877,6 +1119,15 @@ export function AdminCustomerFile() {
                     >
                       Edit lines
                     </button>
+                    {quote.status === 'changes-requested' ? (
+                      <button
+                        type="button"
+                        onClick={() => void setQuotationStatus(quote, 'sent')}
+                        className="font-mono text-[9px] uppercase text-cold hover:text-fg"
+                      >
+                        Reissue
+                      </button>
+                    ) : null}
                     <ButtonAnchor
                       href={`/api/v1/admin/customers/${customerId}/quotations/${quote.id}/pdf`}
                       download
@@ -937,7 +1188,30 @@ export function AdminCustomerFile() {
                       <Badge tone="warn">Renewal requested</Badge>
                     ) : null}
                   </div>
-                  <div className="flex flex-wrap gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <RecordViewButton
+                      label={`AMC ${contract.ref}`}
+                      onClick={() =>
+                        setViewRecord({
+                          title: contract.ref,
+                          subtitle: contract.plan,
+                          record: {
+                            reference: contract.ref,
+                            plan: contract.plan,
+                            status: contract.status,
+                            startDate: contract.startDate,
+                            endDate: contract.endDate,
+                            visitsPerYear: contract.visitsPerYear,
+                            unitsCovered: contract.equipmentIds.length,
+                            annualValue: contract.price,
+                            renewalRequestedAt: contract.renewalRequestedAt,
+                            notes: contract.notes,
+                            createdAt: contract.createdAt,
+                            updatedAt: contract.updatedAt,
+                          },
+                        })
+                      }
+                    />
                     <button
                       type="button"
                       onClick={() => editAmc(contract)}
@@ -986,12 +1260,37 @@ export function AdminCustomerFile() {
             <div className="divide-y divide-line">
               {file.reports.map((report) => (
                 <article key={report.id} className="px-4 py-4">
-                  <p className="font-mono text-[9px] text-cold">{report.ref}</p>
-                  <p className="text-sm text-fg">{report.title}</p>
-                  <p className="text-[10px] text-fg-faint">
-                    {formatDate(report.completedAt)} · {report.technician || 'engineer not named'} ·{' '}
-                    {report.checklist.length} checks · {report.photos.length} photos
-                  </p>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-mono text-[9px] text-cold">{report.ref}</p>
+                      <p className="text-sm text-fg">{report.title}</p>
+                      <p className="text-[10px] text-fg-faint">
+                        {formatDate(report.completedAt)} ·{' '}
+                        {report.technician || 'engineer not named'} · {report.checklist.length}{' '}
+                        checks · {report.photos.length} photos
+                      </p>
+                    </div>
+                    <RecordViewButton
+                      label={`report ${report.ref}`}
+                      onClick={() =>
+                        setViewRecord({
+                          title: `${report.ref} · ${report.title}`,
+                          subtitle: `${formatDate(report.completedAt)} · ${report.technician || 'Engineer not named'}`,
+                          record: {
+                            reference: report.ref,
+                            title: report.title,
+                            completedAt: report.completedAt,
+                            engineer: report.technician,
+                            summary: report.summary,
+                            checklist: report.checklist,
+                            findings: report.findings,
+                            recommendations: report.recommendations,
+                            photos: report.photos,
+                          },
+                        })
+                      }
+                    />
+                  </div>
                 </article>
               ))}
             </div>
@@ -1030,7 +1329,25 @@ export function AdminCustomerFile() {
                       {ticket.messages.length} messages · updated {formatDateTime(ticket.updatedAt)}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <RecordViewButton
+                      label={`ticket ${ticket.ref}`}
+                      onClick={() =>
+                        setViewRecord({
+                          title: `${ticket.ref} · ${ticket.subject}`,
+                          subtitle: `${ticket.category} · ${ticketStatusLabel[ticket.status]}`,
+                          record: {
+                            reference: ticket.ref,
+                            subject: ticket.subject,
+                            category: ticket.category,
+                            status: ticketStatusLabel[ticket.status],
+                            messages: ticket.messages,
+                            createdAt: ticket.createdAt,
+                            updatedAt: ticket.updatedAt,
+                          },
+                        })
+                      }
+                    />
                     <Badge
                       tone={
                         ticket.status === 'open'
@@ -1065,26 +1382,36 @@ export function AdminCustomerFile() {
           <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
             Notification preferences
           </h2>
-          <dl className="mt-4 grid gap-3 text-[12px] sm:grid-cols-2">
+          <div className="mt-4 grid gap-3 text-[12px] sm:grid-cols-2">
             {[
-              ['Service updates', file.preferences.emailService],
-              ['Invoices and receipts', file.preferences.emailBilling],
-              ['AMC and renewals', file.preferences.emailAmc],
-              ['Seasonal notes', file.preferences.emailMarketing],
-            ].map(([label, value]) => (
-              <div
-                key={String(label)}
-                className="flex items-center justify-between gap-3 border border-line px-3 py-2"
+              ['Service updates', 'emailService', file.preferences.emailService],
+              ['Invoices and receipts', 'emailBilling', file.preferences.emailBilling],
+              ['AMC and renewals', 'emailAmc', file.preferences.emailAmc],
+              ['Seasonal notes', 'emailMarketing', file.preferences.emailMarketing],
+            ].map(([label, key, value]) => (
+              <label
+                key={String(key)}
+                className="flex cursor-pointer items-center justify-between gap-3 border border-line px-3 py-2"
               >
-                <dt className="text-fg-dim">{label}</dt>
-                <dd>
-                  <Badge tone={value ? 'success' : 'neutral'}>{value ? 'On' : 'Off'}</Badge>
-                </dd>
-              </div>
+                <span className="text-fg-dim">{label}</span>
+                <input
+                  type="checkbox"
+                  checked={Boolean(value)}
+                  disabled={Boolean(prefsBusy)}
+                  onChange={(event) =>
+                    void togglePreference(
+                      key as 'emailService' | 'emailBilling' | 'emailAmc' | 'emailMarketing',
+                      event.target.checked,
+                    )
+                  }
+                  className="h-3.5 w-3.5 accent-[rgb(var(--cold))]"
+                />
+              </label>
             ))}
-          </dl>
+          </div>
           <p className="mt-4 text-[11px] text-fg-faint">
-            The customer controls these switches from the portal.
+            These switches are normally controlled by the customer in the portal. Staff can correct
+            them here when a customer asks by phone or email.
           </p>
         </section>
       ) : null}
@@ -1555,11 +1882,27 @@ export function AdminCustomerFile() {
         title={ticketOpen ? `${ticketOpen.ref} · ${ticketOpen.subject}` : 'Ticket'}
         size="lg"
         footer={
-          <div className="flex justify-between gap-2">
-            <Button variant="secondary" onClick={() => setTicketOpen(null)}>
-              Close
+          <div className="flex w-full flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              icon="chevron-left"
+              onClick={() => {
+                setTicketOpen(null)
+                setReply('')
+              }}
+            >
+              Back
             </Button>
-            <Button type="submit" form="admin-ticket-reply" loading={busy}>
+            <Button
+              variant="quiet"
+              onClick={() => {
+                setTicketOpen(null)
+                setReply('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" form="admin-ticket-reply" loading={busy} className="ml-auto">
               Send reply
             </Button>
           </div>
@@ -1620,20 +1963,56 @@ export function AdminCustomerFile() {
         description="These details appear on invoices, job cards, emails and portal records."
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setCustomerEditOpen(false)}>Cancel</Button>
-            <Button loading={busy} onClick={() => void saveCustomerDetails()} icon="check">Save details</Button>
+            <Button variant="secondary" onClick={() => setCustomerEditOpen(false)}>
+              Cancel
+            </Button>
+            <Button loading={busy} onClick={() => void saveCustomerDetails()} icon="check">
+              Save details
+            </Button>
           </div>
         }
       >
         <div className="grid gap-4 sm:grid-cols-2">
-          <Input label="Customer name" required value={customerForm.name} onChange={(event) => setCustomerForm({ ...customerForm, name: event.target.value })} />
-          <Input label="Mobile number" type="tel" value={customerForm.phone} onChange={(event) => setCustomerForm({ ...customerForm, phone: event.target.value })} />
-          <Input label="Email" type="email" required value={customerForm.email} onChange={(event) => setCustomerForm({ ...customerForm, email: event.target.value })} />
+          <Input
+            label="Customer name"
+            required
+            value={customerForm.name}
+            onChange={(event) => setCustomerForm({ ...customerForm, name: event.target.value })}
+          />
+          <Input
+            label="Mobile number"
+            type="tel"
+            value={customerForm.phone}
+            onChange={(event) => setCustomerForm({ ...customerForm, phone: event.target.value })}
+          />
+          <Input
+            label="Email"
+            type="email"
+            required
+            value={customerForm.email}
+            onChange={(event) => setCustomerForm({ ...customerForm, email: event.target.value })}
+          />
           <div className="sm:col-span-2">
-            <Textarea label="Service address" rows={2} value={customerForm.address} onChange={(event) => setCustomerForm({ ...customerForm, address: event.target.value })} />
+            <Textarea
+              label="Service address"
+              rows={2}
+              value={customerForm.address}
+              onChange={(event) =>
+                setCustomerForm({ ...customerForm, address: event.target.value })
+              }
+            />
           </div>
         </div>
       </Modal>
+
+      <RecordDrawer
+        open={Boolean(viewRecord)}
+        onClose={() => setViewRecord(null)}
+        title={viewRecord?.title ?? 'Record'}
+        subtitle={viewRecord?.subtitle}
+        record={viewRecord?.record ?? null}
+        exclude={viewRecord?.exclude}
+      />
     </div>
   )
 }

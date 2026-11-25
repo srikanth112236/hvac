@@ -42,12 +42,14 @@ if (!process.env.ADMIN_PASSWORD && !IS_PROD) {
   )
 }
 
-interface Session {
+export interface AdminSession {
   userId?: string
   email: string
   role: AdminRole
   expiresAt: number
 }
+
+type Session = AdminSession
 
 const sessionStore = createStore<Record<string, Session>>('admin-sessions.json', () => ({}))
 const attempts = new Map<string, { count: number; resetAt: number }>()
@@ -95,8 +97,10 @@ function readCookie(header: string | undefined, name: string): string | null {
   return null
 }
 
-async function sessionFor(req: Request): Promise<Session | null> {
-  const token = readCookie(req.headers.cookie, COOKIE)
+export async function adminSessionFromCookie(
+  cookieHeader: string | undefined,
+): Promise<AdminSession | null> {
+  const token = readCookie(cookieHeader, COOKIE)
   if (!token) return null
   const sessions = await sessionStore.read()
   const session = sessions[token]
@@ -111,6 +115,10 @@ async function sessionFor(req: Request): Promise<Session | null> {
     return null
   }
   return session
+}
+
+async function sessionFor(req: Request): Promise<Session | null> {
+  return adminSessionFromCookie(req.headers.cookie)
 }
 
 export async function pruneSessions(): Promise<void> {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Link } from 'react-router-dom'
+import { useRecordDeepLink } from '@/admin/useDeepLink'
 import {
   appointmentStatusLabel,
   APPOINTMENT_STATUSES,
@@ -17,6 +18,8 @@ import {
   EmptyState,
   Input,
   Modal,
+  RecordDrawer,
+  RecordViewButton,
   Select,
   Textarea,
   useToast,
@@ -71,6 +74,7 @@ function CustomerPicker({
       : customers
     return list.slice(0, 8)
   }, [customers, query])
+  const show = open && query.trim().length >= 2
 
   useEffect(() => {
     if (!open) return
@@ -92,7 +96,7 @@ function CustomerPicker({
     } else if (event.key === 'ArrowUp') {
       event.preventDefault()
       setActive((current) => Math.max(0, current - 1))
-    } else if (event.key === 'Enter' && open && results[active]) {
+    } else if (event.key === 'Enter' && show && results[active]) {
       event.preventDefault()
       choose(results[active])
     } else if (event.key === 'Escape') {
@@ -149,8 +153,8 @@ function CustomerPicker({
         value={query}
         role="combobox"
         aria-autocomplete="list"
-        aria-expanded={open}
-        aria-controls="dispatch-customer-options"
+        aria-expanded={show}
+        aria-controls={show ? 'dispatch-customer-options' : undefined}
         placeholder="Search name, email, phone or address"
         onFocus={() => setOpen(true)}
         onChange={(event) => {
@@ -160,7 +164,7 @@ function CustomerPicker({
         onKeyDown={onKeyDown}
         hint={
           customers.length
-            ? `Searches all ${customers.length} customer records. Pick one to fill the visit.`
+            ? `Type 2+ characters to search all ${customers.length} customer records, then pick one to fill the visit.`
             : 'No customer records loaded yet.'
         }
         labelAction={
@@ -169,7 +173,7 @@ function CustomerPicker({
           </span>
         }
       />
-      {open ? (
+      {show ? (
         <div
           id="dispatch-customer-options"
           ref={listRef}
@@ -253,6 +257,7 @@ function TechnicianPicker({
       : activeTeam
     return list.slice(0, 6)
   }, [activeTeam, value])
+  const show = open && value.trim().length >= 2
 
   useEffect(() => {
     if (!open) return
@@ -286,7 +291,7 @@ function TechnicianPicker({
     } else if (event.key === 'ArrowUp') {
       event.preventDefault()
       setActive((current) => Math.max(0, current - 1))
-    } else if (event.key === 'Enter' && open && results[active]) {
+    } else if (event.key === 'Enter' && show && results[active]) {
       event.preventDefault()
       choose(results[active])
     } else if (event.key === 'Escape') {
@@ -303,8 +308,8 @@ function TechnicianPicker({
         value={value}
         role="combobox"
         aria-autocomplete="list"
-        aria-expanded={open}
-        aria-controls="dispatch-technician-options"
+        aria-expanded={show}
+        aria-controls={show ? 'dispatch-technician-options' : undefined}
         placeholder="Search active technicians or type a name"
         onFocus={() => setOpen(true)}
         onChange={(event) => {
@@ -315,7 +320,7 @@ function TechnicianPicker({
         hint={
           selectedMember
             ? `${selectedMember.role} · ${selectedMember.skills.join(', ') || 'No skills listed'}`
-            : 'Search the active team by name, role or skill, or type a custom engineer.'
+            : 'Type 2+ characters to search the active team, or type a custom engineer.'
         }
         labelAction={
           value ? (
@@ -332,7 +337,7 @@ function TechnicianPicker({
           ) : null
         }
       />
-      {open ? (
+      {show ? (
         <div
           id="dispatch-technician-options"
           ref={listRef}
@@ -389,6 +394,7 @@ export function AdminDispatch() {
   const [error, setError] = useState('')
   const [day, setDay] = useState<'today' | 'upcoming' | 'all'>('today')
   const [createOpen, setCreateOpen] = useState(false)
+  const [viewing, setViewing] = useState<AppointmentRecord | null>(null)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
     customerId: '',
@@ -423,6 +429,16 @@ export function AdminDispatch() {
     }
   }, [])
   useLiveRefresh(load)
+
+  useRecordDeepLink({
+    param: 'open',
+    records: appointments,
+    resolve: (value) =>
+      appointments.find(
+        (appointment) => appointment.id === value || appointment.ref === value,
+      ),
+    onOpen: setViewing,
+  })
 
   const visible = useMemo(() => {
     const start = Date.parse(`${today()}T00:00:00`)
@@ -634,6 +650,10 @@ export function AdminDispatch() {
                       Customer file
                     </Link>
                   ) : null}
+                  <RecordViewButton
+                    label={`visit ${appointment.ref}`}
+                    onClick={() => setViewing(appointment)}
+                  />
                 </div>
                 <p className="mt-1 text-sm text-fg">
                   {appointment.customerName} · {appointment.serviceName}
@@ -795,6 +815,61 @@ export function AdminDispatch() {
           </div>
         </div>
       </Modal>
+
+      <RecordDrawer
+        open={Boolean(viewing)}
+        onClose={() => setViewing(null)}
+        title={viewing?.ref ?? 'Visit'}
+        subtitle={viewing ? `${viewing.customerName} · ${viewing.serviceName}` : undefined}
+        badge={
+          viewing ? (
+            <Badge
+              tone={
+                viewing.status === 'cancelled'
+                  ? 'danger'
+                  : viewing.status === 'completed'
+                    ? 'success'
+                    : viewing.window === 'emergency'
+                      ? 'heat'
+                      : 'cold'
+              }
+            >
+              {appointmentStatusLabel[viewing.status]}
+            </Badge>
+          ) : undefined
+        }
+        record={
+          viewing
+            ? {
+                reference: viewing.ref,
+                customer: viewing.customerName,
+                email: viewing.customerEmail,
+                phone: viewing.customerPhone,
+                service: viewing.serviceName,
+                address: viewing.address,
+                scheduledAt: viewing.scheduledAt,
+                window: serviceWindowLabel(viewing.window),
+                status: appointmentStatusLabel[viewing.status],
+                technician: viewing.technician || 'Unassigned',
+                lead: viewing.leadRef,
+                amcContractId: viewing.amcContractId,
+                notes: viewing.notes,
+                createdAt: viewing.createdAt,
+                updatedAt: viewing.updatedAt,
+              }
+            : null
+        }
+        actions={
+          viewing?.customerId ? (
+            <Link
+              to={`/admin/customers/${viewing.customerId}`}
+              className="flex h-9 items-center border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:border-cold/50 hover:text-cold"
+            >
+              Open customer
+            </Link>
+          ) : undefined
+        }
+      />
     </div>
   )
 }

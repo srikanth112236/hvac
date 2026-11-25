@@ -37,7 +37,7 @@ test('journal uses separate article pages and a full rich-text editor', async ({
     .first()
     .click()
   await expect(page).toHaveURL(/\/admin\/blog$/)
-  await page.getByRole('link', { name: 'Edit', exact: true }).first().click()
+  await page.getByRole('link', { name: /^Edit / }).first().click()
   await expect(page).toHaveURL(/\/admin\/blog\/[^/]+$/)
   await expect(page.getByRole('heading', { name: 'Article body' })).toBeVisible()
 })

@@ -44,8 +44,7 @@ function fallbackService(override: SiteServiceOverride): FullService {
     index: override.index || '—',
     name,
     category: override.category,
-    icon: 'airflow' as const,
-
+    icon: (override.icon || 'airflow') as IconName,
     capacity: override.capacity || 'On survey',
     timeline: override.timeline || 'Scheduled after survey',
     specification: override.specification || 'Written at survey',
@@ -97,7 +96,8 @@ function fallbackService(override: SiteServiceOverride): FullService {
     steps: (override.steps ?? []).map((entry): Pair => [entry.title, entry.body]),
     faqs: (override.faqs ?? []).map((entry): Pair => [entry.question, entry.answer]),
     standards: override.standards?.length ? override.standards : defaultStandards,
-    related: [],
+    calculator: override.calculator,
+    related: override.related ?? [],
     catalogue,
   }
 }
@@ -121,6 +121,7 @@ export function ServiceDetailPage() {
       name: override?.name || base.catalogue.name,
       index: override?.index || base.catalogue.index,
       category: override?.category ?? base.catalogue.category,
+      icon: (override?.icon || base.catalogue.icon) as IconName,
       capacity: override?.capacity || base.catalogue.capacity,
       timeline: override?.timeline || base.catalogue.timeline,
       specification: override?.specification || base.catalogue.specification,
@@ -151,6 +152,8 @@ export function ServiceDetailPage() {
       faqs: override?.faqs?.length
         ? override.faqs.map((entry): Pair => [entry.question, entry.answer])
         : base.faqs,
+      calculator: override?.calculator ?? base.calculator,
+      related: override?.related ?? base.related,
     }
   }, [content.services, id])
 
@@ -172,33 +175,35 @@ export function ServiceDetailPage() {
 
   const { catalogue } = service
   const liveById = new Map(liveServices.map((entry) => [entry.id, entry]))
-  const related = getServiceDetail(service.id)
-    ? getServiceDetail(service.id)!
-        .related.map((relatedId) => getServiceDetail(relatedId))
-        .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
-        .filter((entry) => liveById.has(entry.id))
-        .map((entry) => {
-          const live = liveById.get(entry.id)!
-          return {
-            ...entry,
-            catalogue: {
-              ...entry.catalogue,
-              name: live.name,
-              index: live.index,
-              category: live.category,
-              icon: (live.icon ?? ('airflow' as IconName)) as IconName,
-              capacity: live.capacity,
-              timeline: live.timeline,
-              specification: live.specification,
-              scope: live.scope,
-            },
-          }
-        })
-    : []
+  const related = service.related.flatMap((relatedId) => {
+    if (relatedId === service.id) return []
+    const live = liveById.get(relatedId)
+    if (!live) return []
+    const entry = getServiceDetail(relatedId) ?? fallbackService(live)
+    return [
+      {
+        ...entry,
+        catalogue: {
+          ...entry.catalogue,
+          name: live.name,
+          index: live.index,
+          category: live.category,
+          icon: (live.icon ?? ('airflow' as IconName)) as IconName,
+          capacity: live.capacity,
+          timeline: live.timeline,
+          specification: live.specification,
+          scope: live.scope,
+        },
+      },
+    ]
+  })
+  const override = content.services.find((entry) => entry.id === service.id)
   const projectCategory = projectByService[service.id]
-  const project = projectCategory
-    ? content.workCases.find((entry) => entry.category === projectCategory)
-    : undefined
+  const project = override?.projectId
+    ? content.workCases.find((entry) => entry.id === override.projectId)
+    : projectCategory
+      ? content.workCases.find((entry) => entry.category === projectCategory)
+      : undefined
   const calculatorTool = service.calculator ? toolForKind(service.calculator) : null
 
   const blockMap: Record<string, ReactNode> = {

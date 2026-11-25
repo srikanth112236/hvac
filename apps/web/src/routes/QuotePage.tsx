@@ -25,8 +25,8 @@ export function QuotePage() {
           <h1 className="t-display mt-6 max-w-[14ch] text-fg">Tell us the load, not the brand.</h1>
           <p className="mt-6 max-w-prose text-sm leading-relaxed text-fg-dim">
             A quote starts with the room, the plant or the failure. Send the area, orientation and
-            glazing, the existing equipment and the constraint that matters — access, noise, power or
-            a deadline. We reply with a design basis and a scope that states its exclusions.
+            glazing, the existing equipment and the constraint that matters — access, noise, power
+            or a deadline. We reply with a design basis and a scope that states its exclusions.
           </p>
 
           <ul className="mt-8 grid gap-3 border-t border-line pt-6 text-[12px] text-fg-dim">
@@ -72,7 +72,7 @@ export function QuotePage() {
         </div>
 
         <div className="lg:col-span-5 lg:col-start-8">
-          <EnquiryForm source="contact-page" context="Quote request" />
+          <EnquiryForm source="quote-page" context="Quote request" />
         </div>
       </div>
     </section>

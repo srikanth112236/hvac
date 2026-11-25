@@ -16,6 +16,8 @@ import { jobsRouter } from './jobStore.js'
 import { marketingRouter } from './marketing.js'
 import { mediaRouter, UPLOAD_ROOT } from './media.js'
 import { newsletterSignupsRouter } from './newsletterSignups.js'
+import { notificationBridge } from './notificationBridge.js'
+import { notificationsRouter } from './notifications.js'
 import { customersRouter, portalRouter } from './portal.js'
 import { portalAdminRouter, portalFileRouter } from './portalModules.js'
 import { portalAuthRouter } from './portalAuth.js'
@@ -47,6 +49,7 @@ app.use(
   }),
 )
 app.use(express.json({ limit: '1mb' }))
+app.use('/api/v1', notificationBridge)
 
 app.use((req, res, next) => {
   const requestId = req.get('x-request-id') ?? randomUUID()
@@ -79,7 +82,7 @@ app.use(
   rateLimit({
     scope: 'global',
     windowMs: 60 * 1000,
-    max: 300,
+    max: process.env.NODE_ENV === 'production' ? 300 : 1200,
     message: 'Too many requests from this address. Slow down and try again.',
     skip: (requestPath) => requestPath === '/health' || requestPath === '/ready',
   }),
@@ -94,6 +97,7 @@ app.use('/api/v1', portalAuthRouter)
 app.use('/api/v1', portalRouter)
 app.use('/api/v1', portalFileRouter)
 app.use('/api/v1', jobsRouter)
+app.use('/api/v1/admin', notificationsRouter)
 app.use('/api/v1/admin', auditAdmin)
 app.use('/api/v1/admin', adminUsersRouter)
 app.use('/api/v1/admin', adminRouter)

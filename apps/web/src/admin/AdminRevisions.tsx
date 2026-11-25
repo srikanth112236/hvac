@@ -1,18 +1,30 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { ContentRevisionChange, ContentRevisionList, ContentRevisionMeta } from '@hvac/shared'
+import type {
+  ContentRevisionChange,
+  ContentRevisionList,
+  ContentRevisionMeta,
+  SiteContent,
+} from '@hvac/shared'
 import { Icon } from '@/components/icons'
 import {
   Badge,
   Button,
   EmptyState,
-  Input,
   Modal,
   Pagination,
+  RecordViewButton,
+  SearchSuggest,
   Select,
+  TableActionButton,
+  TableActions,
   useToast,
 } from '@/components/ui'
 import { adminApi } from '@/admin/api'
+import { revisionPageCatalog } from '@/admin/contentRegistry'
+import { useBackTarget } from '@/admin/useBackTarget'
+import { useRecordDeepLink } from '@/admin/useDeepLink'
+import { useLiveRefresh } from '@/admin/useLiveRefresh'
 import { AdminLoading, AdminPageHeader, InlineError, formatDateTime } from '@/admin/ui'
 import { cn } from '@/lib/cn'
 
@@ -21,14 +33,25 @@ type DateRange = 'all' | 'today' | '7d' | '30d' | '90d'
 type SortMode = 'newest' | 'oldest' | 'changes'
 type RestoreMode = 'site' | 'page' | 'fields'
 
+type PageKind = 'page' | 'collection' | 'detail' | 'global'
+
 interface PageEntry {
   id: string
+  revisionId: string
   label: string
   description: string
+  route: string
+  kind: PageKind
   revisions: number
   changes: number
   lastAt: string | null
   lastVersion: number | null
+  /** For a detail record, the dotted path prefix owned by the record. */
+  recordPrefix?: string
+  /** For detail records whose diff owner is one page id, such as legal docs. */
+  recordPageId?: string
+  /** The page id used by the restore endpoint for this exact page. */
+  restorePageId: string
 }
 
 interface RestoreRequest {
@@ -36,39 +59,11 @@ interface RestoreRequest {
   revision: ContentRevisionMeta
   pageId?: string
   pageLabel?: string
+  pageCount?: number
   paths?: string[]
 }
 
 const PAGE_SIZE = 12
-
-const PAGE_CATALOG: { id: string; label: string; description: string }[] = [
-  { id: 'home', label: 'Home', description: 'Hero, proof, setpoint, airflow and closing CTA' },
-  {
-    id: 'services',
-    label: 'Services',
-    description: 'Service records, index copy and process links',
-  },
-  { id: 'products', label: 'Systems', description: 'Product catalogue, pricing and detail pages' },
-  { id: 'amc', label: 'AMC', description: 'Plans, schedules, SLA tables and inclusions' },
-  { id: 'work', label: 'Work', description: 'Case studies, evidence and before/after copy' },
-  { id: 'process', label: 'Process', description: 'Delivery stages, durations and handover gates' },
-  { id: 'about', label: 'About', description: 'Story, principles, people and credentials' },
-  { id: 'contact', label: 'Contact', description: 'Contact hero, form copy and coverage' },
-  { id: 'blog', label: 'Journal', description: 'Journal hero and article collection' },
-  {
-    id: 'brand',
-    label: 'Brand & contact',
-    description: 'Identity, phone, email, address and hours',
-  },
-  {
-    id: 'voices',
-    label: 'Voices & brands',
-    description: 'Testimonials and supported equipment brands',
-  },
-  { id: 'legal', label: 'Legal pages', description: 'Privacy, terms, cookies and accessibility' },
-  { id: 'seo', label: 'SEO & social', description: 'Titles, descriptions, canonical and sharing' },
-  { id: 'site', label: 'Shared FAQs', description: 'Reusable questions shown across the site' },
-]
 
 const dateOptions: { value: DateRange; label: string }[] = [
   { value: 'all', label: 'All dates' },
@@ -84,16 +79,126 @@ const sortOptions: { value: SortMode; label: string }[] = [
   { value: 'changes', label: 'Most changes' },
 ]
 
-function pageEntry(id: string, label: string, description: string): PageEntry {
+function pageEntry(
+  id: string,
+  label: string,
+  description: string,
+  revisionId = id,
+  options: Partial<
+    Pick<PageEntry, 'route' | 'kind' | 'recordPrefix' | 'recordPageId' | 'restorePageId'>
+  > = {},
+): PageEntry {
   return {
     id,
+    revisionId,
     label,
     description,
+    route: options.route ?? '',
+    kind: options.kind ?? 'page',
     revisions: 0,
     changes: 0,
     lastAt: null,
     lastVersion: null,
+    recordPrefix: options.recordPrefix,
+    recordPageId: options.recordPageId,
+    restorePageId: options.restorePageId ?? revisionId,
   }
+}
+
+function changeMatchesEntry(change: ContentRevisionChange, entry: PageEntry): boolean {
+  if (entry.recordPageId) return change.pageId === entry.recordPageId
+  if (!entry.recordPrefix) return false
+  const prefix = entry.recordPrefix.replace(/\.$/, '')
+  return change.path === prefix || change.path.startsWith(entry.recordPrefix)
+}
+
+function revisionMatchesEntry(revision: ContentRevisionMeta, entry: PageEntry): boolean {
+  if (entry.kind === 'detail')
+    return revision.changes.some((change) => changeMatchesEntry(change, entry))
+  return revision.stats.pages.some((page) => page.id === entry.revisionId)
+}
+
+function recordEntries(content: SiteContent): PageEntry[] {
+  return [
+    ...content.services.map((service) =>
+      pageEntry(
+        `service:${service.id}`,
+        service.name || service.id,
+        `Service detail · /services/${service.id} · ${service.category}`,
+        'services',
+        {
+          route: `/services/${service.id}`,
+          kind: 'detail',
+          recordPrefix: `services.${service.id}.`,
+          restorePageId: `service:${service.id}`,
+        },
+      ),
+    ),
+    ...content.workCases.map((entry) =>
+      pageEntry(
+        `work-case:${entry.id}`,
+        entry.name || entry.id,
+        `Work case · ${entry.category}`,
+        'work',
+        {
+          route: '/work#files',
+          kind: 'detail',
+          recordPrefix: `workCases.${entry.id}.`,
+          restorePageId: `work-case:${entry.id}`,
+        },
+      ),
+    ),
+    ...content.products.map((product) =>
+      pageEntry(
+        `product:${product.id}`,
+        product.name || product.id,
+        `System detail · ${product.category}`,
+        'products',
+        {
+          route: `/products#${product.slug}`,
+          kind: 'detail',
+          recordPrefix: `products.${product.id}.`,
+          restorePageId: `product:${product.id}`,
+        },
+      ),
+    ),
+    ...content.plans.map((plan) =>
+      pageEntry(`plan:${plan.id}`, plan.name || plan.id, 'AMC plan detail', 'amc', {
+        route: '/amc#plans',
+        kind: 'detail',
+        recordPrefix: `plans.${plan.id}.`,
+        restorePageId: `plan:${plan.id}`,
+      }),
+    ),
+    ...content.legal.map((document) =>
+      pageEntry(
+        `legal-doc:${document.slug}`,
+        document.title || document.slug,
+        `Legal document · /legal/${document.slug}`,
+        `legal:${document.slug}`,
+        {
+          route: `/legal/${document.slug}`,
+          kind: 'detail',
+          recordPageId: `legal:${document.slug}`,
+          restorePageId: `legal:${document.slug}`,
+        },
+      ),
+    ),
+    ...content.posts.map((post) =>
+      pageEntry(
+        `post:${post.id}`,
+        post.title || post.slug,
+        `Journal article · /blog/${post.slug}`,
+        'blog',
+        {
+          route: `/blog/${post.slug}`,
+          kind: 'detail',
+          recordPrefix: `posts.${post.id}.`,
+          restorePageId: `post:${post.id}`,
+        },
+      ),
+    ),
+  ]
 }
 
 function groupChanges(changes: ContentRevisionChange[]) {
@@ -181,6 +286,9 @@ function PageCard({ entry, onOpen }: { entry: PageEntry; onOpen: () => void }) {
         <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-fg-faint">
           {entry.description}
         </p>
+        <span className="mt-2 block truncate font-mono text-[8px] uppercase tracking-[0.06em] text-fg-faint/80">
+          {entry.route || 'Global content'}
+        </span>
       </div>
       <div className="mt-4 flex items-end justify-between gap-3 border-t border-line/60 pt-3">
         <span className="text-[10px] text-fg-faint">
@@ -198,7 +306,9 @@ function PageCard({ entry, onOpen }: { entry: PageEntry; onOpen: () => void }) {
 
 export function AdminRevisions() {
   const { toast } = useToast()
+  const back = useBackTarget('/admin/content', 'Content studio')
   const [data, setData] = useState<ContentRevisionList | null>(null)
+  const [content, setContent] = useState<SiteContent | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [tab, setTab] = useState<TabId>('versions')
@@ -219,8 +329,9 @@ export function AdminRevisions() {
 
   const load = async () => {
     try {
-      const history = await adminApi.contentHistory()
+      const [history, site] = await Promise.all([adminApi.contentHistory(), adminApi.content()])
       setData(history)
+      setContent(site)
       setError('')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not load the revision ledger.')
@@ -229,9 +340,7 @@ export function AdminRevisions() {
     }
   }
 
-  useEffect(() => {
-    void load()
-  }, [])
+  useLiveRefresh(load, 20_000)
 
   useEffect(() => {
     setVersionPage(1)
@@ -244,47 +353,97 @@ export function AdminRevisions() {
 
   const pageEntries = useMemo(() => {
     const entries = new Map<string, PageEntry>()
-    for (const page of PAGE_CATALOG)
-      entries.set(page.id, pageEntry(page.id, page.label, page.description))
+    for (const page of revisionPageCatalog) {
+      entries.set(
+        page.id,
+        pageEntry(page.id, page.label, page.description, page.revisionId, {
+          route: page.route,
+          kind: page.route === 'Global scope' ? 'global' : 'page',
+        }),
+      )
+    }
+    if (content) {
+      for (const entry of recordEntries(content)) entries.set(entry.id, entry)
+    }
     for (const page of data?.pages ?? []) {
-      if (!entries.has(page.id))
-        entries.set(page.id, pageEntry(page.id, page.label, 'Legal document'))
+      const id = `revision:${page.id}`
+      if ([...entries.values()].some((entry) => entry.revisionId === page.id)) continue
+      if (page.id.startsWith('legal:')) {
+        const slug = page.id.slice('legal:'.length)
+        entries.set(
+          id,
+          pageEntry(id, page.label, `Historical legal document · /legal/${slug}`, page.id, {
+            route: `/legal/${slug}`,
+            kind: 'detail',
+            recordPageId: page.id,
+            restorePageId: page.id,
+          }),
+        )
+      } else {
+        entries.set(id, pageEntry(id, page.label, 'Historical CMS page', page.id))
+      }
     }
     for (const revision of data?.revisions ?? []) {
       for (const page of revision.stats.pages) {
-        const existing = entries.get(page.id) ?? pageEntry(page.id, page.label, 'Published content')
-        existing.revisions += 1
-        existing.changes += page.count
-        if (!existing.lastAt || Date.parse(revision.createdAt) > Date.parse(existing.lastAt)) {
-          existing.lastAt = revision.createdAt
-          existing.lastVersion = revision.version
+        let targets = [...entries.values()].filter(
+          (entry) => entry.kind !== 'detail' && entry.revisionId === page.id,
+        )
+        if (!targets.length) {
+          const hasRecordPage = [...entries.values()].some(
+            (entry) => entry.kind === 'detail' && entry.revisionId === page.id,
+          )
+          if (hasRecordPage) continue
+          const entry = pageEntry(page.id, page.label, 'Published content')
+          entries.set(entry.id, entry)
+          targets = [entry]
         }
-        entries.set(page.id, existing)
+        for (const existing of targets) {
+          existing.revisions += 1
+          existing.changes += page.count
+          if (!existing.lastAt || Date.parse(revision.createdAt) > Date.parse(existing.lastAt)) {
+            existing.lastAt = revision.createdAt
+            existing.lastVersion = revision.version
+          }
+        }
+      }
+      for (const entry of entries.values()) {
+        if (entry.kind !== 'detail') continue
+        const matches = revision.changes.filter((change) => changeMatchesEntry(change, entry))
+        if (!matches.length) continue
+        entry.revisions += 1
+        entry.changes += matches.length
+        if (!entry.lastAt || Date.parse(revision.createdAt) > Date.parse(entry.lastAt)) {
+          entry.lastAt = revision.createdAt
+          entry.lastVersion = revision.version
+        }
       }
     }
     return [...entries.values()].sort((a, b) => {
       const aTime = a.lastAt ? Date.parse(a.lastAt) : 0
       const bTime = b.lastAt ? Date.parse(b.lastAt) : 0
-      return bTime - aTime || a.label.localeCompare(b.label)
+      return bTime - aTime || a.label.localeCompare(b.label) || a.route.localeCompare(b.route)
     })
-  }, [data])
+  }, [content, data])
 
-  const pageOptions = useMemo(
-    () => [
+  const pageOptions = useMemo(() => {
+    return [
       { value: 'all', label: 'All pages' },
       ...pageEntries
         .filter((entry) => entry.revisions > 0)
-        .map((entry) => ({ value: entry.id, label: `${entry.label} · ${entry.revisions}` })),
-    ],
-    [pageEntries],
-  )
+        .map((entry) => ({
+          value: entry.id,
+          label: `${entry.label}${entry.route ? ` - ${entry.route}` : ''} (${entry.revisions})`,
+        })),
+    ]
+  }, [pageEntries])
 
   const versions = useMemo(() => {
     if (!data) return []
     const cutoff = dateCutoff(dateRange)
     const needle = query.trim().toLowerCase()
+    const filterEntry = pageEntries.find((entry) => entry.id === pageFilter) ?? null
     const filtered = data.revisions.filter((revision) => {
-      if (pageFilter !== 'all' && !revision.stats.pages.some((page) => page.id === pageFilter)) {
+      if (filterEntry && !revisionMatchesEntry(revision, filterEntry)) {
         return false
       }
       if (authorFilter !== 'all' && revision.author !== authorFilter) return false
@@ -315,7 +474,7 @@ export function AdminRevisions() {
       }
       return Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.version - a.version
     })
-  }, [data, dateRange, query, pageFilter, authorFilter, sort])
+  }, [data, pageEntries, dateRange, query, pageFilter, authorFilter, sort])
 
   const pageCount = Math.max(1, Math.ceil(versions.length / PAGE_SIZE))
   const safePage = Math.min(versionPage, pageCount)
@@ -325,7 +484,9 @@ export function AdminRevisions() {
     const needle = pageQuery.trim().toLowerCase()
     if (!needle) return pageEntries
     return pageEntries.filter((entry) =>
-      `${entry.label} ${entry.id} ${entry.description}`.toLowerCase().includes(needle),
+      `${entry.label} ${entry.id} ${entry.description} ${entry.route}`
+        .toLowerCase()
+        .includes(needle),
     )
   }, [pageEntries, pageQuery])
 
@@ -335,15 +496,64 @@ export function AdminRevisions() {
   const oldestVersion = data?.revisions.at(-1)?.version
   const activePage = pageEntries.find((entry) => entry.id === activePageId) ?? null
   const activePageRevisions = useMemo(() => {
-    if (!data || !activePageId) return []
-    return data.revisions
-      .filter((revision) => revision.stats.pages.some((page) => page.id === activePageId))
-      .map((revision) => ({
-        revision,
-        pageStat: revision.stats.pages.find((page) => page.id === activePageId) ?? null,
-        pageChanges: revision.changes.filter((change) => change.pageId === activePageId),
-      }))
-  }, [data, activePageId])
+    if (!data || !activePage) return []
+    return data.revisions.flatMap((revision) => {
+      if (!revisionMatchesEntry(revision, activePage)) return []
+      const pageChanges =
+        activePage.kind === 'detail'
+          ? revision.changes.filter((change) => changeMatchesEntry(change, activePage))
+          : revision.changes.filter((change) => change.pageId === activePage.revisionId)
+      if (activePage.kind === 'detail' && !pageChanges.length) return []
+      return [
+        {
+          revision,
+          pageStat:
+            activePage.kind === 'detail'
+              ? null
+              : (revision.stats.pages.find((page) => page.id === activePage.revisionId) ?? null),
+          pageChanges,
+        },
+      ]
+    })
+  }, [data, activePage])
+
+  useRecordDeepLink({
+    param: 'version',
+    records: data?.revisions ?? [],
+    resolve: (value) =>
+      (data?.revisions ?? []).find((revision) => String(revision.version) === value),
+    onOpen: setDetailRevision,
+  })
+
+  const ledgerSuggestions = useMemo(
+    () =>
+      (data?.revisions ?? []).map((revision) => ({
+        id: String(revision.version),
+        label: `v${revision.version} · ${revision.note || 'Content update'}`,
+        value: `v${revision.version}`,
+        description: `${revision.author} · ${revision.stats.pages.map((page) => page.label).join(', ')}`,
+        meta: `${revision.stats.totalChanges} changes`,
+        keywords: revision.changes
+          .flatMap((change) => [change.field, change.path, change.before, change.after])
+          .join(' '),
+        icon: 'refresh' as const,
+      })),
+    [data],
+  )
+
+  const pageSuggestions = useMemo(
+    () =>
+      pageEntries.map((entry) => ({
+        id: entry.id,
+        label: entry.label,
+        value: entry.label,
+        description: `${entry.description}${entry.route ? ` · ${entry.route}` : ''}`,
+        meta: `${entry.revisions} revisions`,
+        keywords: `${entry.id} ${entry.description} ${entry.route}`,
+        icon: 'tag' as const,
+      })),
+    [pageEntries],
+  )
 
   const resetFilters = () => {
     setQuery('')
@@ -389,7 +599,10 @@ export function AdminRevisions() {
   }
 
   const openPage = (pageId: string) => {
-    setActivePageId(pageId)
+    const entry =
+      pageEntries.find((candidate) => candidate.id === pageId) ??
+      pageEntries.find((candidate) => candidate.revisionId === pageId)
+    setActivePageId(entry?.id ?? pageId)
     setExpandedVersion(null)
     setSelection(new Set())
   }
@@ -422,11 +635,11 @@ export function AdminRevisions() {
         actions={
           <>
             <Link
-              to="/admin/content"
+              to={back.to}
               className="flex h-9 items-center gap-2 border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:border-cold/50 hover:text-cold"
             >
               <Icon name="arrow-right" size={12} className="rotate-180" />
-              Content studio
+              {back.label}
             </Link>
             <Link
               to="/"
@@ -513,7 +726,7 @@ export function AdminRevisions() {
                 type="button"
                 onClick={() => setTab('versions')}
                 className={cn(
-                  'flex items-center gap-2 border-b-2 px-3 py-3 font-mono text-[10px] uppercase tracking-[0.1em]',
+                  'flex items-center gap-2 border-b-2 px-3 py-2.5 font-mono text-[10px] uppercase tracking-[0.1em]',
                   tab === 'versions'
                     ? 'border-cold text-cold'
                     : 'border-transparent text-fg-faint hover:text-fg',
@@ -531,7 +744,7 @@ export function AdminRevisions() {
                   setActivePageId(null)
                 }}
                 className={cn(
-                  'flex items-center gap-2 border-b-2 px-3 py-3 font-mono text-[10px] uppercase tracking-[0.1em]',
+                  'flex items-center gap-2 border-b-2 px-3 py-2.5 font-mono text-[10px] uppercase tracking-[0.1em]',
                   tab === 'pages'
                     ? 'border-cold text-cold'
                     : 'border-transparent text-fg-faint hover:text-fg',
@@ -556,11 +769,20 @@ export function AdminRevisions() {
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-3 border border-line bg-panel/25 p-4">
                 <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_180px_170px_150px_160px]">
-                  <Input
+                  <SearchSuggest
                     label="Search ledger"
                     value={query}
-                    onChange={(event) => setQuery(event.target.value)}
+                    onChange={setQuery}
+                    suggestions={ledgerSuggestions}
+                    onSelect={(suggestion) => {
+                      setQuery(suggestion.value ?? suggestion.label)
+                      const revision = data?.revisions.find(
+                        (entry) => String(entry.version) === suggestion.id,
+                      )
+                      if (revision) setDetailRevision(revision)
+                    }}
                     placeholder="Version, author, page, field, before/after copy"
+                    emptyMessage="No revision matches that version, author or field."
                   />
                   <Select
                     label="Page"
@@ -652,7 +874,7 @@ export function AdminRevisions() {
                                 current && 'bg-cold/[0.035]',
                               )}
                             >
-                              <td className="px-3 py-3">
+                              <td className="px-3 py-2.5">
                                 <div className="flex items-center gap-2">
                                   <span
                                     className={cn(
@@ -675,13 +897,13 @@ export function AdminRevisions() {
                                   </span>
                                 ) : null}
                               </td>
-                              <td className="px-3 py-3 text-[10px] text-fg-dim">
+                              <td className="px-3 py-2.5 text-[10px] text-fg-dim">
                                 {formatDateTime(revision.createdAt)}
                               </td>
-                              <td className="max-w-[150px] truncate px-3 py-3 text-[10px] text-fg-dim">
+                              <td className="max-w-[150px] truncate px-3 py-2.5 text-[10px] text-fg-dim">
                                 {revision.author}
                               </td>
-                              <td className="px-3 py-3">
+                              <td className="px-3 py-2.5">
                                 <div className="flex max-w-[240px] flex-wrap gap-1">
                                   {revision.stats.pages.slice(0, 3).map((page) => (
                                     <button
@@ -706,7 +928,7 @@ export function AdminRevisions() {
                                   ) : null}
                                 </div>
                               </td>
-                              <td className="px-3 py-3">
+                              <td className="px-3 py-2.5">
                                 <span className="font-mono text-[10px] text-fg">
                                   {revision.stats.totalChanges}
                                 </span>
@@ -714,30 +936,26 @@ export function AdminRevisions() {
                                   {revision.stats.sections.length} sections
                                 </span>
                               </td>
-                              <td className="max-w-[180px] px-3 py-3 text-[10px] leading-relaxed text-fg-dim">
+                              <td className="max-w-[180px] px-3 py-2.5 text-[10px] leading-relaxed text-fg-dim">
                                 <span className="line-clamp-2" title={revision.note}>
                                   {revision.note}
                                 </span>
                               </td>
-                              <td className="px-3 py-3">
-                                <div className="flex justify-end gap-1.5">
-                                  <button
-                                    type="button"
+                              <td className="px-3 py-2">
+                                <TableActions>
+                                  <RecordViewButton
+                                    label={`version ${revision.version}`}
                                     onClick={() => setDetailRevision(revision)}
-                                    className="flex h-8 items-center border border-line px-2.5 font-mono text-[8px] uppercase tracking-[0.08em] text-fg-dim hover:border-cold/50 hover:text-cold"
-                                  >
-                                    Review
-                                  </button>
+                                  />
                                   {!current && !baseline ? (
-                                    <button
-                                      type="button"
+                                    <TableActionButton
+                                      label={`Restore version ${revision.version}`}
+                                      icon="refresh"
+                                      tone="cold"
                                       onClick={() => openRestore({ mode: 'site', revision })}
-                                      className="flex h-8 items-center border border-line px-2.5 font-mono text-[8px] uppercase tracking-[0.08em] text-fg-dim hover:border-cold/50 hover:text-cold"
-                                    >
-                                      Restore
-                                    </button>
+                                    />
                                   ) : null}
-                                </div>
+                                </TableActions>
                               </td>
                             </tr>
                           )
@@ -782,6 +1000,14 @@ export function AdminRevisions() {
                         ? ` · last changed ${formatDateTime(activePage.lastAt)}`
                         : ''}
                     </p>
+                    {activePage.id.startsWith('service:') ? (
+                      <Link
+                        to={`/admin/content?service=${encodeURIComponent(activePage.id.slice('service:'.length))}`}
+                        className="mt-2 inline-flex items-center gap-1.5 font-mono text-[8px] uppercase tracking-[0.08em] text-cold hover:text-fg"
+                      >
+                        Edit service in content studio <Icon name="arrow-right" size={10} />
+                      </Link>
+                    ) : null}
                   </div>
                   <Badge tone={activePage.revisions ? 'cold' : 'neutral'}>
                     {activePage.revisions} {activePage.revisions === 1 ? 'revision' : 'revisions'}
@@ -883,8 +1109,9 @@ export function AdminRevisions() {
                                         openRestore({
                                           mode: 'page',
                                           revision,
-                                          pageId: activePage.id,
+                                          pageId: activePage.restorePageId,
                                           pageLabel: activePage.label,
+                                          pageCount: pageChanges.length,
                                         })
                                       }
                                       className="flex h-8 items-center border border-line px-2.5 font-mono text-[8px] uppercase tracking-[0.08em] text-fg-dim hover:border-cold/50 hover:text-cold"
@@ -928,7 +1155,7 @@ export function AdminRevisions() {
                                           openRestore({
                                             mode: 'fields',
                                             revision,
-                                            pageId: activePage.id,
+                                            pageId: activePage.revisionId,
                                             pageLabel: activePage.label,
                                             paths: [...selection],
                                           })
@@ -1061,11 +1288,17 @@ export function AdminRevisions() {
             <div className="flex flex-col gap-4">
               <div className="flex flex-wrap items-end justify-between gap-3 border border-line bg-panel/25 p-4">
                 <div className="min-w-[240px] flex-1">
-                  <Input
+                  <SearchSuggest
                     label="Search pages"
                     value={pageQuery}
-                    onChange={(event) => setPageQuery(event.target.value)}
+                    onChange={setPageQuery}
+                    suggestions={pageSuggestions}
+                    onSelect={(suggestion) => {
+                      setPageQuery(suggestion.label)
+                      setActivePageId(suggestion.id)
+                    }}
                     placeholder="Page name, path or purpose"
+                    emptyMessage="No page matches that name or purpose."
                   />
                 </div>
                 <div className="flex flex-wrap items-center gap-2 pb-0.5">
@@ -1109,8 +1342,11 @@ export function AdminRevisions() {
         size="lg"
         footer={
           <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="secondary" icon="chevron-left" onClick={() => setDetailRevision(null)}>
+              Back
+            </Button>
             <Button variant="quiet" onClick={() => setDetailRevision(null)}>
-              Close
+              Cancel
             </Button>
             {detailRevision &&
             detailRevision.version !== data?.currentVersion &&
@@ -1275,8 +1511,10 @@ export function AdminRevisions() {
                     ? `Complete site · ${restore.revision.stats.totalChanges} fields`
                     : restore.mode === 'page'
                       ? `${restore.pageLabel ?? 'Page'} · ${
+                          restore.pageCount ??
                           restore.revision.stats.pages.find((page) => page.id === restore.pageId)
-                            ?.count ?? 0
+                            ?.count ??
+                          0
                         } fields`
                       : `${restore.paths?.length ?? 0} selected fields on ${restore.pageLabel ?? 'page'}`}
                 </span>

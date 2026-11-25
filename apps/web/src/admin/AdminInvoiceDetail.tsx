@@ -1,25 +1,43 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Icon } from '@/components/icons'
-import {
-  Button,
-  ButtonAnchor,
-  Input,
-  Modal,
-  Select,
-  Textarea,
-  useToast,
-} from '@/components/ui'
-import type { InvoiceInput, InvoicePaymentInput, InvoiceWithTotals, SiteContent } from '@hvac/shared'
+import { Button, ButtonAnchor, Input, Modal, Select, Textarea, useToast } from '@/components/ui'
+import type {
+  InvoiceInput,
+  InvoicePaymentInput,
+  InvoiceWithTotals,
+  SiteContent,
+} from '@hvac/shared'
 import { adminApi } from '@/admin/api'
+import { useBackTarget } from '@/admin/useBackTarget'
 import { InvoiceForm } from '@/admin/InvoiceForm'
 import { InvoiceStateBadge, METHOD_LABELS } from '@/admin/invoice-ui'
 import { AdminLoading, InlineError, formatDate, formatDateTime, formatMoneyExact } from '@/admin/ui'
 import { useSiteContent } from '@/content/SiteContentProvider'
 import '@/admin/print.css'
 
-const ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
-  'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen']
+const ones = [
+  '',
+  'one',
+  'two',
+  'three',
+  'four',
+  'five',
+  'six',
+  'seven',
+  'eight',
+  'nine',
+  'ten',
+  'eleven',
+  'twelve',
+  'thirteen',
+  'fourteen',
+  'fifteen',
+  'sixteen',
+  'seventeen',
+  'eighteen',
+  'nineteen',
+]
 const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety']
 
 function twoDigits(value: number): string {
@@ -31,10 +49,9 @@ function twoDigits(value: number): string {
 function threeDigits(value: number): string {
   const hundred = Math.floor(value / 100)
   const rest = value % 100
-  return [
-    hundred ? `${ones[hundred]} hundred` : '',
-    rest ? twoDigits(rest) : '',
-  ].filter(Boolean).join(' ')
+  return [hundred ? `${ones[hundred]} hundred` : '', rest ? twoDigits(rest) : '']
+    .filter(Boolean)
+    .join(' ')
 }
 
 function amountInWords(value: number): string {
@@ -56,6 +73,7 @@ export function AdminInvoiceDetail() {
   const navigate = useNavigate()
   const { toast } = useToast()
   const { content } = useSiteContent()
+  const back = useBackTarget('/admin/invoices', 'Back to invoices')
   // Bank details are not part of the public content feed. The invoice sheet
   // reads them from the authenticated admin endpoint instead.
   const [adminBilling, setAdminBilling] = useState<SiteContent['brand']['billing'] | null>(null)
@@ -96,7 +114,8 @@ export function AdminInvoiceDetail() {
         setError('')
       })
       .catch((caught) => {
-        if (active) setError(caught instanceof Error ? caught.message : 'Could not load this invoice.')
+        if (active)
+          setError(caught instanceof Error ? caught.message : 'Could not load this invoice.')
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -164,7 +183,11 @@ export function AdminInvoiceDetail() {
     try {
       const result = await adminApi.remindInvoice(invoiceId)
       setInvoice(result.data)
-      toast({ title: 'Payment reminder queued', description: 'Due tomorrow at 9am.', tone: 'success' })
+      toast({
+        title: 'Payment reminder queued',
+        description: 'Due tomorrow at 9am.',
+        tone: 'success',
+      })
     } catch (caught) {
       toast({
         title: 'Reminder not created',
@@ -190,7 +213,8 @@ export function AdminInvoiceDetail() {
   }
 
   const removeInvoice = async () => {
-    if (!invoice || !window.confirm(`Delete invoice ${invoice.ref} and its payment history?`)) return
+    if (!invoice || !window.confirm(`Delete invoice ${invoice.ref} and its payment history?`))
+      return
     try {
       await adminApi.deleteInvoice(invoice.id)
       navigate('/admin/invoices')
@@ -214,14 +238,18 @@ export function AdminInvoiceDetail() {
       <div className="no-print flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
         <div className="flex items-center gap-3">
           <Link
-            to="/admin/invoices"
-            className="flex h-8 w-8 items-center justify-center border border-line text-fg-faint hover:text-cold"
-            aria-label="Back to invoices"
+            to={back.to}
+            className="flex h-8 items-center gap-1.5 border border-line px-2.5 font-mono text-[8px] uppercase tracking-[0.08em] text-fg-faint hover:border-cold/50 hover:text-cold"
+            aria-label={back.label}
+            title={back.label}
           >
             <Icon name="chevron-left" size={14} />
+            Back
           </Link>
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-cold">{invoice.ref}</p>
+            <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-cold">
+              {invoice.ref}
+            </p>
             <h1 className="t-h3 mt-0.5 text-fg">{invoice.customerName}</h1>
           </div>
           <InvoiceStateBadge state={totals.state} />
@@ -239,6 +267,9 @@ export function AdminInvoiceDetail() {
           ) : null}
           <Button variant="secondary" icon="wrench" onClick={() => setEditOpen(true)}>
             Edit
+          </Button>
+          <Button variant="secondary" icon="printer" onClick={() => window.print()}>
+            Print
           </Button>
           <ButtonAnchor
             href={`/api/v1/admin/invoices/${invoice.id}/pdf`}
@@ -260,10 +291,15 @@ export function AdminInvoiceDetail() {
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <article id="invoice-sheet" className="marks border border-line bg-white p-7 text-[#161616] sm:p-10">
+        <article
+          id="invoice-sheet"
+          className="invoice-document marks border border-line bg-white p-7 text-[#161616] sm:p-10"
+        >
           <header className="flex flex-wrap items-start justify-between gap-6 border-b-2 border-[#161616] pb-5">
             <div>
-              <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-[#555]">Tax invoice</p>
+              <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-[#555]">
+                Tax invoice
+              </p>
               <h2 className="mt-2 text-[22px] font-semibold leading-tight">
                 {content.brand.legalName}
               </h2>
@@ -280,36 +316,61 @@ export function AdminInvoiceDetail() {
               </p>
             </div>
             <div className="text-right">
-              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#555]">Invoice</p>
+              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#555]">
+                Invoice
+              </p>
               <p className="mt-1 font-mono text-[18px] font-semibold">{invoice.ref}</p>
               <dl className="mt-4 flex flex-col gap-1 text-[10px]">
-                <div className="flex justify-end gap-5"><dt className="text-[#666]">Issued</dt><dd>{formatDate(invoice.issueDate)}</dd></div>
-                <div className="flex justify-end gap-5"><dt className="text-[#666]">Due</dt><dd>{formatDate(invoice.dueDate)}</dd></div>
-                <div className="flex justify-end gap-5"><dt className="text-[#666]">Place of supply</dt><dd>{content.brand.address.region}</dd></div>
+                <div className="flex justify-end gap-5">
+                  <dt className="text-[#666]">Issued</dt>
+                  <dd>{formatDate(invoice.issueDate)}</dd>
+                </div>
+                <div className="flex justify-end gap-5">
+                  <dt className="text-[#666]">Due</dt>
+                  <dd>{formatDate(invoice.dueDate)}</dd>
+                </div>
+                <div className="flex justify-end gap-5">
+                  <dt className="text-[#666]">Place of supply</dt>
+                  <dd>{content.brand.address.region}</dd>
+                </div>
               </dl>
             </div>
           </header>
 
           <section className="grid gap-6 border-b border-[#bbb] py-5 sm:grid-cols-2">
             <div>
-              <p className="font-mono text-[8px] uppercase tracking-[0.14em] text-[#666]">Billed to</p>
+              <p className="font-mono text-[8px] uppercase tracking-[0.14em] text-[#666]">
+                Billed to
+              </p>
               <p className="mt-1.5 text-[13px] font-semibold">{invoice.customerName}</p>
-              {invoice.customerAddress ? <p className="mt-1 max-w-[36ch] text-[10px] leading-relaxed text-[#444]">{invoice.customerAddress}</p> : null}
+              {invoice.customerAddress ? (
+                <p className="mt-1 max-w-[36ch] text-[10px] leading-relaxed text-[#444]">
+                  {invoice.customerAddress}
+                </p>
+              ) : null}
               <p className="mt-1 text-[10px] text-[#444]">
                 {[invoice.customerPhone, invoice.customerEmail].filter(Boolean).join(' · ')}
               </p>
               {invoice.customerGstin ? (
-                <p className="mt-1 font-mono text-[9px] uppercase text-[#444]">Tax ID {invoice.customerGstin}</p>
+                <p className="mt-1 font-mono text-[9px] uppercase text-[#444]">
+                  Tax ID {invoice.customerGstin}
+                </p>
               ) : null}
             </div>
             <div className="sm:text-right">
-              <p className="font-mono text-[8px] uppercase tracking-[0.14em] text-[#666]">Against</p>
+              <p className="font-mono text-[8px] uppercase tracking-[0.14em] text-[#666]">
+                Against
+              </p>
               <p className="mt-1.5 text-[12px]">{invoice.service || 'HVAC service works'}</p>
               {invoice.leadRef ? (
-                <p className="mt-1 font-mono text-[9px] uppercase text-[#666]">Lead {invoice.leadRef}</p>
+                <p className="mt-1 font-mono text-[9px] uppercase text-[#666]">
+                  Lead {invoice.leadRef}
+                </p>
               ) : null}
               <p className="mt-4 text-[10px] text-[#444]">
-                {invoice.taxMode === 'intra' ? 'In-state sale · state + local sales tax' : 'Out-of-state sale · sales tax exempt'}
+                {invoice.taxMode === 'intra'
+                  ? 'In-state sale · state + local sales tax'
+                  : 'Out-of-state sale · sales tax exempt'}
               </p>
             </div>
           </section>
@@ -333,13 +394,19 @@ export function AdminInvoiceDetail() {
                 const tax = net * (line.taxPercent / 100)
                 return (
                   <tr key={line.id} className="border-b border-[#ddd] align-top">
-                    <td className="py-2.5 pr-2 font-mono text-[9px] text-[#777]">{String(index + 1).padStart(2, '0')}</td>
+                    <td className="py-2.5 pr-2 font-mono text-[9px] text-[#777]">
+                      {String(index + 1).padStart(2, '0')}
+                    </td>
                     <td className="py-2.5 pr-2">{line.description}</td>
                     <td className="py-2.5 pr-2 text-right tabular-nums">{line.quantity}</td>
-                    <td className="py-2.5 pr-2 text-right tabular-nums">{formatMoneyExact(line.unitPrice)}</td>
+                    <td className="py-2.5 pr-2 text-right tabular-nums">
+                      {formatMoneyExact(line.unitPrice)}
+                    </td>
                     <td className="py-2.5 pr-2 text-right tabular-nums">{formatMoneyExact(net)}</td>
                     <td className="py-2.5 pr-2 text-right tabular-nums">{line.taxPercent}%</td>
-                    <td className="py-2.5 text-right tabular-nums">{formatMoneyExact(net + tax)}</td>
+                    <td className="py-2.5 text-right tabular-nums">
+                      {formatMoneyExact(net + tax)}
+                    </td>
                   </tr>
                 )
               })}
@@ -349,51 +416,89 @@ export function AdminInvoiceDetail() {
           <section className="mt-5 grid gap-6 sm:grid-cols-[minmax(0,1fr)_250px]">
             <div className="flex flex-col gap-3 text-[9px] leading-relaxed text-[#444]">
               <div>
-                <p className="font-mono text-[8px] uppercase tracking-[0.14em] text-[#555]">Amount in words</p>
+                <p className="font-mono text-[8px] uppercase tracking-[0.14em] text-[#555]">
+                  Amount in words
+                </p>
                 <p className="mt-1 text-[10px] capitalize">{amountInWords(totals.total)}</p>
               </div>
               {invoice.notes ? (
                 <div>
-                  <p className="font-mono text-[8px] uppercase tracking-[0.14em] text-[#555]">Notes</p>
+                  <p className="font-mono text-[8px] uppercase tracking-[0.14em] text-[#555]">
+                    Notes
+                  </p>
                   <p className="mt-1 whitespace-pre-line">{invoice.notes}</p>
                 </div>
               ) : null}
               <div>
-                <p className="font-mono text-[8px] uppercase tracking-[0.14em] text-[#555]">Payment details</p>
+                <p className="font-mono text-[8px] uppercase tracking-[0.14em] text-[#555]">
+                  Payment details
+                </p>
                 <p className="mt-1">
-                  {billing.bankName} · A/c {billing.accountName} · {billing.accountNumber} · Routing {billing.ifsc}
+                  {billing.bankName} · A/c {billing.accountName} · {billing.accountNumber} · Routing{' '}
+                  {billing.ifsc}
                   {billing.upiId ? ` · Pay link ${billing.upiId}` : ''}
                 </p>
               </div>
               {invoice.terms ? (
                 <div>
-                  <p className="font-mono text-[8px] uppercase tracking-[0.14em] text-[#555]">Terms</p>
+                  <p className="font-mono text-[8px] uppercase tracking-[0.14em] text-[#555]">
+                    Terms
+                  </p>
                   <p className="mt-1 whitespace-pre-line">{invoice.terms}</p>
                 </div>
               ) : null}
             </div>
 
             <dl className="flex flex-col gap-1.5 text-[10px]">
-              <div className="flex justify-between gap-4 border-b border-[#ddd] pb-1.5"><dt className="text-[#666]">Subtotal</dt><dd className="tabular-nums">{formatMoneyExact(totals.subtotal)}</dd></div>
-              <div className="flex justify-between gap-4 border-b border-[#ddd] pb-1.5"><dt className="text-[#666]">Discount</dt><dd className="tabular-nums">−{formatMoneyExact(totals.discount)}</dd></div>
-              <div className="flex justify-between gap-4 border-b border-[#ddd] pb-1.5"><dt className="text-[#666]">Taxable value</dt><dd className="tabular-nums">{formatMoneyExact(totals.taxable)}</dd></div>
+              <div className="flex justify-between gap-4 border-b border-[#ddd] pb-1.5">
+                <dt className="text-[#666]">Subtotal</dt>
+                <dd className="tabular-nums">{formatMoneyExact(totals.subtotal)}</dd>
+              </div>
+              <div className="flex justify-between gap-4 border-b border-[#ddd] pb-1.5">
+                <dt className="text-[#666]">Discount</dt>
+                <dd className="tabular-nums">−{formatMoneyExact(totals.discount)}</dd>
+              </div>
+              <div className="flex justify-between gap-4 border-b border-[#ddd] pb-1.5">
+                <dt className="text-[#666]">Taxable value</dt>
+                <dd className="tabular-nums">{formatMoneyExact(totals.taxable)}</dd>
+              </div>
               {invoice.taxMode === 'intra' ? (
                 <>
-                  <div className="flex justify-between gap-4"><dt className="text-[#666]">State tax</dt><dd className="tabular-nums">{formatMoneyExact(totals.cgst)}</dd></div>
-                  <div className="flex justify-between gap-4 border-b border-[#ddd] pb-1.5"><dt className="text-[#666]">Local tax</dt><dd className="tabular-nums">{formatMoneyExact(totals.sgst)}</dd></div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-[#666]">State tax</dt>
+                    <dd className="tabular-nums">{formatMoneyExact(totals.cgst)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b border-[#ddd] pb-1.5">
+                    <dt className="text-[#666]">Local tax</dt>
+                    <dd className="tabular-nums">{formatMoneyExact(totals.sgst)}</dd>
+                  </div>
                 </>
               ) : (
-                <div className="flex justify-between gap-4 border-b border-[#ddd] pb-1.5"><dt className="text-[#666]">Sales tax</dt><dd className="tabular-nums">{formatMoneyExact(totals.igst)}</dd></div>
+                <div className="flex justify-between gap-4 border-b border-[#ddd] pb-1.5">
+                  <dt className="text-[#666]">Sales tax</dt>
+                  <dd className="tabular-nums">{formatMoneyExact(totals.igst)}</dd>
+                </div>
               )}
-              <div className="flex justify-between gap-4 border-b-2 border-[#161616] py-2 text-[13px] font-semibold"><dt>Total</dt><dd className="tabular-nums">{formatMoneyExact(totals.total)}</dd></div>
-              <div className="flex justify-between gap-4"><dt className="text-[#666]">Paid</dt><dd className="tabular-nums">{formatMoneyExact(totals.paid)}</dd></div>
-              <div className="flex justify-between gap-4 border-b border-[#ddd] pb-1.5 font-semibold"><dt>Balance due</dt><dd className="tabular-nums">{formatMoneyExact(totals.balance)}</dd></div>
+              <div className="flex justify-between gap-4 border-b-2 border-[#161616] py-2 text-[13px] font-semibold">
+                <dt>Total</dt>
+                <dd className="tabular-nums">{formatMoneyExact(totals.total)}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-[#666]">Paid</dt>
+                <dd className="tabular-nums">{formatMoneyExact(totals.paid)}</dd>
+              </div>
+              <div className="flex justify-between gap-4 border-b border-[#ddd] pb-1.5 font-semibold">
+                <dt>Balance due</dt>
+                <dd className="tabular-nums">{formatMoneyExact(totals.balance)}</dd>
+              </div>
             </dl>
           </section>
 
           {invoice.payments.length ? (
             <section className="mt-5 border-t border-[#bbb] pt-4">
-              <p className="font-mono text-[8px] uppercase tracking-[0.14em] text-[#555]">Payments received</p>
+              <p className="font-mono text-[8px] uppercase tracking-[0.14em] text-[#555]">
+                Payments received
+              </p>
               <table className="mt-2 w-full border-collapse text-[9px]">
                 <thead>
                   <tr className="border-b border-[#ddd] text-left font-mono text-[8px] uppercase text-[#666]">
@@ -409,7 +514,9 @@ export function AdminInvoiceDetail() {
                       <td className="py-1.5">{formatDate(payment.receivedAt)}</td>
                       <td className="py-1.5">{METHOD_LABELS[payment.method] ?? payment.method}</td>
                       <td className="py-1.5">{payment.reference || '—'}</td>
-                      <td className="py-1.5 text-right tabular-nums">{formatMoneyExact(payment.amount)}</td>
+                      <td className="py-1.5 text-right tabular-nums">
+                        {formatMoneyExact(payment.amount)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -421,53 +528,90 @@ export function AdminInvoiceDetail() {
             <div className="max-w-[48ch] leading-relaxed">
               <p className="font-semibold text-[#161616]">Declaration</p>
               <p className="mt-1">
-                We declare that this invoice shows the actual price of the goods and services described
-                and that all particulars are true and correct. Goods once installed are covered by the
-                warranty stated on the work completion report.
+                We declare that this invoice shows the actual price of the goods and services
+                described and that all particulars are true and correct. Goods once installed are
+                covered by the warranty stated on the work completion report.
               </p>
-              <p className="mt-3 font-mono text-[8px] uppercase tracking-[0.06em]">Computer-generated tax invoice · {invoice.ref}</p>
+              <p className="mt-3 font-mono text-[8px] uppercase tracking-[0.06em]">
+                Computer-generated tax invoice · {invoice.ref}
+              </p>
             </div>
             <div className="text-right">
               <p>For {content.brand.legalName}</p>
-              <div className="mt-8 border-t border-[#161616] pt-2 font-mono text-[8px] uppercase tracking-[0.1em]">Authorised signatory</div>
+              <div className="mt-8 border-t border-[#161616] pt-2 font-mono text-[8px] uppercase tracking-[0.1em]">
+                Authorised signatory
+              </div>
             </div>
           </footer>
         </article>
 
         <aside className="no-print flex flex-col gap-4">
           <section className="border border-line bg-panel/50 p-4">
-            <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">Settlement</p>
-            <p className="t-num mt-3 text-[28px] leading-none text-heat">{formatMoneyExact(totals.balance)}</p>
-            <p className="mt-1 text-[11px] text-fg-faint">balance of {formatMoneyExact(totals.total)}</p>
+            <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">
+              Settlement
+            </p>
+            <p className="t-num mt-3 text-[28px] leading-none text-heat">
+              {formatMoneyExact(totals.balance)}
+            </p>
+            <p className="mt-1 text-[11px] text-fg-faint">
+              balance of {formatMoneyExact(totals.total)}
+            </p>
             <div className="mt-4 flex h-1.5 bg-panel-2">
-              <div className="h-1.5 bg-success" style={{ width: `${totals.total ? Math.min(100, (totals.paid / totals.total) * 100) : 0}%` }} />
+              <div
+                className="h-1.5 bg-success"
+                style={{
+                  width: `${totals.total ? Math.min(100, (totals.paid / totals.total) * 100) : 0}%`,
+                }}
+              />
             </div>
             <dl className="mt-4 flex flex-col gap-1.5 text-[11px] text-fg-dim">
-              <div className="flex justify-between"><dt className="text-fg-faint">Paid</dt><dd>{formatMoneyExact(totals.paid)}</dd></div>
-              <div className="flex justify-between"><dt className="text-fg-faint">Due</dt><dd>{formatDate(invoice.dueDate)}</dd></div>
+              <div className="flex justify-between">
+                <dt className="text-fg-faint">Paid</dt>
+                <dd>{formatMoneyExact(totals.paid)}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-fg-faint">Due</dt>
+                <dd>{formatDate(invoice.dueDate)}</dd>
+              </div>
               {totals.daysOverdue > 0 ? (
-                <div className="flex justify-between text-danger"><dt>Overdue</dt><dd>{totals.daysOverdue} days</dd></div>
+                <div className="flex justify-between text-danger">
+                  <dt>Overdue</dt>
+                  <dd>{totals.daysOverdue} days</dd>
+                </div>
               ) : null}
             </dl>
           </section>
 
           <section className="border border-line bg-panel/50 p-4">
             <div className="flex items-center justify-between">
-              <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">Payment history</p>
+              <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">
+                Payment history
+              </p>
               {totals.balance > 0 && totals.state !== 'cancelled' ? (
-                <button type="button" onClick={() => setPayOpen(true)} className="font-mono text-[8px] uppercase text-cold hover:text-fg">
+                <button
+                  type="button"
+                  onClick={() => setPayOpen(true)}
+                  className="font-mono text-[8px] uppercase text-cold hover:text-fg"
+                >
                   Add
                 </button>
               ) : null}
             </div>
             {invoice.payments.length === 0 ? (
-              <p className="mt-3 text-[11px] leading-snug text-fg-faint">No payments recorded yet.</p>
+              <p className="mt-3 text-[11px] leading-snug text-fg-faint">
+                No payments recorded yet.
+              </p>
             ) : (
               <ul className="mt-3 flex flex-col">
                 {invoice.payments.map((payment) => (
-                  <li key={payment.id} className="flex items-start justify-between gap-2 border-t border-line py-2 first:border-t-0 first:pt-0">
+                  <li
+                    key={payment.id}
+                    className="flex items-start justify-between gap-2 border-t border-line py-2 first:border-t-0 first:pt-0"
+                  >
                     <div>
-                      <p className="text-[11px] text-fg">{formatMoneyExact(payment.amount)} · {METHOD_LABELS[payment.method]}</p>
+                      <p className="text-[11px] text-fg">
+                        {formatMoneyExact(payment.amount)} · {METHOD_LABELS[payment.method]}
+                      </p>
                       <p className="font-mono text-[8px] uppercase tracking-[0.06em] text-fg-faint">
                         {formatDate(payment.receivedAt)} · {payment.reference || 'no reference'}
                       </p>
@@ -487,14 +631,23 @@ export function AdminInvoiceDetail() {
           </section>
 
           <section className="border border-line bg-panel/50 p-4">
-            <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">Reminders</p>
+            <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">
+              Reminders
+            </p>
             <p className="mt-2 text-[11px] leading-snug text-fg-dim">
               {invoice.lastReminderAt
                 ? `Last reminder ${formatDateTime(invoice.lastReminderAt)}. ${invoice.reminderDates.length} sent in total.`
                 : 'No reminder sent yet. Queue one to create a task for tomorrow at 9am.'}
             </p>
             {totals.balance > 0 && totals.state !== 'cancelled' ? (
-              <Button variant="secondary" size="sm" icon="mail" full className="mt-3" onClick={() => void remind()}>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon="mail"
+                full
+                className="mt-3"
+                onClick={() => void remind()}
+              >
                 Queue payment reminder
               </Button>
             ) : null}
@@ -503,9 +656,18 @@ export function AdminInvoiceDetail() {
           <section className="border border-line bg-panel/50 p-4">
             <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">Meta</p>
             <dl className="mt-2 flex flex-col gap-1.5 text-[10px] text-fg-dim">
-              <div className="flex justify-between gap-2"><dt className="text-fg-faint">Created</dt><dd>{formatDateTime(invoice.createdAt)}</dd></div>
-              <div className="flex justify-between gap-2"><dt className="text-fg-faint">Updated</dt><dd>{formatDateTime(invoice.updatedAt)}</dd></div>
-              <div className="flex justify-between gap-2"><dt className="text-fg-faint">Record</dt><dd>{invoice.status}</dd></div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-fg-faint">Created</dt>
+                <dd>{formatDateTime(invoice.createdAt)}</dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-fg-faint">Updated</dt>
+                <dd>{formatDateTime(invoice.updatedAt)}</dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-fg-faint">Record</dt>
+                <dd>{invoice.status}</dd>
+              </div>
             </dl>
           </section>
         </aside>

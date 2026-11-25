@@ -1,24 +1,22 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useLiveRefresh } from '@/admin/useLiveRefresh'
-import { Icon } from '@/components/icons'
+import { useRecordDeepLink } from '@/admin/useDeepLink'
 import {
   Badge,
   Button,
   EmptyState,
   Input,
   Modal,
+  RecordDrawer,
   Select,
   Table,
+  TableActionButton,
+  TableActions,
   Textarea,
   useToast,
   type Column,
 } from '@/components/ui'
-import type {
-  PayrollInput,
-  PayrollRecord,
-  TeamMember,
-  TeamMemberInput,
-} from '@hvac/shared'
+import type { PayrollInput, PayrollRecord, TeamMember, TeamMemberInput } from '@hvac/shared'
 import { adminApi, type PayrollSummary } from '@/admin/api'
 import { ROLE_LABELS } from '@/admin/invoice-ui'
 import {
@@ -38,7 +36,10 @@ function thisMonth(): string {
 }
 
 function parseList(value: string): string[] {
-  return value.split(',').map((entry) => entry.trim()).filter(Boolean)
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
 }
 
 export function AdminTeam() {
@@ -55,6 +56,8 @@ export function AdminTeam() {
   const [editingPay, setEditingPay] = useState<PayrollRecord | null>(null)
   const [busy, setBusy] = useState(false)
   const [roleFilter, setRoleFilter] = useState('all')
+  const [viewingMember, setViewingMember] = useState<TeamMember | null>(null)
+  const [viewingPayroll, setViewingPayroll] = useState<PayrollRecord | null>(null)
 
   const load = async () => {
     try {
@@ -77,6 +80,20 @@ export function AdminTeam() {
     () => (roleFilter === 'all' ? team : team.filter((member) => member.role === roleFilter)),
     [team, roleFilter],
   )
+
+  useRecordDeepLink({
+    param: 'member',
+    records: team,
+    resolve: (value) => team.find((member) => member.id === value),
+    onOpen: setViewingMember,
+  })
+
+  useRecordDeepLink({
+    param: 'payroll',
+    records: payroll,
+    resolve: (value) => payroll.find((entry) => entry.id === value),
+    onOpen: setViewingPayroll,
+  })
 
   const saveMember = async (input: TeamMemberInput) => {
     setBusy(true)
@@ -227,11 +244,16 @@ export function AdminTeam() {
       render: (row) => (
         <div className="flex max-w-[260px] flex-wrap gap-1">
           {row.skills.slice(0, 4).map((skill) => (
-            <span key={skill} className="border border-line px-1.5 py-0.5 font-mono text-[8px] uppercase text-fg-faint">
+            <span
+              key={skill}
+              className="border border-line px-1.5 py-0.5 font-mono text-[8px] uppercase text-fg-faint"
+            >
               {skill}
             </span>
           ))}
-          {row.skills.length > 4 ? <span className="text-[9px] text-fg-faint">+{row.skills.length - 4}</span> : null}
+          {row.skills.length > 4 ? (
+            <span className="text-[9px] text-fg-faint">+{row.skills.length - 4}</span>
+          ) : null}
         </div>
       ),
     },
@@ -239,7 +261,9 @@ export function AdminTeam() {
       key: 'monthlySalary',
       header: 'Monthly',
       align: 'right',
-      render: (row) => <span className="t-num text-[11px] text-fg">{formatMoney(row.monthlySalary)}</span>,
+      render: (row) => (
+        <span className="t-num text-[11px] text-fg">{formatMoney(row.monthlySalary)}</span>
+      ),
     },
     {
       key: 'status',
@@ -255,36 +279,32 @@ export function AdminTeam() {
       header: '',
       align: 'right',
       render: (row) => (
-        <div className="flex justify-end gap-1">
-          <button
-            type="button"
+        <TableActions>
+          <TableActionButton
+            label={`Edit ${row.name}`}
+            icon="edit"
+            tone="cold"
             onClick={() => {
               setEditingMember(row)
               setMemberOpen(true)
             }}
-            className="flex h-7 items-center border border-line px-2 font-mono text-[8px] uppercase text-fg-dim hover:border-cold/40 hover:text-cold"
-          >
-            Edit
-          </button>
-          <button
-            type="button"
+          />
+          <TableActionButton
+            label={`Add salary for ${row.name}`}
+            icon="tag"
+            tone="cold"
             onClick={() => {
               setEditingPay(null)
               setPayOpen(true)
             }}
-            className="flex h-7 items-center border border-line px-2 font-mono text-[8px] uppercase text-fg-dim hover:border-cold/40 hover:text-cold"
-          >
-            Salary
-          </button>
-          <button
-            type="button"
+          />
+          <TableActionButton
+            label={`Remove ${row.name}`}
+            icon="close"
+            tone="danger"
             onClick={() => void removeMember(row)}
-            aria-label={`Remove ${row.name}`}
-            className="flex h-7 w-7 items-center justify-center border border-line text-fg-faint hover:border-danger/40 hover:text-danger"
-          >
-            <Icon name="close" size={10} />
-          </button>
-        </div>
+          />
+        </TableActions>
       ),
     },
   ]
@@ -298,7 +318,9 @@ export function AdminTeam() {
         return (
           <div>
             <p className="text-[12px] text-fg">{member?.name ?? 'Removed member'}</p>
-            <p className="text-[10px] text-fg-faint">{member ? ROLE_LABELS[member.role] ?? member.role : '—'}</p>
+            <p className="text-[10px] text-fg-faint">
+              {member ? (ROLE_LABELS[member.role] ?? member.role) : '—'}
+            </p>
           </div>
         )
       },
@@ -337,34 +359,29 @@ export function AdminTeam() {
       header: '',
       align: 'right',
       render: (row) => (
-        <div className="flex justify-end gap-1">
-          <button
-            type="button"
+        <TableActions>
+          <TableActionButton
+            label={row.status === 'paid' ? 'Mark salary pending' : 'Mark salary paid'}
+            icon={row.status === 'paid' ? 'minus' : 'check'}
+            tone="success"
             onClick={() => void togglePaid(row)}
-            className="flex h-7 items-center gap-1 border border-line px-2 font-mono text-[8px] uppercase text-fg-dim hover:border-success/40 hover:text-success"
-          >
-            <Icon name={row.status === 'paid' ? 'minus' : 'check'} size={10} />
-            {row.status === 'paid' ? 'Unpay' : 'Mark paid'}
-          </button>
-          <button
-            type="button"
+          />
+          <TableActionButton
+            label="Edit salary entry"
+            icon="edit"
+            tone="cold"
             onClick={() => {
               setEditingPay(row)
               setPayOpen(true)
             }}
-            className="flex h-7 items-center border border-line px-2 font-mono text-[8px] uppercase text-fg-dim hover:border-cold/40 hover:text-cold"
-          >
-            Edit
-          </button>
-          <button
-            type="button"
+          />
+          <TableActionButton
+            label="Delete salary entry"
+            icon="close"
+            tone="danger"
             onClick={() => void removePayroll(row)}
-            aria-label="Delete salary entry"
-            className="flex h-7 w-7 items-center justify-center border border-line text-fg-faint hover:border-danger/40 hover:text-danger"
-          >
-            <Icon name="close" size={10} />
-          </button>
-        </div>
+          />
+        </TableActions>
       ),
     },
   ]
@@ -381,14 +398,30 @@ export function AdminTeam() {
               variant="secondary"
               icon="calendar"
               onClick={() => void prepareMonth()}
-              disabled={busy || !team.some((member) => member.status === 'active' && member.monthlySalary > 0)}
+              disabled={
+                busy ||
+                !team.some((member) => member.status === 'active' && member.monthlySalary > 0)
+              }
             >
               Prepare {thisMonth()}
             </Button>
-            <Button variant="secondary" icon="plus" onClick={() => { setEditingPay(null); setPayOpen(true) }}>
+            <Button
+              variant="secondary"
+              icon="plus"
+              onClick={() => {
+                setEditingPay(null)
+                setPayOpen(true)
+              }}
+            >
               Salary entry
             </Button>
-            <Button icon="plus" onClick={() => { setEditingMember(null); setMemberOpen(true) }}>
+            <Button
+              icon="plus"
+              onClick={() => {
+                setEditingMember(null)
+                setMemberOpen(true)
+              }}
+            >
               Add team member
             </Button>
           </>
@@ -400,9 +433,23 @@ export function AdminTeam() {
       {summary ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard label="Active team" value={summary.activeTeam} accent="cold" />
-          <MetricCard label="Monthly commitment" value={formatMoney(summary.monthlyPayrollCommitment)} note="Active salaries at full month" />
-          <MetricCard label="Payroll this month" value={formatMoney(summary.thisMonth)} accent="heat" note={`${formatMoney(summary.thisMonthPending)} still pending`} />
-          <MetricCard label="Paid this month" value={formatMoney(summary.thisMonthPaid)} accent="success" note={`${summary.count} salary entries in ledger`} />
+          <MetricCard
+            label="Monthly commitment"
+            value={formatMoney(summary.monthlyPayrollCommitment)}
+            note="Active salaries at full month"
+          />
+          <MetricCard
+            label="Payroll this month"
+            value={formatMoney(summary.thisMonth)}
+            accent="heat"
+            note={`${formatMoney(summary.thisMonthPending)} still pending`}
+          />
+          <MetricCard
+            label="Paid this month"
+            value={formatMoney(summary.thisMonthPaid)}
+            accent="success"
+            note={`${summary.count} salary entries in ledger`}
+          />
         </div>
       ) : null}
 
@@ -418,7 +465,9 @@ export function AdminTeam() {
                 : 'border-b-2 border-transparent px-3 py-2 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-faint hover:text-fg'
             }
           >
-            {value === 'team' ? `Team register · ${team.length}` : `Salary ledger · ${payroll.length}`}
+            {value === 'team'
+              ? `Team register · ${team.length}`
+              : `Salary ledger · ${payroll.length}`}
           </button>
         ))}
         {tab === 'team' ? (
@@ -443,7 +492,13 @@ export function AdminTeam() {
             action={<Button onClick={() => setMemberOpen(true)}>Add the first member</Button>}
           />
         ) : (
-          <Table columns={teamColumns} rows={filteredTeam} caption="Team register" />
+          <Table
+            columns={teamColumns}
+            rows={filteredTeam}
+            caption="Team register"
+            onRowView={setViewingMember}
+            viewLabel={(row) => row.name}
+          />
         )
       ) : payroll.length === 0 ? (
         <EmptyState
@@ -453,12 +508,21 @@ export function AdminTeam() {
           action={<Button onClick={() => setPayOpen(true)}>Record salary</Button>}
         />
       ) : (
-        <Table columns={payrollColumns} rows={payroll} caption="Salary ledger" />
+        <Table
+          columns={payrollColumns}
+          rows={payroll}
+          caption="Salary ledger"
+          onRowView={setViewingPayroll}
+          viewLabel={(row) => `${row.period} salary`}
+        />
       )}
 
       <Modal
         open={memberOpen}
-        onClose={() => { setMemberOpen(false); setEditingMember(null) }}
+        onClose={() => {
+          setMemberOpen(false)
+          setEditingMember(null)
+        }}
         title={editingMember ? 'Edit team member' : 'Add team member'}
         description="Skills and certifications appear on job sheets and help assign the right technician."
         size="lg"
@@ -467,13 +531,19 @@ export function AdminTeam() {
           initial={editingMember}
           busy={busy}
           onSubmit={saveMember}
-          onCancel={() => { setMemberOpen(false); setEditingMember(null) }}
+          onCancel={() => {
+            setMemberOpen(false)
+            setEditingMember(null)
+          }}
         />
       </Modal>
 
       <Modal
         open={payOpen}
-        onClose={() => { setPayOpen(false); setEditingPay(null) }}
+        onClose={() => {
+          setPayOpen(false)
+          setEditingPay(null)
+        }}
         title={editingPay ? 'Edit salary entry' : 'Record salary entry'}
         description="Net pay is base plus bonus minus deductions. Marking it paid records the settlement date."
         size="lg"
@@ -483,9 +553,64 @@ export function AdminTeam() {
           team={team}
           busy={busy}
           onSubmit={savePayroll}
-          onCancel={() => { setPayOpen(false); setEditingPay(null) }}
+          onCancel={() => {
+            setPayOpen(false)
+            setEditingPay(null)
+          }}
         />
       </Modal>
+
+      <RecordDrawer
+        open={Boolean(viewingMember)}
+        onClose={() => setViewingMember(null)}
+        title={viewingMember?.name ?? 'Team member'}
+        subtitle={
+          viewingMember ? (ROLE_LABELS[viewingMember.role] ?? viewingMember.role) : undefined
+        }
+        record={viewingMember as unknown as Record<string, unknown> | null}
+        exclude={['id']}
+        actions={
+          viewingMember ? (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setEditingMember(viewingMember)
+                setViewingMember(null)
+                setMemberOpen(true)
+              }}
+            >
+              Edit member
+            </Button>
+          ) : undefined
+        }
+      />
+
+      <RecordDrawer
+        open={Boolean(viewingPayroll)}
+        onClose={() => setViewingPayroll(null)}
+        title={viewingPayroll ? `${viewingPayroll.period} salary` : 'Salary entry'}
+        subtitle={
+          viewingPayroll
+            ? (memberById.get(viewingPayroll.memberId)?.name ?? 'Payroll record')
+            : undefined
+        }
+        record={viewingPayroll as unknown as Record<string, unknown> | null}
+        exclude={['id']}
+        actions={
+          viewingPayroll ? (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setEditingPay(viewingPayroll)
+                setViewingPayroll(null)
+                setPayOpen(true)
+              }}
+            >
+              Edit salary
+            </Button>
+          ) : undefined
+        }
+      />
     </div>
   )
 }
@@ -506,7 +631,9 @@ function MemberForm({
   const [phone, setPhone] = useState(initial?.phone ?? '')
   const [email, setEmail] = useState(initial?.email ?? '')
   const [monthlySalary, setMonthlySalary] = useState(String(initial?.monthlySalary ?? ''))
-  const [payCycle, setPayCycle] = useState<TeamMemberInput['payCycle']>(initial?.payCycle ?? 'monthly')
+  const [payCycle, setPayCycle] = useState<TeamMemberInput['payCycle']>(
+    initial?.payCycle ?? 'monthly',
+  )
   const [joinedAt, setJoinedAt] = useState(initial?.joinedAt?.slice(0, 10) ?? '')
   const [status, setStatus] = useState<TeamMemberInput['status']>(initial?.status ?? 'active')
   const [skills, setSkills] = useState(initial?.skills.join(', ') ?? '')
@@ -538,13 +665,47 @@ function MemberForm({
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
-      {error ? <p role="alert" className="border border-danger/40 bg-danger/[0.06] px-3 py-2 text-[12px] text-fg-dim">{error}</p> : null}
+      {error ? (
+        <p
+          role="alert"
+          className="border border-danger/40 bg-danger/[0.06] px-3 py-2 text-[12px] text-fg-dim"
+        >
+          {error}
+        </p>
+      ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
-        <Input label="Name" required value={name} onChange={(event) => setName(event.target.value)} />
-        <Select label="Role" value={role} options={roles} onChange={(event) => setRole(event.target.value as TeamMemberInput['role'])} />
-        <Input label="Phone" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="(214) 555-0100" />
-        <Input label="Email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
-        <Input label="Monthly salary" type="number" min="0" step="0.01" value={monthlySalary} onChange={(event) => setMonthlySalary(event.target.value)} />
+        <Input
+          label="Name"
+          required
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
+        <Select
+          label="Role"
+          value={role}
+          options={roles}
+          onChange={(event) => setRole(event.target.value as TeamMemberInput['role'])}
+        />
+        <Input
+          label="Phone"
+          value={phone}
+          onChange={(event) => setPhone(event.target.value)}
+          placeholder="(214) 555-0100"
+        />
+        <Input
+          label="Email"
+          type="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+        />
+        <Input
+          label="Monthly salary"
+          type="number"
+          min="0"
+          step="0.01"
+          value={monthlySalary}
+          onChange={(event) => setMonthlySalary(event.target.value)}
+        />
         <Select
           label="Pay cycle"
           value={payCycle}
@@ -555,20 +716,50 @@ function MemberForm({
           ]}
           onChange={(event) => setPayCycle(event.target.value as TeamMemberInput['payCycle'])}
         />
-        <Input label="Joined on" type="date" value={joinedAt} onChange={(event) => setJoinedAt(event.target.value)} />
+        <Input
+          label="Joined on"
+          type="date"
+          value={joinedAt}
+          onChange={(event) => setJoinedAt(event.target.value)}
+        />
         <Select
           label="Status"
           value={status}
-          options={[{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }]}
+          options={[
+            { value: 'active', label: 'Active' },
+            { value: 'inactive', label: 'Inactive' },
+          ]}
           onChange={(event) => setStatus(event.target.value as TeamMemberInput['status'])}
         />
       </div>
-      <Input label="Skills" value={skills} onChange={(event) => setSkills(event.target.value)} placeholder="VRF commissioning, brazing, electrical" hint="Comma-separated" />
-      <Input label="Certifications" value={certifications} onChange={(event) => setCertifications(event.target.value)} placeholder="ITI refrigeration, R32 handling" hint="Comma-separated" />
-      <Textarea label="Notes" rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Availability, vehicle, site restrictions…" />
+      <Input
+        label="Skills"
+        value={skills}
+        onChange={(event) => setSkills(event.target.value)}
+        placeholder="VRF commissioning, brazing, electrical"
+        hint="Comma-separated"
+      />
+      <Input
+        label="Certifications"
+        value={certifications}
+        onChange={(event) => setCertifications(event.target.value)}
+        placeholder="ITI refrigeration, R32 handling"
+        hint="Comma-separated"
+      />
+      <Textarea
+        label="Notes"
+        rows={2}
+        value={notes}
+        onChange={(event) => setNotes(event.target.value)}
+        placeholder="Availability, vehicle, site restrictions…"
+      />
       <div className="flex justify-end gap-2 border-t border-line pt-4">
-        <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
-        <Button type="submit" icon="check" disabled={busy}>{busy ? 'Saving…' : initial ? 'Save member' : 'Add member'}</Button>
+        <Button type="button" variant="secondary" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="submit" icon="check" disabled={busy}>
+          {busy ? 'Saving…' : initial ? 'Save member' : 'Add member'}
+        </Button>
       </div>
     </form>
   )
@@ -587,7 +778,9 @@ function PayrollForm({
   onSubmit: (input: PayrollInput) => void
   onCancel: () => void
 }) {
-  const [memberId, setMemberId] = useState(initial?.memberId ?? team.find((member) => member.status === 'active')?.id ?? '')
+  const [memberId, setMemberId] = useState(
+    initial?.memberId ?? team.find((member) => member.status === 'active')?.id ?? '',
+  )
   const [period, setPeriod] = useState(initial?.period ?? thisMonth())
   const [baseAmount, setBaseAmount] = useState(String(initial?.baseAmount ?? ''))
   const [bonus, setBonus] = useState(String(initial?.bonus ?? 0))
@@ -598,7 +791,10 @@ function PayrollForm({
   const [notes, setNotes] = useState(initial?.notes ?? '')
   const [error, setError] = useState('')
 
-  const net = Math.max(0, (Number(baseAmount) || 0) + (Number(bonus) || 0) - (Number(deductions) || 0))
+  const net = Math.max(
+    0,
+    (Number(baseAmount) || 0) + (Number(bonus) || 0) - (Number(deductions) || 0),
+  )
 
   const pickMember = (id: string) => {
     setMemberId(id)
@@ -632,23 +828,63 @@ function PayrollForm({
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
-      {error ? <p role="alert" className="border border-danger/40 bg-danger/[0.06] px-3 py-2 text-[12px] text-fg-dim">{error}</p> : null}
+      {error ? (
+        <p
+          role="alert"
+          className="border border-danger/40 bg-danger/[0.06] px-3 py-2 text-[12px] text-fg-dim"
+        >
+          {error}
+        </p>
+      ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
         <Select
           label="Team member"
           value={memberId}
-          options={team.map((member) => ({ value: member.id, label: `${member.name} · ${ROLE_LABELS[member.role] ?? member.role}` }))}
+          options={team.map((member) => ({
+            value: member.id,
+            label: `${member.name} · ${ROLE_LABELS[member.role] ?? member.role}`,
+          }))}
           onChange={(event) => pickMember(event.target.value)}
           placeholder="Select member"
         />
-        <Input label="Salary month" type="month" required value={period} onChange={(event) => setPeriod(event.target.value)} />
-        <Input label="Base amount" type="number" min="0" step="0.01" value={baseAmount} onChange={(event) => setBaseAmount(event.target.value)} />
-        <Input label="Bonus" type="number" min="0" step="0.01" value={bonus} onChange={(event) => setBonus(event.target.value)} />
-        <Input label="Deductions" type="number" min="0" step="0.01" value={deductions} onChange={(event) => setDeductions(event.target.value)} />
+        <Input
+          label="Salary month"
+          type="month"
+          required
+          value={period}
+          onChange={(event) => setPeriod(event.target.value)}
+        />
+        <Input
+          label="Base amount"
+          type="number"
+          min="0"
+          step="0.01"
+          value={baseAmount}
+          onChange={(event) => setBaseAmount(event.target.value)}
+        />
+        <Input
+          label="Bonus"
+          type="number"
+          min="0"
+          step="0.01"
+          value={bonus}
+          onChange={(event) => setBonus(event.target.value)}
+        />
+        <Input
+          label="Deductions"
+          type="number"
+          min="0"
+          step="0.01"
+          value={deductions}
+          onChange={(event) => setDeductions(event.target.value)}
+        />
         <Select
           label="Status"
           value={status}
-          options={[{ value: 'pending', label: 'Pending' }, { value: 'paid', label: 'Paid' }]}
+          options={[
+            { value: 'pending', label: 'Pending' },
+            { value: 'paid', label: 'Paid' },
+          ]}
           onChange={(event) => setStatus(event.target.value as PayrollInput['status'])}
         />
         <Select
@@ -662,16 +898,33 @@ function PayrollForm({
           ]}
           onChange={(event) => setMethod(event.target.value as PayrollInput['method'])}
         />
-        <Input label="Reference" value={reference} onChange={(event) => setReference(event.target.value)} placeholder="UTR / voucher" />
+        <Input
+          label="Reference"
+          value={reference}
+          onChange={(event) => setReference(event.target.value)}
+          placeholder="UTR / voucher"
+        />
       </div>
       <div className="flex items-center justify-between border border-line bg-panel-2/40 px-4 py-3">
-        <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint">Net payable</span>
+        <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint">
+          Net payable
+        </span>
         <span className="t-num text-[18px] text-cold">{formatMoney(net)}</span>
       </div>
-      <Textarea label="Notes" rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Leave adjustment, advance recovery or festival bonus…" />
+      <Textarea
+        label="Notes"
+        rows={2}
+        value={notes}
+        onChange={(event) => setNotes(event.target.value)}
+        placeholder="Leave adjustment, advance recovery or festival bonus…"
+      />
       <div className="flex justify-end gap-2 border-t border-line pt-4">
-        <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
-        <Button type="submit" icon="check" disabled={busy}>{busy ? 'Saving…' : initial ? 'Save entry' : 'Record salary'}</Button>
+        <Button type="button" variant="secondary" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="submit" icon="check" disabled={busy}>
+          {busy ? 'Saving…' : initial ? 'Save entry' : 'Record salary'}
+        </Button>
       </div>
     </form>
   )

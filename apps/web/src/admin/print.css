@@ -1,3 +1,11 @@
+.invoice-document {
+  font-family: Helvetica, Arial, sans-serif;
+}
+
+.invoice-document .font-mono {
+  font-family: 'Courier New', Courier, monospace;
+}
+
 @media print {
   @page {
     size: A4;

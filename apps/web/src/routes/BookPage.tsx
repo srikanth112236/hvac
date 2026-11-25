@@ -27,8 +27,8 @@ export function BookPage() {
           <h1 className="t-display mt-6 max-w-[13ch] text-fg">Put a visit in the diary.</h1>
           <p className="mt-6 max-w-prose text-sm leading-relaxed text-fg-dim">
             The dispatch desk confirms the engineer and the window. A portal booking is tied to your
-            account and appears in your visit history; a request from this page creates the same lead
-            for the works team.
+            account and appears in your visit history; a request from this page creates the same
+            lead for the works team.
           </p>
 
           <div className="mt-8 grid gap-3 border-t border-line pt-6">
@@ -68,7 +68,7 @@ export function BookPage() {
         </div>
 
         <div className="lg:col-span-5 lg:col-start-8">
-          <EnquiryForm source="contact-page" context="Booking request" />
+          <EnquiryForm source="booking-page" context="Booking request" />
           <p className="mt-3 text-[11px] leading-relaxed text-fg-faint">
             Need a formal quote first?{' '}
             <Link to="/quote" className="text-cold hover:text-fg">

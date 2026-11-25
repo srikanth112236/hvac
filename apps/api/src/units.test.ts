@@ -6,7 +6,7 @@ import {
   type NewsletterRecurrence,
 } from '@hvac/shared'
 import { defaultContent } from './content.js'
-import { restoreSelectedChanges } from './contentHistory.js'
+import { restoreRecordPayload, restoreSelectedChanges } from './contentHistory.js'
 import { nextRecurringOccurrence, applySuppression } from './marketing.js'
 import { sanitizeNewsletterHtml } from './sanitize.js'
 import { zonedTimeToUtc } from './time.js'
@@ -140,6 +140,22 @@ describe('content revision field restore', () => {
     expect(restored.services[0]!.name).toBe('Previous service name')
     expect(current.home.heroTitle).toBe('Current hero')
     expect(current.services[0]!.name).toBe('Current service name')
+  })
+
+  it('restores one service record without replacing its siblings', () => {
+    const current = defaultContent()
+    const target = structuredClone(current)
+    const service = target.services[0]
+    const sibling = target.services[1]
+    expect(service).toBeTruthy()
+    expect(sibling).toBeTruthy()
+    if (!service || !sibling) return
+    target.services[0] = { ...service, name: 'Previous service name' }
+
+    const restored = restoreRecordPayload(current, target, `service:${service.id}`)
+    expect(restored?.services[0]?.name).toBe('Previous service name')
+    expect(restored?.services[1]?.name).toBe(sibling.name)
+    expect(restored?.services).toHaveLength(current.services.length)
   })
 
   it('refuses to restore an added record leaf in isolation', () => {

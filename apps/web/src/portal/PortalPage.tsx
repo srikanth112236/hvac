@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   appointmentStatusLabel,
@@ -31,6 +31,8 @@ import {
   EmptyState,
   Input,
   Modal,
+  RecordDrawer,
+  RecordViewButton,
   Select,
   Textarea,
   useToast,
@@ -105,7 +107,10 @@ function today(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-const statusTone: Record<AppointmentStatus, 'neutral' | 'cold' | 'heat' | 'success' | 'warn' | 'danger'> = {
+const statusTone: Record<
+  AppointmentStatus,
+  'neutral' | 'cold' | 'heat' | 'success' | 'warn' | 'danger'
+> = {
   requested: 'warn',
   scheduled: 'cold',
   'en-route': 'cold',
@@ -148,6 +153,13 @@ const categoryLabel: Record<TicketCategory, string> = {
   other: 'Other',
 }
 
+interface PortalDetail {
+  title: string
+  subtitle?: string
+  record: Record<string, unknown>
+  exclude?: string[]
+}
+
 export function PortalPage() {
   useSeo({ path: '/portal', title: 'Customer portal', noindex: true })
   const { toast } = useToast()
@@ -160,6 +172,7 @@ export function PortalPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const resetToken = searchParams.get('reset') ?? ''
   const verifyToken = searchParams.get('verify') ?? ''
+  const verifiedToken = useRef('')
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot'>('login')
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState('')
@@ -194,7 +207,9 @@ export function PortalPage() {
     scheduledAt: today(),
     window: 'morning' as AppointmentRecord['window'],
   })
-  const [quoteOpen, setQuoteOpen] = useState<(QuotationRecord & { totals: QuotationTotals }) | null>(null)
+  const [quoteOpen, setQuoteOpen] = useState<
+    (QuotationRecord & { totals: QuotationTotals }) | null
+  >(null)
   const [quoteBusy, setQuoteBusy] = useState(false)
   const [changeOpen, setChangeOpen] = useState(false)
   const [changeNote, setChangeNote] = useState('')
@@ -219,6 +234,9 @@ export function PortalPage() {
   })
   const [reply, setReply] = useState('')
   const [prefsBusy, setPrefsBusy] = useState(false)
+  const [reportPhotoBusy, setReportPhotoBusy] = useState('')
+  const [reportCheckBusy, setReportCheckBusy] = useState('')
+  const [detail, setDetail] = useState<PortalDetail | null>(null)
 
   const loadOverview = useCallback(async () => {
     setLoadingOverview(true)
@@ -226,7 +244,11 @@ export function PortalPage() {
       const data = await portalApi.overview()
       setOverview(data)
       setCustomer(data.customer)
-      setProfileForm({ name: data.customer.name, phone: data.customer.phone, address: data.customer.address })
+      setProfileForm({
+        name: data.customer.name,
+        phone: data.customer.phone,
+        address: data.customer.address,
+      })
     } catch (caught) {
       if (caught instanceof PortalError && caught.status === 401) {
         setCustomer(null)
@@ -263,12 +285,19 @@ export function PortalPage() {
   }, [loadOverview])
 
   useEffect(() => {
-    if (!verifyToken) return
-    let active = true
+    if (!customer) return
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void loadOverview()
+    }, 15_000)
+    return () => window.clearInterval(timer)
+  }, [customer, loadOverview])
+
+  useEffect(() => {
+    if (!verifyToken || verifiedToken.current === verifyToken) return
+    verifiedToken.current = verifyToken
     portalApi
       .verify(verifyToken)
       .then(() => {
-        if (!active) return
         setAuthMode('login')
         setFormError('')
         setFormNotice(
@@ -276,16 +305,12 @@ export function PortalPage() {
         )
       })
       .catch((caught) => {
-        if (!active) return
         setFormNotice('')
-        setFormError(caught instanceof Error ? caught.message : 'The verification link could not be used.')
+        setFormError(
+          caught instanceof Error ? caught.message : 'The verification link could not be used.',
+        )
       })
-      .finally(() => {
-        if (active) setSearchParams({})
-      })
-    return () => {
-      active = false
-    }
+      .finally(() => setSearchParams({}))
   }, [verifyToken, setSearchParams])
 
   const resendVerification = async () => {
@@ -447,7 +472,11 @@ export function PortalPage() {
         window: rescheduleForm.window,
       })
       setRescheduleTarget(null)
-      toast({ title: 'Visit rescheduled', description: 'The dispatch desk sees the new slot.', tone: 'success' })
+      toast({
+        title: 'Visit rescheduled',
+        description: 'The dispatch desk sees the new slot.',
+        tone: 'success',
+      })
       await loadOverview()
     } catch (caught) {
       toast({
@@ -461,10 +490,15 @@ export function PortalPage() {
   }
 
   const cancelVisit = async (appointment: AppointmentRecord) => {
-    if (!window.confirm(`Cancel ${appointment.ref}? The dispatch desk will see it as cancelled.`)) return
+    if (!window.confirm(`Cancel ${appointment.ref}? The dispatch desk will see it as cancelled.`))
+      return
     try {
       await portalApi.patchAppointment(appointment.id, { action: 'cancel' })
-      toast({ title: 'Visit cancelled', description: `${appointment.ref} is cancelled.`, tone: 'info' })
+      toast({
+        title: 'Visit cancelled',
+        description: `${appointment.ref} is cancelled.`,
+        tone: 'info',
+      })
       await loadOverview()
     } catch (caught) {
       toast({
@@ -478,7 +512,7 @@ export function PortalPage() {
   const openQuote = (quote: QuotationRecord & { totals: QuotationTotals }) => {
     setQuoteOpen(quote)
     setChangeOpen(false)
-    setChangeNote('')
+    setChangeNote(quote.changeRequest ?? '')
   }
 
   const acceptQuote = async (quote: QuotationRecord & { totals: QuotationTotals }) => {
@@ -486,10 +520,18 @@ export function PortalPage() {
     try {
       await portalApi.acceptQuotation(quote.id)
       setQuoteOpen(null)
-      toast({ title: 'Quotation accepted', description: `${quote.ref} is accepted. The works desk will schedule it.`, tone: 'success' })
+      toast({
+        title: 'Quotation accepted',
+        description: `${quote.ref} is accepted. The works desk will schedule it.`,
+        tone: 'success',
+      })
       await loadOverview()
     } catch (caught) {
-      toast({ title: 'Could not accept', description: caught instanceof Error ? caught.message : 'Try again.', tone: 'danger' })
+      toast({
+        title: 'Could not accept',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
     } finally {
       setQuoteBusy(false)
     }
@@ -499,7 +541,11 @@ export function PortalPage() {
     event.preventDefault()
     if (!quoteOpen) return
     if (changeNote.trim().length < 5) {
-      toast({ title: 'Describe the change', description: 'Add a sentence so the estimator can act on it.', tone: 'warn' })
+      toast({
+        title: 'Describe the change',
+        description: 'Add a sentence so the estimator can act on it.',
+        tone: 'warn',
+      })
       return
     }
     setQuoteBusy(true)
@@ -508,10 +554,18 @@ export function PortalPage() {
       setChangeOpen(false)
       setQuoteOpen(null)
       setChangeNote('')
-      toast({ title: 'Change requested', description: 'The estimator will revise and reissue the quotation.', tone: 'success' })
+      toast({
+        title: 'Change requested',
+        description: 'The estimator will revise and reissue the quotation.',
+        tone: 'success',
+      })
       await loadOverview()
     } catch (caught) {
-      toast({ title: 'Could not send the request', description: caught instanceof Error ? caught.message : 'Try again.', tone: 'danger' })
+      toast({
+        title: 'Could not send the request',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
     } finally {
       setQuoteBusy(false)
     }
@@ -538,10 +592,18 @@ export function PortalPage() {
       else await portalApi.createSite(siteForm)
       setSiteOpen(false)
       setSiteEditing(null)
-      toast({ title: 'Site saved', description: 'Visits can be booked to this address.', tone: 'success' })
+      toast({
+        title: 'Site saved',
+        description: 'Visits can be booked to this address.',
+        tone: 'success',
+      })
       await loadOverview()
     } catch (caught) {
-      toast({ title: 'Could not save the site', description: caught instanceof Error ? caught.message : 'Try again.', tone: 'danger' })
+      toast({
+        title: 'Could not save the site',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
     } finally {
       setSiteBusy(false)
     }
@@ -554,7 +616,11 @@ export function PortalPage() {
       toast({ title: 'Site removed', tone: 'info' })
       await loadOverview()
     } catch (caught) {
-      toast({ title: 'Could not remove', description: caught instanceof Error ? caught.message : 'Try again.', tone: 'danger' })
+      toast({
+        title: 'Could not remove',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
     }
   }
 
@@ -566,10 +632,18 @@ export function PortalPage() {
       setTicketNewOpen(false)
       setTicketForm({ subject: '', category: 'support', body: '' })
       setTicketOpen(ticket)
-      toast({ title: 'Request logged', description: `${ticket.ref} is with the works desk.`, tone: 'success' })
+      toast({
+        title: 'Request logged',
+        description: `${ticket.ref} is with the works desk.`,
+        tone: 'success',
+      })
       await loadOverview()
     } catch (caught) {
-      toast({ title: 'Could not log the request', description: caught instanceof Error ? caught.message : 'Try again.', tone: 'danger' })
+      toast({
+        title: 'Could not log the request',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
     } finally {
       setTicketBusy(false)
     }
@@ -586,7 +660,11 @@ export function PortalPage() {
       toast({ title: 'Reply sent', tone: 'success' })
       await loadOverview()
     } catch (caught) {
-      toast({ title: 'Could not reply', description: caught instanceof Error ? caught.message : 'Try again.', tone: 'danger' })
+      toast({
+        title: 'Could not reply',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
     } finally {
       setTicketBusy(false)
     }
@@ -596,14 +674,73 @@ export function PortalPage() {
     if (!window.confirm(`Request a renewal quote for ${contract.ref}?`)) return
     try {
       const ticket = await portalApi.renewAmc(contract.id)
-      toast({ title: 'Renewal requested', description: `${ticket.ref} is open with the works desk.`, tone: 'success' })
+      toast({
+        title: 'Renewal requested',
+        description: `${ticket.ref} is open with the works desk.`,
+        tone: 'success',
+      })
       await loadOverview()
     } catch (caught) {
-      toast({ title: 'Could not request renewal', description: caught instanceof Error ? caught.message : 'Try again.', tone: 'danger' })
+      toast({
+        title: 'Could not request renewal',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
     }
   }
 
-  const togglePreference = async (key: keyof Pick<NotificationPreferences, 'emailService' | 'emailBilling' | 'emailAmc' | 'emailMarketing'>, value: boolean) => {
+  const toggleReportChecklist = async (
+    report: { id: string; checklist: { id: string; done: boolean }[] },
+    itemId: string,
+    done: boolean,
+  ) => {
+    setReportCheckBusy(report.id)
+    try {
+      await portalApi.patchReportChecklist(
+        report.id,
+        report.checklist.map((item) => (item.id === itemId ? { ...item, done } : item)),
+      )
+      await loadOverview()
+    } catch (caught) {
+      toast({
+        title: 'Checklist not saved',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
+    } finally {
+      setReportCheckBusy('')
+    }
+  }
+
+  const uploadReportPhotos = async (reportId: string, files: File[]) => {
+    if (!files.length) return
+    setReportPhotoBusy(reportId)
+    try {
+      await portalApi.uploadReportPhotos(reportId, files)
+      toast({
+        title: 'Photos added',
+        description: 'The works desk can see them on this report.',
+        tone: 'success',
+      })
+      await loadOverview()
+    } catch (caught) {
+      toast({
+        title: 'Photos not added',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
+    } finally {
+      setReportPhotoBusy('')
+    }
+  }
+
+  const togglePreference = async (
+    key: keyof Pick<
+      NotificationPreferences,
+      'emailService' | 'emailBilling' | 'emailAmc' | 'emailMarketing'
+    >,
+    value: boolean,
+  ) => {
     if (!overview) return
     setPrefsBusy(true)
     try {
@@ -611,7 +748,11 @@ export function PortalPage() {
       setOverview({ ...overview, preferences: updated })
       toast({ title: 'Preferences saved', tone: 'success' })
     } catch (caught) {
-      toast({ title: 'Could not save', description: caught instanceof Error ? caught.message : 'Try again.', tone: 'danger' })
+      toast({
+        title: 'Could not save',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
     } finally {
       setPrefsBusy(false)
     }
@@ -623,7 +764,11 @@ export function PortalPage() {
     try {
       const updated = await portalApi.updateProfile(profileForm)
       setCustomer(updated)
-      toast({ title: 'Profile updated', description: 'New visits will use this contact detail.', tone: 'success' })
+      toast({
+        title: 'Profile updated',
+        description: 'New visits will use this contact detail.',
+        tone: 'success',
+      })
       await loadOverview()
     } catch (caught) {
       toast({
@@ -718,7 +863,9 @@ export function PortalPage() {
                     minLength={8}
                     hint="At least 8 characters."
                     value={resetForm.password}
-                    onChange={(event) => setResetForm({ ...resetForm, password: event.target.value })}
+                    onChange={(event) =>
+                      setResetForm({ ...resetForm, password: event.target.value })
+                    }
                   />
                   <Input
                     label="Confirm password"
@@ -726,10 +873,15 @@ export function PortalPage() {
                     autoComplete="new-password"
                     required
                     value={resetForm.confirm}
-                    onChange={(event) => setResetForm({ ...resetForm, confirm: event.target.value })}
+                    onChange={(event) =>
+                      setResetForm({ ...resetForm, confirm: event.target.value })
+                    }
                   />
                   {formError ? (
-                    <p role="alert" className="border border-danger/40 bg-danger/10 px-3 py-2 text-[12px] text-danger">
+                    <p
+                      role="alert"
+                      className="border border-danger/40 bg-danger/10 px-3 py-2 text-[12px] text-danger"
+                    >
                       {formError}
                     </p>
                   ) : null}
@@ -754,7 +906,8 @@ export function PortalPage() {
                     <span className="annot">Portal access · CV-RECOVER</span>
                     <h2 className="t-h3 mt-3 text-fg">Reset your password.</h2>
                     <p className="mt-2 text-[12px] leading-relaxed text-fg-dim">
-                      Enter the email on your account. If it is on file, a one-hour reset link is sent.
+                      Enter the email on your account. If it is on file, a one-hour reset link is
+                      sent.
                     </p>
                   </div>
                   <Input
@@ -766,12 +919,18 @@ export function PortalPage() {
                     onChange={(event) => setForgotEmail(event.target.value)}
                   />
                   {formNotice ? (
-                    <p role="status" className="border border-cold/40 bg-cold/10 px-3 py-2 text-[12px] text-cold">
+                    <p
+                      role="status"
+                      className="border border-cold/40 bg-cold/10 px-3 py-2 text-[12px] text-cold"
+                    >
                       {formNotice}
                     </p>
                   ) : null}
                   {formError ? (
-                    <p role="alert" className="border border-danger/40 bg-danger/10 px-3 py-2 text-[12px] text-danger">
+                    <p
+                      role="alert"
+                      className="border border-danger/40 bg-danger/10 px-3 py-2 text-[12px] text-danger"
+                    >
                       {formError}
                     </p>
                   ) : null}
@@ -792,7 +951,11 @@ export function PortalPage() {
                 </form>
               ) : (
                 <>
-                  <div role="tablist" aria-label="Portal access" className="grid grid-cols-2 border border-line">
+                  <div
+                    role="tablist"
+                    aria-label="Portal access"
+                    className="grid grid-cols-2 border border-line"
+                  >
                     {(['login', 'register'] as const).map((mode) => (
                       <button
                         key={mode}
@@ -815,7 +978,10 @@ export function PortalPage() {
                     ))}
                   </div>
 
-                  <form className="mt-5 flex flex-col gap-4" onSubmit={(event) => void submitAuth(event)}>
+                  <form
+                    className="mt-5 flex flex-col gap-4"
+                    onSubmit={(event) => void submitAuth(event)}
+                  >
                     {authMode === 'register' ? (
                       <>
                         <Input
@@ -823,7 +989,9 @@ export function PortalPage() {
                           autoComplete="name"
                           required
                           value={registerForm.name}
-                          onChange={(event) => setRegisterForm({ ...registerForm, name: event.target.value })}
+                          onChange={(event) =>
+                            setRegisterForm({ ...registerForm, name: event.target.value })
+                          }
                         />
                         <Input
                           label="Phone"
@@ -831,14 +999,18 @@ export function PortalPage() {
                           autoComplete="tel"
                           required
                           value={registerForm.phone}
-                          onChange={(event) => setRegisterForm({ ...registerForm, phone: event.target.value })}
+                          onChange={(event) =>
+                            setRegisterForm({ ...registerForm, phone: event.target.value })
+                          }
                         />
                         <Textarea
                           label="Service address"
                           rows={2}
                           autoComplete="street-address"
                           value={registerForm.address}
-                          onChange={(event) => setRegisterForm({ ...registerForm, address: event.target.value })}
+                          onChange={(event) =>
+                            setRegisterForm({ ...registerForm, address: event.target.value })
+                          }
                         />
                       </>
                     ) : null}
@@ -892,12 +1064,18 @@ export function PortalPage() {
                       </div>
                     ) : null}
                     {formNotice ? (
-                      <p role="status" className="border border-cold/40 bg-cold/10 px-3 py-2 text-[12px] text-cold">
+                      <p
+                        role="status"
+                        className="border border-cold/40 bg-cold/10 px-3 py-2 text-[12px] text-cold"
+                      >
                         {formNotice}
                       </p>
                     ) : null}
                     {formError ? (
-                      <p role="alert" className="border border-danger/40 bg-danger/10 px-3 py-2 text-[12px] text-danger">
+                      <p
+                        role="alert"
+                        className="border border-danger/40 bg-danger/10 px-3 py-2 text-[12px] text-danger"
+                      >
                         {formError}
                       </p>
                     ) : null}
@@ -924,12 +1102,18 @@ export function PortalPage() {
       count: overview?.quotations.filter((quote) => quote.status === 'sent').length,
     },
     { id: 'equipment', label: 'Equipment', count: overview?.equipment.length },
-    { id: 'cover', label: 'AMC cover', count: overview?.amc.filter((contract) => contract.status === 'active').length },
+    {
+      id: 'cover',
+      label: 'AMC cover',
+      count: overview?.amc.filter((contract) => contract.status === 'active').length,
+    },
     { id: 'reports', label: 'Reports', count: overview?.reports.length },
     {
       id: 'support',
       label: 'Support',
-      count: overview?.tickets.filter((ticket) => ticket.status === 'open' || ticket.status === 'in-progress').length,
+      count: overview?.tickets.filter(
+        (ticket) => ticket.status === 'open' || ticket.status === 'in-progress',
+      ).length,
     },
     { id: 'account', label: 'Account' },
   ]
@@ -955,7 +1139,11 @@ export function PortalPage() {
           </div>
         </div>
 
-        <div role="tablist" aria-label="Portal sections" className="mt-6 flex flex-wrap gap-1 border border-line bg-panel/30 p-1">
+        <div
+          role="tablist"
+          aria-label="Portal sections"
+          className="mt-6 flex flex-wrap gap-1 border border-line bg-panel/30 p-1"
+        >
           {tabs.map((entry) => (
             <button
               key={entry.id}
@@ -984,16 +1172,27 @@ export function PortalPage() {
         ) : null}
 
         {overview && tab === 'overview' ? (
-          <div id="portal-panel-overview" role="tabpanel" aria-labelledby="portal-tab-overview" className="mt-6">
+          <div
+            id="portal-panel-overview"
+            role="tabpanel"
+            aria-labelledby="portal-tab-overview"
+            className="mt-6"
+          >
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {[
                 ['Outstanding', formatMoney(overview.summary.outstanding), 'Across open invoices'],
                 ['Paid lifetime', formatMoney(overview.summary.paidLifetime), 'Receipts on file'],
-                ['Open visits', String(overview.summary.openAppointments), 'Requested or scheduled'],
+                [
+                  'Open visits',
+                  String(overview.summary.openAppointments),
+                  'Requested or scheduled',
+                ],
                 ['Completed visits', String(overview.summary.completedVisits), 'Service history'],
               ].map(([label, value, note]) => (
                 <div key={label} className="border border-line bg-panel/30 p-4">
-                  <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">{label}</span>
+                  <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">
+                    {label}
+                  </span>
                   <p className="mt-2 font-display text-2xl text-fg">{value}</p>
                   <p className="mt-1 text-[10px] text-fg-faint">{note}</p>
                 </div>
@@ -1004,27 +1203,39 @@ export function PortalPage() {
               <section className="border border-line bg-panel/30 p-5 lg:col-span-7">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">Next visit</span>
+                    <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">
+                      Next visit
+                    </span>
                     {nextAppointment ? (
                       <>
-                        <p className="mt-2 font-display text-xl text-fg">{nextAppointment.serviceName}</p>
+                        <p className="mt-2 font-display text-xl text-fg">
+                          {nextAppointment.serviceName}
+                        </p>
                         <p className="mt-1 text-[12px] text-fg-dim">
-                          {formatDateTime(nextAppointment.scheduledAt)} · {serviceWindowLabel(nextAppointment.window)}
+                          {formatDateTime(nextAppointment.scheduledAt)} ·{' '}
+                          {serviceWindowLabel(nextAppointment.window)}
                         </p>
                         <p className="mt-1 text-[11px] text-fg-faint">{nextAppointment.address}</p>
                       </>
                     ) : (
                       <p className="mt-2 text-sm leading-relaxed text-fg-dim">
-                        No visit is booked. Choose a service and a window, and the dispatch desk will confirm the engineer.
+                        No visit is booked. Choose a service and a window, and the dispatch desk
+                        will confirm the engineer.
                       </p>
                     )}
                   </div>
                   {nextAppointment ? (
-                    <Badge tone={statusTone[nextAppointment.status]}>{appointmentStatusLabel[nextAppointment.status]}</Badge>
+                    <Badge tone={statusTone[nextAppointment.status]}>
+                      {appointmentStatusLabel[nextAppointment.status]}
+                    </Badge>
                   ) : null}
                 </div>
                 <div className="mt-5 flex flex-wrap gap-2">
-                  <Button size="sm" icon="calendar" onClick={() => openBooking(nextAppointment ?? undefined)}>
+                  <Button
+                    size="sm"
+                    icon="calendar"
+                    onClick={() => openBooking(nextAppointment ?? undefined)}
+                  >
                     {nextAppointment ? 'Rebook this visit' : 'Book a visit'}
                   </Button>
                   {nextAppointment?.technician ? (
@@ -1037,27 +1248,48 @@ export function PortalPage() {
 
               <section className="border border-line bg-panel/30 p-5 lg:col-span-5">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">Recent invoices</span>
-                  <button type="button" onClick={() => setTab('invoices')} className="font-mono text-[9px] uppercase text-cold hover:text-fg">
+                  <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">
+                    Recent invoices
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setTab('invoices')}
+                    className="font-mono text-[9px] uppercase text-cold hover:text-fg"
+                  >
                     View all
                   </button>
                 </div>
                 {recentInvoices.length === 0 ? (
                   <p className="mt-4 text-[12px] leading-relaxed text-fg-dim">
-                    No invoices are addressed to {customer.email} yet. They appear here as soon as billing issues one.
+                    No invoices are addressed to {customer.email} yet. They appear here as soon as
+                    billing issues one.
                   </p>
                 ) : (
                   <ul className="mt-3 divide-y divide-line">
                     {recentInvoices.map((entry) => (
                       <li key={entry.id} className="flex items-center justify-between gap-3 py-3">
                         <div className="min-w-0">
-                          <p className="truncate text-[12px] text-fg">{entry.ref} · {entry.service || 'HVAC service'}</p>
-                          <p className="text-[10px] text-fg-faint">Due {formatDate(entry.dueDate)}</p>
+                          <p className="truncate text-[12px] text-fg">
+                            {entry.ref} · {entry.service || 'HVAC service'}
+                          </p>
+                          <p className="text-[10px] text-fg-faint">
+                            Due {formatDate(entry.dueDate)}
+                          </p>
                         </div>
                         <div className="text-right">
                           <p className="text-[12px] text-fg">{formatMoney(entry.totals.total)}</p>
-                          <button type="button" onClick={() => void openInvoice(entry)} className="font-mono text-[8px] uppercase text-cold hover:text-fg">
-                            {invoiceLoading === entry.id ? 'Opening' : 'View detail'}
+                          <button
+                            type="button"
+                            onClick={() => void openInvoice(entry)}
+                            className="ml-auto flex items-center justify-end gap-1 font-mono text-[8px] uppercase text-cold hover:text-fg"
+                          >
+                            {invoiceLoading === entry.id ? (
+                              'Opening'
+                            ) : (
+                              <>
+                                <Icon name="eye" size={10} /> View detail
+                              </>
+                            )}
                           </button>
                         </div>
                       </li>
@@ -1077,17 +1309,35 @@ export function PortalPage() {
                 </div>
                 <ul className="divide-y divide-line">
                   {overview.requests.slice(0, 6).map((request) => (
-                    <li key={request.ref} className="flex flex-wrap items-start justify-between gap-3 px-5 py-3">
+                    <li
+                      key={request.ref}
+                      className="flex flex-wrap items-start justify-between gap-3 px-5 py-3"
+                    >
                       <div className="min-w-0">
                         <p className="font-mono text-[10px] text-cold">{request.ref}</p>
                         <p className="mt-1 text-[12px] text-fg">
                           {request.serviceName ?? 'Works desk · service to be allocated'}
                         </p>
-                        <p className="mt-0.5 line-clamp-2 text-[11px] text-fg-faint">{request.message}</p>
+                        <p className="mt-0.5 line-clamp-2 text-[11px] text-fg-faint">
+                          {request.message}
+                        </p>
                       </div>
-                      <div className="text-right">
-                        <Badge tone="neutral">{request.status}</Badge>
-                        <p className="mt-1 text-[10px] text-fg-faint">{formatDate(request.createdAt)}</p>
+                      <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-2">
+                          <Badge tone="neutral">{request.status}</Badge>
+                          <RecordViewButton
+                            label={`request ${request.ref}`}
+                            onClick={() =>
+                              setDetail({
+                                title: request.ref,
+                                subtitle: request.serviceName ?? 'Works desk request',
+                                record: request as unknown as Record<string, unknown>,
+                                exclude: ['id'],
+                              })
+                            }
+                          />
+                        </div>
+                        <p className="text-[10px] text-fg-faint">{formatDate(request.createdAt)}</p>
                       </div>
                     </li>
                   ))}
@@ -1098,45 +1348,97 @@ export function PortalPage() {
         ) : null}
 
         {overview && tab === 'visits' ? (
-          <div id="portal-panel-visits" role="tabpanel" aria-labelledby="portal-tab-visits" className="mt-6">
+          <div
+            id="portal-panel-visits"
+            role="tabpanel"
+            aria-labelledby="portal-tab-visits"
+            className="mt-6"
+          >
             {overview.appointments.length === 0 ? (
               <EmptyState
                 title="No service visits yet"
                 description="Book a visit and it will appear here with the dispatch reference, engineer and status."
-                action={<Button icon="calendar" onClick={() => openBooking()}>Book a visit</Button>}
+                action={
+                  <Button icon="calendar" onClick={() => openBooking()}>
+                    Book a visit
+                  </Button>
+                }
               />
             ) : (
               <div className="divide-y divide-line border border-line bg-panel/20">
                 {overview.appointments.map((appointment) => (
-                  <article key={appointment.id} className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                  <article
+                    key={appointment.id}
+                    className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
+                  >
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-mono text-[9px] text-cold">{appointment.ref}</span>
-                        <Badge tone={statusTone[appointment.status]}>{appointmentStatusLabel[appointment.status]}</Badge>
+                        <Badge tone={statusTone[appointment.status]}>
+                          {appointmentStatusLabel[appointment.status]}
+                        </Badge>
                         {appointment.rebookOf ? <Badge tone="neutral">Rebook</Badge> : null}
                       </div>
                       <p className="mt-2 text-sm text-fg">{appointment.serviceName}</p>
                       <p className="text-[11px] text-fg-dim">
-                        {formatDateTime(appointment.scheduledAt)} · {serviceWindowLabel(appointment.window)}
+                        {formatDateTime(appointment.scheduledAt)} ·{' '}
+                        {serviceWindowLabel(appointment.window)}
                       </p>
                       <p className="mt-1 text-[11px] text-fg-faint">{appointment.address}</p>
                       <p className="mt-1 text-[10px] text-fg-faint">
-                        {appointment.technician ? `Engineer: ${appointment.technician}` : 'Engineer to be assigned'}
+                        {appointment.technician
+                          ? `Engineer: ${appointment.technician}`
+                          : 'Engineer to be assigned'}
                         {appointment.notes ? ` · ${appointment.notes}` : ''}
                       </p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <RecordViewButton
+                        label={`visit ${appointment.ref}`}
+                        onClick={() =>
+                          setDetail({
+                            title: appointment.ref,
+                            subtitle: `${appointment.serviceName} · ${formatDateTime(appointment.scheduledAt)}`,
+                            record: {
+                              reference: appointment.ref,
+                              service: appointment.serviceName,
+                              scheduled: formatDateTime(appointment.scheduledAt),
+                              window: serviceWindowLabel(appointment.window),
+                              status: appointmentStatusLabel[appointment.status],
+                              address: appointment.address,
+                              engineer: appointment.technician || 'To be assigned',
+                              leadReference: appointment.leadRef,
+                              rebookOf: appointment.rebookOf,
+                              notes: appointment.notes,
+                              createdAt: appointment.createdAt,
+                              updatedAt: appointment.updatedAt,
+                            },
+                          })
+                        }
+                      />
                       {appointment.status === 'requested' || appointment.status === 'scheduled' ? (
                         <>
-                          <Button variant="secondary" size="sm" onClick={() => openReschedule(appointment)}>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => openReschedule(appointment)}
+                          >
                             Reschedule
                           </Button>
-                          <Button variant="quiet" size="sm" onClick={() => void cancelVisit(appointment)}>
+                          <Button
+                            variant="quiet"
+                            size="sm"
+                            onClick={() => void cancelVisit(appointment)}
+                          >
                             Cancel
                           </Button>
                         </>
                       ) : (
-                        <Button variant="secondary" size="sm" onClick={() => openBooking(appointment)}>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => openBooking(appointment)}
+                        >
                           {appointment.status === 'completed' ? 'Rebook service' : 'Book again'}
                         </Button>
                       )}
@@ -1149,7 +1451,12 @@ export function PortalPage() {
         ) : null}
 
         {overview && tab === 'invoices' ? (
-          <div id="portal-panel-invoices" role="tabpanel" aria-labelledby="portal-tab-invoices" className="mt-6">
+          <div
+            id="portal-panel-invoices"
+            role="tabpanel"
+            aria-labelledby="portal-tab-invoices"
+            className="mt-6"
+          >
             {overview.invoices.length === 0 ? (
               <EmptyState
                 title="No invoices on this account"
@@ -1161,27 +1468,73 @@ export function PortalPage() {
                   <caption className="sr-only">Invoices addressed to {customer.email}</caption>
                   <thead>
                     <tr className="border-b border-line font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint">
-                      <th scope="col" className="p-3">Invoice</th>
-                      <th scope="col" className="p-3">Issued</th>
-                      <th scope="col" className="p-3">Due</th>
-                      <th scope="col" className="p-3">Status</th>
-                      <th scope="col" className="p-3 text-right">Total</th>
-                      <th scope="col" className="p-3 text-right">Balance</th>
-                      <th scope="col" className="p-3"><span className="sr-only">Open</span></th>
+                      <th scope="col" className="p-3">
+                        Invoice
+                      </th>
+                      <th scope="col" className="p-3">
+                        Issued
+                      </th>
+                      <th scope="col" className="p-3">
+                        Due
+                      </th>
+                      <th scope="col" className="p-3">
+                        Status
+                      </th>
+                      <th scope="col" className="p-3 text-right">
+                        Total
+                      </th>
+                      <th scope="col" className="p-3 text-right">
+                        Balance
+                      </th>
+                      <th scope="col" className="p-3">
+                        <span className="sr-only">Open</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line">
                     {overview.invoices.map((entry) => (
                       <tr key={entry.id}>
-                        <td className="p-3 text-[12px] text-fg">{entry.ref}<span className="block text-[10px] text-fg-faint">{entry.service}</span></td>
-                        <td className="p-3 text-[11px] text-fg-dim">{formatDate(entry.issueDate)}</td>
+                        <td className="p-3 text-[12px] text-fg">
+                          {entry.ref}
+                          <span className="block text-[10px] text-fg-faint">{entry.service}</span>
+                        </td>
+                        <td className="p-3 text-[11px] text-fg-dim">
+                          {formatDate(entry.issueDate)}
+                        </td>
                         <td className="p-3 text-[11px] text-fg-dim">{formatDate(entry.dueDate)}</td>
-                        <td className="p-3"><Badge tone={entry.totals.state === 'paid' ? 'success' : entry.totals.state === 'overdue' ? 'danger' : 'warn'}>{entry.totals.state}</Badge></td>
-                        <td className="p-3 text-right text-[12px] text-fg">{formatMoney(entry.totals.total)}</td>
-                        <td className="p-3 text-right text-[12px] text-fg">{formatMoney(entry.totals.balance)}</td>
+                        <td className="p-3">
+                          <Badge
+                            tone={
+                              entry.totals.state === 'paid'
+                                ? 'success'
+                                : entry.totals.state === 'overdue'
+                                  ? 'danger'
+                                  : 'warn'
+                            }
+                          >
+                            {entry.totals.state}
+                          </Badge>
+                        </td>
+                        <td className="p-3 text-right text-[12px] text-fg">
+                          {formatMoney(entry.totals.total)}
+                        </td>
+                        <td className="p-3 text-right text-[12px] text-fg">
+                          {formatMoney(entry.totals.balance)}
+                        </td>
                         <td className="p-3 text-right">
-                          <button type="button" onClick={() => void openInvoice(entry)} disabled={invoiceLoading === entry.id} className="font-mono text-[9px] uppercase text-cold hover:text-fg disabled:opacity-50">
-                            {invoiceLoading === entry.id ? 'Opening' : 'View'}
+                          <button
+                            type="button"
+                            onClick={() => void openInvoice(entry)}
+                            disabled={invoiceLoading === entry.id}
+                            className="ml-auto flex items-center gap-1 font-mono text-[9px] uppercase text-cold hover:text-fg disabled:opacity-50"
+                          >
+                            {invoiceLoading === entry.id ? (
+                              'Opening'
+                            ) : (
+                              <>
+                                <Icon name="eye" size={11} /> View
+                              </>
+                            )}
                           </button>
                         </td>
                       </tr>
@@ -1194,7 +1547,12 @@ export function PortalPage() {
         ) : null}
 
         {overview && tab === 'quotes' ? (
-          <div id="portal-panel-quotes" role="tabpanel" aria-labelledby="portal-tab-quotes" className="mt-6">
+          <div
+            id="portal-panel-quotes"
+            role="tabpanel"
+            aria-labelledby="portal-tab-quotes"
+            className="mt-6"
+          >
             {overview.quotations.length === 0 ? (
               <EmptyState
                 title="No quotations yet"
@@ -1203,11 +1561,16 @@ export function PortalPage() {
             ) : (
               <div className="divide-y divide-line border border-line bg-panel/20">
                 {overview.quotations.map((quote) => (
-                  <article key={quote.id} className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                  <article
+                    key={quote.id}
+                    className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
+                  >
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-mono text-[9px] text-cold">{quote.ref}</span>
-                        <Badge tone={quoteTone[quote.status]}>{quotationStatusLabel[quote.status]}</Badge>
+                        <Badge tone={quoteTone[quote.status]}>
+                          {quotationStatusLabel[quote.status]}
+                        </Badge>
                         {quote.validUntil ? (
                           <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-fg-faint">
                             Valid to {formatDate(quote.validUntil)}
@@ -1215,7 +1578,9 @@ export function PortalPage() {
                         ) : null}
                       </div>
                       <p className="mt-2 text-sm text-fg">{quote.title}</p>
-                      <p className="text-[11px] text-fg-dim">{quote.service || 'Defined scope'} · {quote.lines.length} lines</p>
+                      <p className="text-[11px] text-fg-dim">
+                        {quote.service || 'Defined scope'} · {quote.lines.length} lines
+                      </p>
                       {quote.changeRequest ? (
                         <p className="mt-2 border-l-2 border-warn/60 pl-2 text-[11px] leading-relaxed text-fg-dim">
                           Change requested: {quote.changeRequest}
@@ -1223,8 +1588,15 @@ export function PortalPage() {
                       ) : null}
                     </div>
                     <div className="flex flex-wrap items-center gap-3 lg:justify-end">
-                      <span className="font-display text-xl text-fg">{formatMoney(quote.totals.total)}</span>
-                      <Button size="sm" variant="secondary" onClick={() => openQuote(quote)}>
+                      <span className="font-display text-xl text-fg">
+                        {formatMoney(quote.totals.total)}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon="eye"
+                        onClick={() => openQuote(quote)}
+                      >
                         Open
                       </Button>
                     </div>
@@ -1236,7 +1608,12 @@ export function PortalPage() {
         ) : null}
 
         {overview && tab === 'equipment' ? (
-          <div id="portal-panel-equipment" role="tabpanel" aria-labelledby="portal-tab-equipment" className="mt-6">
+          <div
+            id="portal-panel-equipment"
+            role="tabpanel"
+            aria-labelledby="portal-tab-equipment"
+            className="mt-6"
+          >
             {overview.equipment.length === 0 ? (
               <EmptyState
                 title="No equipment on file"
@@ -1246,19 +1623,52 @@ export function PortalPage() {
               <div className="grid gap-4 lg:grid-cols-2">
                 {overview.equipment.map((item) => {
                   const site = overview.sites.find((entry) => entry.id === item.siteId)
-                  const history = overview.reports.filter((report) => report.equipmentId === item.id)
+                  const history = overview.reports.filter(
+                    (report) => report.equipmentId === item.id,
+                  )
                   return (
                     <article key={item.id} className="border border-line bg-panel/20 p-5">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="text-sm text-fg">{item.name}</p>
                           <p className="mt-0.5 text-[11px] text-fg-dim">
-                            {[item.brand, item.model].filter(Boolean).join(' · ') || 'Make and model not recorded'}
+                            {[item.brand, item.model].filter(Boolean).join(' · ') ||
+                              'Make and model not recorded'}
                           </p>
                         </div>
-                        <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-fg-faint">
-                          {item.capacity || 'Capacity not set'}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-fg-faint">
+                            {item.capacity || 'Capacity not set'}
+                          </span>
+                          <RecordViewButton
+                            label={`equipment ${item.name}`}
+                            onClick={() =>
+                              setDetail({
+                                title: item.name,
+                                subtitle: [item.brand, item.model].filter(Boolean).join(' · '),
+                                record: {
+                                  name: item.name,
+                                  brand: item.brand,
+                                  model: item.model,
+                                  serial: item.serial,
+                                  capacity: item.capacity,
+                                  site: site?.label ?? 'Primary site',
+                                  installedAt: item.installedAt,
+                                  warrantyUntil: item.warrantyUntil,
+                                  notes: item.notes,
+                                  serviceHistory: history.map((report) => ({
+                                    reference: report.ref,
+                                    title: report.title,
+                                    completedAt: report.completedAt,
+                                    engineer: report.technician,
+                                  })),
+                                  createdAt: item.createdAt,
+                                  updatedAt: item.updatedAt,
+                                },
+                              })
+                            }
+                          />
+                        </div>
                       </div>
                       <dl className="mt-4 grid gap-2 text-[11px]">
                         <div className="flex justify-between gap-3 border-b border-line/70 pb-2">
@@ -1278,17 +1688,30 @@ export function PortalPage() {
                           <dd className="text-fg-dim">{formatDate(item.warrantyUntil)}</dd>
                         </div>
                       </dl>
-                      {item.notes ? <p className="mt-3 text-[11px] leading-relaxed text-fg-faint">{item.notes}</p> : null}
+                      {item.notes ? (
+                        <p className="mt-3 text-[11px] leading-relaxed text-fg-faint">
+                          {item.notes}
+                        </p>
+                      ) : null}
                       <div className="mt-4 border-t border-line pt-3">
-                        <p className="font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint">Service history</p>
+                        <p className="font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint">
+                          Service history
+                        </p>
                         {history.length === 0 ? (
-                          <p className="mt-1 text-[11px] text-fg-faint">No report filed for this unit yet.</p>
+                          <p className="mt-1 text-[11px] text-fg-faint">
+                            No report filed for this unit yet.
+                          </p>
                         ) : (
                           <ul className="mt-2 space-y-1">
                             {history.slice(0, 3).map((report) => (
-                              <li key={report.id} className="flex justify-between gap-3 text-[11px]">
+                              <li
+                                key={report.id}
+                                className="flex justify-between gap-3 text-[11px]"
+                              >
                                 <span className="text-fg-dim">{report.title}</span>
-                                <span className="font-mono text-fg-faint">{formatDate(report.completedAt)}</span>
+                                <span className="font-mono text-fg-faint">
+                                  {formatDate(report.completedAt)}
+                                </span>
                               </li>
                             ))}
                           </ul>
@@ -1303,12 +1726,24 @@ export function PortalPage() {
         ) : null}
 
         {overview && tab === 'cover' ? (
-          <div id="portal-panel-cover" role="tabpanel" aria-labelledby="portal-tab-cover" className="mt-6">
+          <div
+            id="portal-panel-cover"
+            role="tabpanel"
+            aria-labelledby="portal-tab-cover"
+            className="mt-6"
+          >
             {overview.amc.length === 0 ? (
               <EmptyState
                 title="No maintenance contract"
                 description="AMC cover puts the visit schedule, response time and exclusions in writing. Ask the works desk for a plan comparison."
-                action={<Link to="/amc" className="font-mono text-[9px] uppercase tracking-[0.1em] text-cold">See plans</Link>}
+                action={
+                  <Link
+                    to="/amc"
+                    className="font-mono text-[9px] uppercase tracking-[0.1em] text-cold"
+                  >
+                    See plans
+                  </Link>
+                }
               />
             ) : (
               <div className="grid gap-4 lg:grid-cols-2">
@@ -1319,14 +1754,52 @@ export function PortalPage() {
                         <p className="font-mono text-[9px] text-cold">{contract.ref}</p>
                         <p className="mt-1 text-sm text-fg">{contract.plan}</p>
                       </div>
-                      <Badge tone={contract.status === 'active' ? 'success' : contract.status === 'expired' ? 'danger' : 'neutral'}>
-                        {contract.status}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          tone={
+                            contract.status === 'active'
+                              ? 'success'
+                              : contract.status === 'expired'
+                                ? 'danger'
+                                : 'neutral'
+                          }
+                        >
+                          {contract.status}
+                        </Badge>
+                        <RecordViewButton
+                          label={`AMC ${contract.ref}`}
+                          onClick={() => {
+                            const next = nextContractVisit(overview.appointments, contract.id)
+                            setDetail({
+                              title: contract.ref,
+                              subtitle: contract.plan,
+                              record: {
+                                reference: contract.ref,
+                                plan: contract.plan,
+                                status: contract.status,
+                                period: `${formatDate(contract.startDate)} – ${formatDate(contract.endDate)}`,
+                                visitsPerYear: contract.visitsPerYear,
+                                unitsCovered: contract.equipmentIds.length || 'All listed plant',
+                                annualValue: contract.price,
+                                nextContractVisit: next
+                                  ? `${formatDateTime(next.scheduledAt)} · ${next.serviceName}`
+                                  : 'Not scheduled',
+                                renewalRequestedAt: contract.renewalRequestedAt,
+                                notes: contract.notes,
+                                createdAt: contract.createdAt,
+                                updatedAt: contract.updatedAt,
+                              },
+                            })
+                          }}
+                        />
+                      </div>
                     </div>
                     <dl className="mt-4 grid gap-2 text-[11px]">
                       <div className="flex justify-between gap-3 border-b border-line/70 pb-2">
                         <dt className="text-fg-faint">Period</dt>
-                        <dd className="text-fg-dim">{formatDate(contract.startDate)} → {formatDate(contract.endDate)}</dd>
+                        <dd className="text-fg-dim">
+                          {formatDate(contract.startDate)} → {formatDate(contract.endDate)}
+                        </dd>
                       </div>
                       <div className="flex justify-between gap-3 border-b border-line/70 pb-2">
                         <dt className="text-fg-faint">Visits</dt>
@@ -1334,14 +1807,20 @@ export function PortalPage() {
                       </div>
                       <div className="flex justify-between gap-3 border-b border-line/70 pb-2">
                         <dt className="text-fg-faint">Units covered</dt>
-                        <dd className="text-fg-dim">{contract.equipmentIds.length || 'All listed plant'}</dd>
+                        <dd className="text-fg-dim">
+                          {contract.equipmentIds.length || 'All listed plant'}
+                        </dd>
                       </div>
                       <div className="flex justify-between gap-3">
                         <dt className="text-fg-faint">Annual value</dt>
                         <dd className="text-fg">{formatMoney(contract.price)}</dd>
                       </div>
                     </dl>
-                    {contract.notes ? <p className="mt-3 text-[11px] leading-relaxed text-fg-faint">{contract.notes}</p> : null}
+                    {contract.notes ? (
+                      <p className="mt-3 text-[11px] leading-relaxed text-fg-faint">
+                        {contract.notes}
+                      </p>
+                    ) : null}
                     {(() => {
                       const next = nextContractVisit(overview.appointments, contract.id)
                       return (
@@ -1375,7 +1854,12 @@ export function PortalPage() {
         ) : null}
 
         {overview && tab === 'reports' ? (
-          <div id="portal-panel-reports" role="tabpanel" aria-labelledby="portal-tab-reports" className="mt-6">
+          <div
+            id="portal-panel-reports"
+            role="tabpanel"
+            aria-labelledby="portal-tab-reports"
+            className="mt-6"
+          >
             {overview.reports.length === 0 ? (
               <EmptyState
                 title="No service reports yet"
@@ -1390,23 +1874,64 @@ export function PortalPage() {
                         <p className="font-mono text-[9px] text-cold">{report.ref}</p>
                         <h3 className="mt-1 text-sm text-fg">{report.title}</h3>
                         <p className="mt-1 text-[11px] text-fg-dim">
-                          {formatDate(report.completedAt)} · {report.technician || 'Engineer not named'}
+                          {formatDate(report.completedAt)} ·{' '}
+                          {report.technician || 'Engineer not named'}
                         </p>
                       </div>
-                      <Badge tone="success">Completed</Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge tone="success">Completed</Badge>
+                        <RecordViewButton
+                          label={`report ${report.ref}`}
+                          onClick={() =>
+                            setDetail({
+                              title: `${report.ref} · ${report.title}`,
+                              subtitle: `${formatDate(report.completedAt)} · ${report.technician || 'Engineer not named'}`,
+                              record: {
+                                reference: report.ref,
+                                title: report.title,
+                                completedAt: report.completedAt,
+                                engineer: report.technician || 'Not named',
+                                summary: report.summary,
+                                checklist: report.checklist,
+                                findings: report.findings,
+                                recommendations: report.recommendations,
+                                photos: report.photos,
+                                createdAt: report.createdAt,
+                                updatedAt: report.updatedAt,
+                              },
+                            })
+                          }
+                        />
+                      </div>
                     </div>
-                    {report.summary ? <p className="mt-3 text-[12px] leading-relaxed text-fg-dim">{report.summary}</p> : null}
+                    {report.summary ? (
+                      <p className="mt-3 text-[12px] leading-relaxed text-fg-dim">
+                        {report.summary}
+                      </p>
+                    ) : null}
                     {report.checklist.length ? (
                       <ul className="mt-4 grid gap-2 sm:grid-cols-2">
                         {report.checklist.map((item) => (
-                          <li key={item.id} className="flex items-start gap-2 text-[11px]">
-                            <span className={item.done ? 'mt-0.5 text-success' : 'mt-0.5 text-fg-faint'}>
-                              <Icon name={item.done ? 'check' : 'close'} size={12} />
-                            </span>
-                            <span className="text-fg-dim">
-                              {item.label}
-                              {item.note ? <span className="block text-[10px] text-fg-faint">{item.note}</span> : null}
-                            </span>
+                          <li key={item.id}>
+                            <label className="flex cursor-pointer items-start gap-2 text-[11px]">
+                              <input
+                                type="checkbox"
+                                checked={item.done}
+                                disabled={Boolean(reportCheckBusy)}
+                                onChange={(event) =>
+                                  void toggleReportChecklist(report, item.id, event.target.checked)
+                                }
+                                className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-[rgb(var(--cold))]"
+                              />
+                              <span className="text-fg-dim">
+                                {item.label}
+                                {item.note ? (
+                                  <span className="block text-[10px] text-fg-faint">
+                                    {item.note}
+                                  </span>
+                                ) : null}
+                              </span>
+                            </label>
                           </li>
                         ))}
                       </ul>
@@ -1414,24 +1939,67 @@ export function PortalPage() {
                     {report.photos.length ? (
                       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
                         {report.photos.map((photo) => (
-                          <a key={photo.id} href={photo.url} target="_blank" rel="noreferrer" className="border border-line">
-                            <img src={photo.url} alt={photo.alt || 'Service photograph'} className="h-24 w-full object-cover" loading="lazy" />
+                          <a
+                            key={photo.id}
+                            href={photo.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="border border-line"
+                          >
+                            <img
+                              src={photo.url}
+                              alt={photo.alt || 'Service photograph'}
+                              className="h-24 w-full object-cover"
+                              loading="lazy"
+                            />
                           </a>
                         ))}
                       </div>
                     ) : null}
                     {report.findings ? (
                       <div className="mt-4 border-t border-line pt-3">
-                        <p className="font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint">Findings</p>
-                        <p className="mt-1 text-[11px] leading-relaxed text-fg-dim">{report.findings}</p>
+                        <p className="font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint">
+                          Findings
+                        </p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-fg-dim">
+                          {report.findings}
+                        </p>
                       </div>
                     ) : null}
                     {report.recommendations ? (
                       <div className="mt-3">
-                        <p className="font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint">Recommendations</p>
-                        <p className="mt-1 text-[11px] leading-relaxed text-fg-dim">{report.recommendations}</p>
+                        <p className="font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint">
+                          Recommendations
+                        </p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-fg-dim">
+                          {report.recommendations}
+                        </p>
                       </div>
                     ) : null}
+                    <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line pt-3">
+                      <label
+                        htmlFor={`report-photos-${report.id}`}
+                        className="cursor-pointer font-mono text-[9px] uppercase tracking-[0.08em] text-cold hover:text-fg"
+                      >
+                        {reportPhotoBusy === report.id ? 'Uploading photos…' : 'Add photos'}
+                      </label>
+                      <input
+                        id={`report-photos-${report.id}`}
+                        type="file"
+                        multiple
+                        accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+                        disabled={Boolean(reportPhotoBusy)}
+                        className="sr-only"
+                        onChange={(event) => {
+                          const files = Array.from(event.target.files ?? [])
+                          void uploadReportPhotos(report.id, files)
+                          event.target.value = ''
+                        }}
+                      />
+                      <span className="text-[10px] text-fg-faint">
+                        Add site photos for the works desk. The engineer checklist stays as issued.
+                      </span>
+                    </div>
                   </article>
                 ))}
               </div>
@@ -1440,10 +2008,16 @@ export function PortalPage() {
         ) : null}
 
         {overview && tab === 'support' ? (
-          <div id="portal-panel-support" role="tabpanel" aria-labelledby="portal-tab-support" className="mt-6">
+          <div
+            id="portal-panel-support"
+            role="tabpanel"
+            aria-labelledby="portal-tab-support"
+            className="mt-6"
+          >
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <p className="max-w-[60ch] text-[12px] leading-relaxed text-fg-dim">
-                Raise a complaint, ask for a billing correction or open a support request. The thread stays with your account.
+                Raise a complaint, ask for a billing correction or open a support request. The
+                thread stays with your account.
               </p>
               <Button size="sm" icon="plus" onClick={() => setTicketNewOpen(true)}>
                 New request
@@ -1469,17 +2043,22 @@ export function PortalPage() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-mono text-[9px] text-cold">{ticket.ref}</span>
-                        <Badge tone={ticketTone[ticket.status]}>{ticketStatusLabel[ticket.status]}</Badge>
+                        <Badge tone={ticketTone[ticket.status]}>
+                          {ticketStatusLabel[ticket.status]}
+                        </Badge>
                         <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-fg-faint">
                           {categoryLabel[ticket.category]}
                         </span>
                       </div>
                       <p className="mt-1 text-sm text-fg">{ticket.subject}</p>
                       <p className="text-[11px] text-fg-faint">
-                        {ticket.messages.length} message{ticket.messages.length === 1 ? '' : 's'} · updated {formatDate(ticket.updatedAt)}
+                        {ticket.messages.length} message{ticket.messages.length === 1 ? '' : 's'} ·
+                        updated {formatDate(ticket.updatedAt)}
                       </p>
                     </div>
-                    <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-cold">Open</span>
+                    <span className="flex items-center gap-1 font-mono text-[9px] uppercase tracking-[0.08em] text-cold">
+                      <Icon name="eye" size={11} /> Open
+                    </span>
                   </button>
                 ))}
               </div>
@@ -1488,119 +2067,204 @@ export function PortalPage() {
         ) : null}
 
         {overview && tab === 'account' ? (
-          <div id="portal-panel-account" role="tabpanel" aria-labelledby="portal-tab-account" className="mt-6 space-y-6">
-          <div className="grid gap-6 lg:grid-cols-12">
-            <form className="border border-line bg-panel/30 p-5 lg:col-span-7" onSubmit={(event) => void saveProfile(event)}>
-              <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">Contact details</h2>
-              <p className="mt-2 text-[11px] leading-relaxed text-fg-faint">
-                The dispatch desk uses this phone and address for portal bookings. Historical invoices are not rewritten.
-              </p>
-              <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                <Input label="Full name" required value={profileForm.name} onChange={(event) => setProfileForm({ ...profileForm, name: event.target.value })} />
-                <Input label="Phone" type="tel" required value={profileForm.phone} onChange={(event) => setProfileForm({ ...profileForm, phone: event.target.value })} />
-                <div className="sm:col-span-2">
-                  <Textarea label="Service address" rows={3} value={profileForm.address} onChange={(event) => setProfileForm({ ...profileForm, address: event.target.value })} />
+          <div
+            id="portal-panel-account"
+            role="tabpanel"
+            aria-labelledby="portal-tab-account"
+            className="mt-6 space-y-6"
+          >
+            <div className="grid gap-6 lg:grid-cols-12">
+              <form
+                className="border border-line bg-panel/30 p-5 lg:col-span-7"
+                onSubmit={(event) => void saveProfile(event)}
+              >
+                <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                  Contact details
+                </h2>
+                <p className="mt-2 text-[11px] leading-relaxed text-fg-faint">
+                  The dispatch desk uses this phone and address for portal bookings. Historical
+                  invoices are not rewritten.
+                </p>
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                  <Input
+                    label="Full name"
+                    required
+                    value={profileForm.name}
+                    onChange={(event) =>
+                      setProfileForm({ ...profileForm, name: event.target.value })
+                    }
+                  />
+                  <Input
+                    label="Phone"
+                    type="tel"
+                    required
+                    value={profileForm.phone}
+                    onChange={(event) =>
+                      setProfileForm({ ...profileForm, phone: event.target.value })
+                    }
+                  />
+                  <div className="sm:col-span-2">
+                    <Textarea
+                      label="Service address"
+                      rows={3}
+                      value={profileForm.address}
+                      onChange={(event) =>
+                        setProfileForm({ ...profileForm, address: event.target.value })
+                      }
+                    />
+                  </div>
                 </div>
-              </div>
-              <div className="mt-5">
-                <Button type="submit" loading={profileBusy}>Save profile</Button>
-              </div>
-            </form>
-            <aside className="border border-line bg-base/40 p-5 lg:col-span-5">
-              <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">Account</h2>
-              <dl className="mt-4 grid gap-3 text-[12px]">
-                <div className="flex justify-between gap-3 border-b border-line pb-2"><dt className="text-fg-faint">Email</dt><dd className="text-right text-fg">{customer.email}</dd></div>
-                <div className="flex justify-between gap-3 border-b border-line pb-2"><dt className="text-fg-faint">Customer since</dt><dd className="text-fg">{formatDate(customer.createdAt)}</dd></div>
-                <div className="flex justify-between gap-3 border-b border-line pb-2"><dt className="text-fg-faint">Invoices</dt><dd className="text-fg">{overview.summary.invoiceCount}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-fg-faint">Outstanding</dt><dd className="text-fg">{formatMoney(overview.summary.outstanding)}</dd></div>
-              </dl>
-              <p className="mt-6 text-[11px] leading-relaxed text-fg-faint">
-                Need a billing change on an issued invoice? The works desk can amend it; your portal shows the corrected total once saved.
-              </p>
-              <Link to="/contact" className="mt-4 inline-flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.1em] text-cold hover:text-fg">
-                Contact the works desk <Icon name="arrow-right" size={11} />
-              </Link>
-            </aside>
-          </div>
-
-          <section className="border border-line bg-panel/20 p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">Sites</h2>
-                <p className="mt-1 text-[11px] text-fg-faint">Addresses the dispatch desk can send an engineer to.</p>
-              </div>
-              <Button size="sm" icon="plus" onClick={() => openSite()}>
-                Add site
-              </Button>
+                <div className="mt-5">
+                  <Button type="submit" loading={profileBusy}>
+                    Save profile
+                  </Button>
+                </div>
+              </form>
+              <aside className="border border-line bg-base/40 p-5 lg:col-span-5">
+                <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                  Account
+                </h2>
+                <dl className="mt-4 grid gap-3 text-[12px]">
+                  <div className="flex justify-between gap-3 border-b border-line pb-2">
+                    <dt className="text-fg-faint">Email</dt>
+                    <dd className="text-right text-fg">{customer.email}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3 border-b border-line pb-2">
+                    <dt className="text-fg-faint">Customer since</dt>
+                    <dd className="text-fg">{formatDate(customer.createdAt)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3 border-b border-line pb-2">
+                    <dt className="text-fg-faint">Invoices</dt>
+                    <dd className="text-fg">{overview.summary.invoiceCount}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-fg-faint">Outstanding</dt>
+                    <dd className="text-fg">{formatMoney(overview.summary.outstanding)}</dd>
+                  </div>
+                </dl>
+                <p className="mt-6 text-[11px] leading-relaxed text-fg-faint">
+                  Need a billing change on an issued invoice? The works desk can amend it; your
+                  portal shows the corrected total once saved.
+                </p>
+                <Link
+                  to="/contact"
+                  className="mt-4 inline-flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.1em] text-cold hover:text-fg"
+                >
+                  Contact the works desk <Icon name="arrow-right" size={11} />
+                </Link>
+              </aside>
             </div>
-            {overview.sites.length === 0 ? (
-              <p className="mt-4 text-[12px] leading-relaxed text-fg-dim">
-                No site is on file yet. Add the first address so a portal booking carries the right location.
-              </p>
-            ) : (
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
-                {overview.sites.map((site) => (
-                  <article key={site.id} className="border border-line bg-base/30 p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                        <p className="text-sm text-fg">{site.label}</p>
-                        {site.isPrimary ? <Badge tone="cold">Primary</Badge> : null}
-                      </div>
-                      <div className="flex gap-1">
-                        <button type="button" onClick={() => openSite(site)} className="font-mono text-[9px] uppercase text-cold hover:text-fg">
-                          Edit
-                        </button>
-                        <button type="button" onClick={() => void removeSite(site)} className="font-mono text-[9px] uppercase text-fg-faint hover:text-danger">
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                    <p className="mt-2 text-[11px] leading-relaxed text-fg-dim">{site.address}</p>
-                    <p className="text-[10px] text-fg-faint">
-                      {[site.city, site.region, site.postalCode].filter(Boolean).join(', ') || 'City not recorded'}
-                    </p>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
 
-          <section className="border border-line bg-panel/20 p-5">
-            <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">Notification preferences</h2>
-            <p className="mt-1 text-[11px] text-fg-faint">
-              Operational messages about a live visit are always sent. These switches control everything else.
-            </p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <Checkbox
-                label="Service updates"
-                description="Booking confirmations, reschedule notices and completion reports."
-                checked={overview.preferences.emailService}
-                disabled={prefsBusy}
-                onChange={(event) => void togglePreference('emailService', event.target.checked)}
-              />
-              <Checkbox
-                label="Invoices and receipts"
-                description="Issued invoices, payment receipts and reminders."
-                checked={overview.preferences.emailBilling}
-                disabled={prefsBusy}
-                onChange={(event) => void togglePreference('emailBilling', event.target.checked)}
-              />
-              <Checkbox
-                label="AMC and renewals"
-                description="Visit schedule, renewal windows and contract documents."
-                checked={overview.preferences.emailAmc}
-                disabled={prefsBusy}
-                onChange={(event) => void togglePreference('emailAmc', event.target.checked)}
-              />
-              <Checkbox
-                label="Seasonal notes"
-                description="Occasional maintenance guidance and plan offers."
-                checked={overview.preferences.emailMarketing}
-                disabled={prefsBusy}
-                onChange={(event) => void togglePreference('emailMarketing', event.target.checked)}
-              />
-            </div>
-          </section>
+            <section className="border border-line bg-panel/20 p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                    Sites
+                  </h2>
+                  <p className="mt-1 text-[11px] text-fg-faint">
+                    Addresses the dispatch desk can send an engineer to.
+                  </p>
+                </div>
+                <Button size="sm" icon="plus" onClick={() => openSite()}>
+                  Add site
+                </Button>
+              </div>
+              {overview.sites.length === 0 ? (
+                <p className="mt-4 text-[12px] leading-relaxed text-fg-dim">
+                  No site is on file yet. Add the first address so a portal booking carries the
+                  right location.
+                </p>
+              ) : (
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  {overview.sites.map((site) => (
+                    <article key={site.id} className="border border-line bg-base/30 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm text-fg">{site.label}</p>
+                          {site.isPrimary ? <Badge tone="cold">Primary</Badge> : null}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <RecordViewButton
+                            label={`site ${site.label}`}
+                            onClick={() =>
+                              setDetail({
+                                title: site.label,
+                                subtitle: site.isPrimary
+                                  ? 'Primary service address'
+                                  : 'Service address',
+                                record: site as unknown as Record<string, unknown>,
+                                exclude: ['id'],
+                              })
+                            }
+                          />
+                          <button
+                            type="button"
+                            onClick={() => openSite(site)}
+                            className="font-mono text-[9px] uppercase text-cold hover:text-fg"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void removeSite(site)}
+                            className="font-mono text-[9px] uppercase text-fg-faint hover:text-danger"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                      <p className="mt-2 text-[11px] leading-relaxed text-fg-dim">{site.address}</p>
+                      <p className="text-[10px] text-fg-faint">
+                        {[site.city, site.region, site.postalCode].filter(Boolean).join(', ') ||
+                          'City not recorded'}
+                      </p>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="border border-line bg-panel/20 p-5">
+              <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                Notification preferences
+              </h2>
+              <p className="mt-1 text-[11px] text-fg-faint">
+                Operational messages about a live visit are always sent. These switches control
+                everything else.
+              </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <Checkbox
+                  label="Service updates"
+                  description="Booking confirmations, reschedule notices and completion reports."
+                  checked={overview.preferences.emailService}
+                  disabled={prefsBusy}
+                  onChange={(event) => void togglePreference('emailService', event.target.checked)}
+                />
+                <Checkbox
+                  label="Invoices and receipts"
+                  description="Issued invoices, payment receipts and reminders."
+                  checked={overview.preferences.emailBilling}
+                  disabled={prefsBusy}
+                  onChange={(event) => void togglePreference('emailBilling', event.target.checked)}
+                />
+                <Checkbox
+                  label="AMC and renewals"
+                  description="Visit schedule, renewal windows and contract documents."
+                  checked={overview.preferences.emailAmc}
+                  disabled={prefsBusy}
+                  onChange={(event) => void togglePreference('emailAmc', event.target.checked)}
+                />
+                <Checkbox
+                  label="Seasonal notes"
+                  description="Occasional maintenance guidance and plan offers."
+                  checked={overview.preferences.emailMarketing}
+                  disabled={prefsBusy}
+                  onChange={(event) =>
+                    void togglePreference('emailMarketing', event.target.checked)
+                  }
+                />
+              </div>
+            </section>
           </div>
         ) : null}
       </div>
@@ -1616,19 +2280,27 @@ export function PortalPage() {
         }
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setBookingOpen(false)}>Cancel</Button>
+            <Button variant="secondary" onClick={() => setBookingOpen(false)}>
+              Cancel
+            </Button>
             <Button type="submit" form="portal-booking-form" loading={bookingBusy}>
               {rebooking ? 'Request rebook' : 'Request visit'}
             </Button>
           </div>
         }
       >
-        <form id="portal-booking-form" className="grid gap-4 sm:grid-cols-2" onSubmit={(event) => void submitBooking(event)}>
+        <form
+          id="portal-booking-form"
+          className="grid gap-4 sm:grid-cols-2"
+          onSubmit={(event) => void submitBooking(event)}
+        >
           <Select
             label="Service"
             required
             value={bookingForm.serviceSlug}
-            onChange={(event) => setBookingForm({ ...bookingForm, serviceSlug: event.target.value })}
+            onChange={(event) =>
+              setBookingForm({ ...bookingForm, serviceSlug: event.target.value })
+            }
             options={services.map((service) => ({ value: service.id, label: service.name }))}
           />
           <Input
@@ -1637,13 +2309,23 @@ export function PortalPage() {
             required
             min={today()}
             value={bookingForm.scheduledAt}
-            onChange={(event) => setBookingForm({ ...bookingForm, scheduledAt: event.target.value })}
+            onChange={(event) =>
+              setBookingForm({ ...bookingForm, scheduledAt: event.target.value })
+            }
           />
           <Select
             label="Window"
             value={bookingForm.window}
-            onChange={(event) => setBookingForm({ ...bookingForm, window: event.target.value as AppointmentRecord['window'] })}
-            options={(['morning', 'afternoon', 'evening', 'emergency'] as const).map((entry) => ({ value: entry, label: serviceWindowLabel(entry) }))}
+            onChange={(event) =>
+              setBookingForm({
+                ...bookingForm,
+                window: event.target.value as AppointmentRecord['window'],
+              })
+            }
+            options={(['morning', 'afternoon', 'evening', 'emergency'] as const).map((entry) => ({
+              value: entry,
+              label: serviceWindowLabel(entry),
+            }))}
           />
           <Input label="Contact phone" value={customer.phone} readOnly />
           {overview && overview.sites.length ? (
@@ -1656,7 +2338,9 @@ export function PortalPage() {
                     ? bookingForm.address
                     : ''
                 }
-                onChange={(event) => setBookingForm({ ...bookingForm, address: event.target.value })}
+                onChange={(event) =>
+                  setBookingForm({ ...bookingForm, address: event.target.value })
+                }
                 options={overview.sites.map((site) => ({ value: site.address, label: site.label }))}
               />
             </div>
@@ -1709,7 +2393,9 @@ export function PortalPage() {
             required
             min={today()}
             value={rescheduleForm.scheduledAt}
-            onChange={(event) => setRescheduleForm({ ...rescheduleForm, scheduledAt: event.target.value })}
+            onChange={(event) =>
+              setRescheduleForm({ ...rescheduleForm, scheduledAt: event.target.value })
+            }
           />
           <Select
             label="Window"
@@ -1740,7 +2426,11 @@ export function PortalPage() {
           setChangeNote('')
         }}
         title={quoteOpen ? `Quotation ${quoteOpen.ref}` : 'Quotation'}
-        description={quoteOpen ? `${quoteOpen.title}${quoteOpen.service ? ` · ${quoteOpen.service}` : ''}` : undefined}
+        description={
+          quoteOpen
+            ? `${quoteOpen.title}${quoteOpen.service ? ` · ${quoteOpen.service}` : ''}`
+            : undefined
+        }
         size="lg"
         footer={
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1768,17 +2458,18 @@ export function PortalPage() {
               >
                 Close
               </Button>
-              {quoteOpen?.status === 'sent' ? (
+              {quoteOpen?.status === 'sent' || quoteOpen?.status === 'changes-requested' ? (
                 <>
-                  <Button
-                    variant="secondary"
-                    onClick={() => setChangeOpen((current) => !current)}
-                  >
-                    Request changes
+                  <Button variant="secondary" onClick={() => setChangeOpen((current) => !current)}>
+                    {quoteOpen?.status === 'changes-requested'
+                      ? 'Update request'
+                      : 'Request changes'}
                   </Button>
-                  <Button loading={quoteBusy} onClick={() => void acceptQuote(quoteOpen)}>
-                    Accept quotation
-                  </Button>
+                  {quoteOpen?.status === 'sent' ? (
+                    <Button loading={quoteBusy} onClick={() => void acceptQuote(quoteOpen)}>
+                      Accept quotation
+                    </Button>
+                  ) : null}
                 </>
               ) : null}
             </div>
@@ -1789,16 +2480,22 @@ export function PortalPage() {
           <div id="portal-invoice-print" className="flex flex-col gap-5">
             <div className="grid gap-3 border border-line bg-base/30 p-4 sm:grid-cols-2">
               <div>
-                <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-fg-faint">Prepared for</span>
+                <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-fg-faint">
+                  Prepared for
+                </span>
                 <p className="mt-1 text-[12px] text-fg">{customer?.name}</p>
                 <p className="text-[11px] text-fg-dim">{customer?.address}</p>
                 <p className="text-[11px] text-fg-dim">{customer?.email}</p>
               </div>
               <div className="sm:text-right">
                 <p className="text-[12px] text-fg">Quotation total</p>
-                <p className="font-display text-2xl text-fg">{formatMoneyExact(quoteOpen.totals.total)}</p>
+                <p className="font-display text-2xl text-fg">
+                  {formatMoneyExact(quoteOpen.totals.total)}
+                </p>
                 <p className="text-[10px] text-fg-faint">
-                  {quoteOpen.validUntil ? `Valid to ${formatDate(quoteOpen.validUntil)}` : 'No expiry stated'}
+                  {quoteOpen.validUntil
+                    ? `Valid to ${formatDate(quoteOpen.validUntil)}`
+                    : 'No expiry stated'}
                 </p>
               </div>
             </div>
@@ -1807,11 +2504,21 @@ export function PortalPage() {
                 <caption className="sr-only">Quotation lines</caption>
                 <thead>
                   <tr className="border-b border-line font-mono text-[9px] uppercase tracking-[0.08em] text-fg-faint">
-                    <th scope="col" className="p-3">Description</th>
-                    <th scope="col" className="p-3 text-right">Qty</th>
-                    <th scope="col" className="p-3 text-right">Rate</th>
-                    <th scope="col" className="p-3 text-right">Tax</th>
-                    <th scope="col" className="p-3 text-right">Amount</th>
+                    <th scope="col" className="p-3">
+                      Description
+                    </th>
+                    <th scope="col" className="p-3 text-right">
+                      Qty
+                    </th>
+                    <th scope="col" className="p-3 text-right">
+                      Rate
+                    </th>
+                    <th scope="col" className="p-3 text-right">
+                      Tax
+                    </th>
+                    <th scope="col" className="p-3 text-right">
+                      Amount
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
@@ -1819,29 +2526,56 @@ export function PortalPage() {
                     <tr key={line.id}>
                       <td className="p-3 text-[12px] text-fg">{line.description}</td>
                       <td className="p-3 text-right text-[11px] text-fg-dim">{line.quantity}</td>
-                      <td className="p-3 text-right text-[11px] text-fg-dim">{formatMoneyExact(line.unitPrice)}</td>
+                      <td className="p-3 text-right text-[11px] text-fg-dim">
+                        {formatMoneyExact(line.unitPrice)}
+                      </td>
                       <td className="p-3 text-right text-[11px] text-fg-dim">{line.taxPercent}%</td>
-                      <td className="p-3 text-right text-[12px] text-fg">{formatMoneyExact(line.quantity * line.unitPrice)}</td>
+                      <td className="p-3 text-right text-[12px] text-fg">
+                        {formatMoneyExact(line.quantity * line.unitPrice)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
             <dl className="ml-auto grid w-full max-w-[320px] gap-2 text-[12px]">
-              <div className="flex justify-between gap-4"><dt className="text-fg-faint">Subtotal</dt><dd className="text-fg">{formatMoneyExact(quoteOpen.totals.subtotal)}</dd></div>
-              {quoteOpen.totals.discount ? <div className="flex justify-between gap-4"><dt className="text-fg-faint">Discount</dt><dd className="text-fg">−{formatMoneyExact(quoteOpen.totals.discount)}</dd></div> : null}
-              <div className="flex justify-between gap-4"><dt className="text-fg-faint">Tax</dt><dd className="text-fg">{formatMoneyExact(quoteOpen.totals.taxTotal)}</dd></div>
-              <div className="flex justify-between gap-4 border-t border-line pt-2 font-medium"><dt className="text-fg">Total</dt><dd className="text-fg">{formatMoneyExact(quoteOpen.totals.total)}</dd></div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-fg-faint">Subtotal</dt>
+                <dd className="text-fg">{formatMoneyExact(quoteOpen.totals.subtotal)}</dd>
+              </div>
+              {quoteOpen.totals.discount ? (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-fg-faint">Discount</dt>
+                  <dd className="text-fg">−{formatMoneyExact(quoteOpen.totals.discount)}</dd>
+                </div>
+              ) : null}
+              <div className="flex justify-between gap-4">
+                <dt className="text-fg-faint">Tax</dt>
+                <dd className="text-fg">{formatMoneyExact(quoteOpen.totals.taxTotal)}</dd>
+              </div>
+              <div className="flex justify-between gap-4 border-t border-line pt-2 font-medium">
+                <dt className="text-fg">Total</dt>
+                <dd className="text-fg">{formatMoneyExact(quoteOpen.totals.total)}</dd>
+              </div>
             </dl>
-            {quoteOpen.notes ? <p className="border border-line bg-panel/30 p-3 text-[11px] leading-relaxed text-fg-dim">{quoteOpen.notes}</p> : null}
-            {quoteOpen.terms ? <p className="text-[10px] leading-relaxed text-fg-faint">{quoteOpen.terms}</p> : null}
+            {quoteOpen.notes ? (
+              <p className="border border-line bg-panel/30 p-3 text-[11px] leading-relaxed text-fg-dim">
+                {quoteOpen.notes}
+              </p>
+            ) : null}
+            {quoteOpen.terms ? (
+              <p className="text-[10px] leading-relaxed text-fg-faint">{quoteOpen.terms}</p>
+            ) : null}
             {quoteOpen.changeRequest ? (
               <p className="border border-warn/40 bg-warn/10 p-3 text-[11px] leading-relaxed text-fg-dim">
                 Change requested: {quoteOpen.changeRequest}
               </p>
             ) : null}
             {changeOpen ? (
-              <form className="border border-line bg-panel/30 p-4" onSubmit={(event) => void requestQuoteChanges(event)}>
+              <form
+                className="border border-line bg-panel/30 p-4"
+                onSubmit={(event) => void requestQuoteChanges(event)}
+              >
                 <Textarea
                   label="What should change?"
                   rows={3}
@@ -1850,7 +2584,12 @@ export function PortalPage() {
                   placeholder="e.g. remove the crane charge and quote a second indoor unit."
                 />
                 <div className="mt-3 flex justify-end gap-2">
-                  <Button type="button" variant="secondary" size="sm" onClick={() => setChangeOpen(false)}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setChangeOpen(false)}
+                  >
                     Cancel
                   </Button>
                   <Button type="submit" size="sm" loading={quoteBusy}>
@@ -1888,7 +2627,11 @@ export function PortalPage() {
           </div>
         }
       >
-        <form id="portal-site-form" className="grid gap-4 sm:grid-cols-2" onSubmit={(event) => void saveSite(event)}>
+        <form
+          id="portal-site-form"
+          className="grid gap-4 sm:grid-cols-2"
+          onSubmit={(event) => void saveSite(event)}
+        >
           <Input
             label="Site name"
             required
@@ -1947,7 +2690,11 @@ export function PortalPage() {
           </div>
         }
       >
-        <form id="portal-ticket-form" className="flex flex-col gap-4" onSubmit={(event) => void createTicket(event)}>
+        <form
+          id="portal-ticket-form"
+          className="flex flex-col gap-4"
+          onSubmit={(event) => void createTicket(event)}
+        >
           <Input
             label="Subject"
             required
@@ -2022,7 +2769,9 @@ export function PortalPage() {
                   <p className="font-mono text-[9px] uppercase tracking-[0.08em] text-fg-faint">
                     {message.authorName} · {formatDateTime(message.at)}
                   </p>
-                  <p className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-fg-dim">{message.body}</p>
+                  <p className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-fg-dim">
+                    {message.body}
+                  </p>
                 </li>
               ))}
             </ul>
@@ -2049,7 +2798,11 @@ export function PortalPage() {
         open={Boolean(invoice)}
         onClose={() => setInvoice(null)}
         title={invoice ? `Invoice ${invoice.ref}` : 'Invoice'}
-        description={invoice ? `${invoice.service || 'HVAC service'} · issued ${formatDate(invoice.issueDate)} · due ${formatDate(invoice.dueDate)}` : undefined}
+        description={
+          invoice
+            ? `${invoice.service || 'HVAC service'} · issued ${formatDate(invoice.issueDate)} · due ${formatDate(invoice.dueDate)}`
+            : undefined
+        }
         size="lg"
         footer={
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2078,15 +2831,24 @@ export function PortalPage() {
           <div id="portal-invoice-print" className="flex flex-col gap-5">
             <div className="grid gap-3 border border-line bg-base/30 p-4 sm:grid-cols-2">
               <div>
-                <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-fg-faint">Billed to</span>
+                <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-fg-faint">
+                  Billed to
+                </span>
                 <p className="mt-1 text-[12px] text-fg">{invoice.customerName}</p>
                 <p className="text-[11px] text-fg-dim">{invoice.customerAddress}</p>
-                <p className="text-[11px] text-fg-dim">{invoice.customerEmail} · {invoice.customerPhone}</p>
+                <p className="text-[11px] text-fg-dim">
+                  {invoice.customerEmail} · {invoice.customerPhone}
+                </p>
               </div>
               <div className="sm:text-right">
                 <p className="text-[12px] text-fg">Balance due</p>
-                <p className="font-display text-2xl text-fg">{formatMoneyExact(invoice.totals.balance)}</p>
-                <p className="text-[10px] text-fg-faint">Total {formatMoneyExact(invoice.totals.total)} · paid {formatMoneyExact(invoice.totals.paid)}</p>
+                <p className="font-display text-2xl text-fg">
+                  {formatMoneyExact(invoice.totals.balance)}
+                </p>
+                <p className="text-[10px] text-fg-faint">
+                  Total {formatMoneyExact(invoice.totals.total)} · paid{' '}
+                  {formatMoneyExact(invoice.totals.paid)}
+                </p>
               </div>
             </div>
             <div className="overflow-x-auto border border-line">
@@ -2094,11 +2856,21 @@ export function PortalPage() {
                 <caption className="sr-only">Invoice lines</caption>
                 <thead>
                   <tr className="border-b border-line font-mono text-[9px] uppercase tracking-[0.08em] text-fg-faint">
-                    <th scope="col" className="p-3">Description</th>
-                    <th scope="col" className="p-3 text-right">Qty</th>
-                    <th scope="col" className="p-3 text-right">Rate</th>
-                    <th scope="col" className="p-3 text-right">Tax</th>
-                    <th scope="col" className="p-3 text-right">Amount</th>
+                    <th scope="col" className="p-3">
+                      Description
+                    </th>
+                    <th scope="col" className="p-3 text-right">
+                      Qty
+                    </th>
+                    <th scope="col" className="p-3 text-right">
+                      Rate
+                    </th>
+                    <th scope="col" className="p-3 text-right">
+                      Tax
+                    </th>
+                    <th scope="col" className="p-3 text-right">
+                      Amount
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
@@ -2106,40 +2878,87 @@ export function PortalPage() {
                     <tr key={line.id}>
                       <td className="p-3 text-[12px] text-fg">{line.description}</td>
                       <td className="p-3 text-right text-[11px] text-fg-dim">{line.quantity}</td>
-                      <td className="p-3 text-right text-[11px] text-fg-dim">{formatMoneyExact(line.unitPrice)}</td>
+                      <td className="p-3 text-right text-[11px] text-fg-dim">
+                        {formatMoneyExact(line.unitPrice)}
+                      </td>
                       <td className="p-3 text-right text-[11px] text-fg-dim">{line.taxPercent}%</td>
-                      <td className="p-3 text-right text-[12px] text-fg">{formatMoneyExact(line.quantity * line.unitPrice)}</td>
+                      <td className="p-3 text-right text-[12px] text-fg">
+                        {formatMoneyExact(line.quantity * line.unitPrice)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
             <dl className="ml-auto grid w-full max-w-[320px] gap-2 text-[12px]">
-              <div className="flex justify-between gap-4"><dt className="text-fg-faint">Subtotal</dt><dd className="text-fg">{formatMoneyExact(invoice.totals.subtotal)}</dd></div>
-              {invoice.totals.discount ? <div className="flex justify-between gap-4"><dt className="text-fg-faint">Discount</dt><dd className="text-fg">−{formatMoneyExact(invoice.totals.discount)}</dd></div> : null}
-              <div className="flex justify-between gap-4"><dt className="text-fg-faint">Tax</dt><dd className="text-fg">{formatMoneyExact(invoice.totals.taxTotal)}</dd></div>
-              <div className="flex justify-between gap-4 border-t border-line pt-2"><dt className="text-fg">Total</dt><dd className="text-fg">{formatMoneyExact(invoice.totals.total)}</dd></div>
-              <div className="flex justify-between gap-4"><dt className="text-fg-faint">Paid</dt><dd className="text-fg">{formatMoneyExact(invoice.totals.paid)}</dd></div>
-              <div className="flex justify-between gap-4 border-t border-line pt-2 font-medium"><dt className="text-fg">Balance</dt><dd className="text-fg">{formatMoneyExact(invoice.totals.balance)}</dd></div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-fg-faint">Subtotal</dt>
+                <dd className="text-fg">{formatMoneyExact(invoice.totals.subtotal)}</dd>
+              </div>
+              {invoice.totals.discount ? (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-fg-faint">Discount</dt>
+                  <dd className="text-fg">−{formatMoneyExact(invoice.totals.discount)}</dd>
+                </div>
+              ) : null}
+              <div className="flex justify-between gap-4">
+                <dt className="text-fg-faint">Tax</dt>
+                <dd className="text-fg">{formatMoneyExact(invoice.totals.taxTotal)}</dd>
+              </div>
+              <div className="flex justify-between gap-4 border-t border-line pt-2">
+                <dt className="text-fg">Total</dt>
+                <dd className="text-fg">{formatMoneyExact(invoice.totals.total)}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-fg-faint">Paid</dt>
+                <dd className="text-fg">{formatMoneyExact(invoice.totals.paid)}</dd>
+              </div>
+              <div className="flex justify-between gap-4 border-t border-line pt-2 font-medium">
+                <dt className="text-fg">Balance</dt>
+                <dd className="text-fg">{formatMoneyExact(invoice.totals.balance)}</dd>
+              </div>
             </dl>
             {invoice.payments.length ? (
               <div>
-                <h3 className="font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint">Payments received</h3>
+                <h3 className="font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint">
+                  Payments received
+                </h3>
                 <ul className="mt-2 divide-y divide-line border border-line">
                   {invoice.payments.map((payment) => (
-                    <li key={payment.id} className="flex flex-wrap justify-between gap-3 p-3 text-[11px]">
-                      <span className="text-fg">{formatDate(payment.receivedAt)} · {payment.method}{payment.reference ? ` · ${payment.reference}` : ''}</span>
+                    <li
+                      key={payment.id}
+                      className="flex flex-wrap justify-between gap-3 p-3 text-[11px]"
+                    >
+                      <span className="text-fg">
+                        {formatDate(payment.receivedAt)} · {payment.method}
+                        {payment.reference ? ` · ${payment.reference}` : ''}
+                      </span>
                       <span className="text-fg">{formatMoneyExact(payment.amount)}</span>
                     </li>
                   ))}
                 </ul>
               </div>
             ) : null}
-            {invoice.notes ? <p className="border border-line bg-panel/30 p-3 text-[11px] leading-relaxed text-fg-dim">{invoice.notes}</p> : null}
-            {invoice.terms ? <p className="text-[10px] leading-relaxed text-fg-faint">{invoice.terms}</p> : null}
+            {invoice.notes ? (
+              <p className="border border-line bg-panel/30 p-3 text-[11px] leading-relaxed text-fg-dim">
+                {invoice.notes}
+              </p>
+            ) : null}
+            {invoice.terms ? (
+              <p className="text-[10px] leading-relaxed text-fg-faint">{invoice.terms}</p>
+            ) : null}
           </div>
         ) : null}
       </Modal>
+
+      <RecordDrawer
+        open={Boolean(detail)}
+        onClose={() => setDetail(null)}
+        title={detail?.title ?? 'Record'}
+        subtitle={detail?.subtitle}
+        record={detail?.record ?? null}
+        exclude={detail?.exclude}
+      />
     </section>
   )
 }

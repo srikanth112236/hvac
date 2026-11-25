@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useLiveRefresh } from '@/admin/useLiveRefresh'
 import { Icon } from '@/components/icons'
-import { Badge, Table, type Column } from '@/components/ui'
+import { Badge, RecordDrawer, Table, type Column } from '@/components/ui'
 import { adminApi, type AdminMetrics } from '@/admin/api'
 import { InvoiceStateBadge } from '@/admin/invoice-ui'
 import {
@@ -22,6 +22,7 @@ type LeadRow = AdminMetrics['recentLeads'][number] & { id: string }
 export function AdminOverview() {
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null)
   const [error, setError] = useState('')
+  const [viewingLead, setViewingLead] = useState<LeadRow | null>(null)
 
   const load = useCallback(() => {
     adminApi
@@ -298,6 +299,8 @@ export function AdminOverview() {
                 rows={metrics.recentLeads.map((lead) => ({ ...lead, id: lead.ref }))}
                 dense
                 className="border-0"
+                onRowView={setViewingLead}
+                viewLabel={(row) => row.name}
               />
             </Panel>
 
@@ -367,6 +370,25 @@ export function AdminOverview() {
           </Panel>
         </>
       )}
+
+      <RecordDrawer
+        open={Boolean(viewingLead)}
+        onClose={() => setViewingLead(null)}
+        title={viewingLead?.name ?? 'Lead'}
+        subtitle={viewingLead?.ref}
+        record={viewingLead as unknown as Record<string, unknown> | null}
+        exclude={['id']}
+        actions={
+          viewingLead ? (
+            <Link
+              to="/admin/leads"
+              className="flex h-9 items-center border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:border-cold/50 hover:text-cold"
+            >
+              Open lead board
+            </Link>
+          ) : undefined
+        }
+      />
     </div>
   )
 }

@@ -1,6 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { contactEnquirySchema, type LeadRecord, type LeadSource } from '@hvac/shared'
+import {
+  contactEnquirySchema,
+  type LeadAttachment,
+  type LeadRecord,
+  type LeadSource,
+} from '@hvac/shared'
 import { Icon } from '@/components/icons'
 import { Button, Input, Radio, Select, Textarea, useToast } from '@/components/ui'
 import { useBrand } from '@/brand/BrandProvider'
@@ -41,8 +46,7 @@ export function EnquiryForm({
 
   const requested = searchParams.get('service') ?? ''
   const resolvedService =
-    lockedServiceId ??
-    (liveServices.some((service) => service.id === requested) ? requested : '')
+    lockedServiceId ?? (liveServices.some((service) => service.id === requested) ? requested : '')
 
   const [serviceId, setServiceId] = useState(resolvedService)
   const [name, setName] = useState('')
@@ -56,6 +60,7 @@ export function EnquiryForm({
   const [receipt, setReceipt] = useState<LeadRecord | null>(null)
   const [pending, setPending] = useState(false)
   const [submitError, setSubmitError] = useState('')
+  const [attachments, setAttachments] = useState<File[]>([])
 
   useEffect(() => {
     setServiceId(resolvedService)
@@ -111,6 +116,20 @@ export function EnquiryForm({
     setErrors({})
     setPending(true)
     try {
+      let uploaded: LeadAttachment[] | undefined
+      if (attachments.length) {
+        const body = new FormData()
+        for (const file of attachments) body.append('files', file)
+        const response = await fetch('/api/v1/leads/attachments', { method: 'POST', body })
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as {
+            error?: { message?: string }
+          } | null
+          throw new Error(payload?.error?.message ?? 'Attachments could not be uploaded.')
+        }
+        const payload = (await response.json()) as { data: LeadAttachment[] }
+        uploaded = payload.data
+      }
       const lead = await submitEnquiry({
         ...parsed.data,
         source,
@@ -118,6 +137,7 @@ export function EnquiryForm({
         context,
         plan,
         honeypot,
+        attachments: uploaded,
       })
       setReceipt(lead)
       toast({
@@ -146,10 +166,14 @@ export function EnquiryForm({
     setErrors({})
     setSubmitError('')
     setHoneypot('')
+    setAttachments([])
   }
 
   return (
-    <div id="enquire" className="marks scroll-mt-[calc(var(--header-h)+24px)] border border-line bg-panel/60 p-6 md:p-7">
+    <div
+      id="enquire"
+      className="marks scroll-mt-[calc(var(--header-h)+24px)] border border-line bg-panel/60 p-6 md:p-7"
+    >
       <div className="flex items-center justify-between gap-3">
         <span className="annot">Enquiry · 01</span>
         <span className="t-num text-[10px] text-fg-faint">CV/ENQ</span>
@@ -159,9 +183,7 @@ export function EnquiryForm({
         <div className="mt-5 flex flex-col gap-4" aria-live="polite">
           <div className="flex items-center gap-2 text-success">
             <Icon name="check" size={16} />
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em]">
-              Lead captured
-            </span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.14em]">Lead captured</span>
           </div>
 
           <p className="t-num text-h3 text-fg">{receipt.ref}</p>
@@ -230,7 +252,10 @@ export function EnquiryForm({
           <div className="rule-ticks mt-5" />
 
           <form onSubmit={onSubmit} noValidate className="mt-5 flex flex-col gap-4">
-            <div aria-hidden="true" className="absolute left-[-9999px] top-auto h-px w-px overflow-hidden">
+            <div
+              aria-hidden="true"
+              className="absolute left-[-9999px] top-auto h-px w-px overflow-hidden"
+            >
               <label htmlFor="enquiry-company-website">Company website</label>
               <input
                 id="enquiry-company-website"
@@ -292,9 +317,7 @@ export function EnquiryForm({
                     Service
                   </span>
                   <div className="flex h-[var(--btn-h-md)] items-center justify-between gap-3 border border-cold/40 bg-cold/[0.06] px-3.5">
-                    <span className="truncate text-[13px] text-fg">
-                      {nameFor(lockedServiceId)}
-                    </span>
+                    <span className="truncate text-[13px] text-fg">{nameFor(lockedServiceId)}</span>
                     <Icon name="check" size={13} className="shrink-0 text-cold" />
                   </div>
                   {plan ? (
@@ -335,6 +358,68 @@ export function EnquiryForm({
                 clearError('message')
               }}
             />
+
+            <div className="border border-line bg-base/30 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label
+                  htmlFor="enquiry-attachments"
+                  className="cursor-pointer font-mono text-[10px] uppercase tracking-[0.1em] text-cold hover:text-fg"
+                >
+                  Attach drawings or photos
+                </label>
+                <span className="font-mono text-[8px] uppercase tracking-[0.08em] text-fg-faint">
+                  Up to 3 files · 8 MB each · PDF or image
+                </span>
+              </div>
+              <input
+                id="enquiry-attachments"
+                type="file"
+                multiple
+                accept=".pdf,application/pdf,image/jpeg,image/png,image/webp,image/gif,image/avif"
+                className="sr-only"
+                onChange={(event) => {
+                  const picked = Array.from(event.target.files ?? [])
+                  if (picked.length > 3) {
+                    setSubmitError('Attach up to 3 files.')
+                    event.target.value = ''
+                    return
+                  }
+                  if (picked.some((file) => file.size > 8 * 1024 * 1024)) {
+                    setSubmitError('Each attachment must be 8 MB or smaller.')
+                    event.target.value = ''
+                    return
+                  }
+                  setSubmitError('')
+                  setAttachments(picked)
+                }}
+              />
+              {attachments.length ? (
+                <ul className="mt-2 flex flex-col gap-1">
+                  {attachments.map((file) => (
+                    <li
+                      key={`${file.name}:${file.size}`}
+                      className="flex items-center justify-between gap-2 border-t border-line/70 pt-1 text-[10px] text-fg-dim first:border-0 first:pt-0"
+                    >
+                      <span className="truncate">{file.name}</span>
+                      <button
+                        type="button"
+                        className="text-fg-faint hover:text-danger"
+                        aria-label={`Remove ${file.name}`}
+                        onClick={() =>
+                          setAttachments((current) => current.filter((entry) => entry !== file))
+                        }
+                      >
+                        <Icon name="close" size={10} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-1 text-[10px] text-fg-faint">
+                  Optional. The brief can be sent first; the desk can request more detail.
+                </p>
+              )}
+            </div>
 
             <fieldset className="flex flex-col gap-2">
               <legend className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
@@ -393,12 +478,19 @@ export function EnquiryForm({
               </p>
             ) : null}
 
-            <Button type="submit" size="lg" full icon={pending ? 'clock' : 'arrow-right'} disabled={pending}>
+            <Button
+              type="submit"
+              size="lg"
+              full
+              icon={pending ? 'clock' : 'arrow-right'}
+              disabled={pending}
+            >
               {pending ? 'Logging lead…' : 'Send enquiry'}
             </Button>
 
             <p className="font-mono text-[9px] uppercase leading-relaxed tracking-[0.1em] text-fg-faint">
-              Routed with its service · reply from {brand.contact.email} · cash, cheque or card on site
+              Routed with its service · reply from {brand.contact.email} · cash, cheque or card on
+              site
             </p>
           </form>
         </>

@@ -14,6 +14,16 @@ type Urgency = 'normal' | 'emergency'
 /*  Editable public content                                                    */
 /* -------------------------------------------------------------------------- */
 
+export const SERVICE_CALCULATOR_VALUES = [
+  'tonnage',
+  'vrf',
+  'chiller',
+  'duct',
+  'cold-room',
+  'amc',
+] as const
+export type ServiceCalculatorKind = (typeof SERVICE_CALCULATOR_VALUES)[number]
+
 export interface SiteServiceOverride {
   id: string
   index: string
@@ -29,6 +39,7 @@ export interface SiteServiceOverride {
   warranty: string
   published: boolean
   icon?: string
+  calculator?: ServiceCalculatorKind
   /** Detail-page overrides. Omitted values fall back to the compiled page. */
   priceBasis?: string
   includes?: string[]
@@ -36,6 +47,10 @@ export interface SiteServiceOverride {
   site?: string[]
   priceFactors?: string[]
   standards?: string[]
+  /** Service ids shown in the Nearby block. */
+  related?: string[]
+  /** Work-case id shown beside the Nearby block. */
+  projectId?: string
   specs?: Array<{ label: string; value: string }>
   selection?: Array<{ title: string; body: string }>
   steps?: Array<{ title: string; body: string }>
@@ -494,12 +509,16 @@ const serviceSchema = z.object({
   startingFrom: trimmed(40),
   warranty: trimmed(160),
   published: z.boolean(),
+  icon: trimmed(40).optional(),
+  calculator: z.enum(SERVICE_CALCULATOR_VALUES).optional(),
   priceBasis: trimmed(160).optional(),
   includes: z.array(trimmed(300)).max(40).optional(),
   excludes: z.array(trimmed(300)).max(40).optional(),
   site: z.array(trimmed(300)).max(30).optional(),
   priceFactors: z.array(trimmed(300)).max(30).optional(),
   standards: z.array(trimmed(120)).max(20).optional(),
+  related: z.array(trimmed(80)).max(30).optional(),
+  projectId: trimmed(80).optional(),
   specs: z
     .array(z.object({ label: trimmed(80), value: trimmed(240) }))
     .max(30)
@@ -1012,6 +1031,13 @@ export interface LeadNote {
   body: string
 }
 
+export interface LeadAttachment {
+  name: string
+  url: string
+  mimeType: string
+  size: number
+}
+
 /** LeadRecord is extended by the admin pipeline without changing public posts. */
 export interface AdminLead extends Record<string, unknown> {
   ref: string
@@ -1033,6 +1059,7 @@ export interface AdminLead extends Record<string, unknown> {
   value: number | null
   followUpAt: string | null
   notes: LeadNote[]
+  attachments?: LeadAttachment[]
 }
 
 export const leadPatchSchema = z.object({

@@ -29,8 +29,15 @@ rollback path. It is not the default and should not receive new features.
   draft state, validation, conflict handling and publishing.
 - `apps/web/src/admin/ContentThemeTab.tsx` edits logo, favicon, share image,
   palette, button tokens and a live preview.
-- Single pages use `PageStudio` in page mode. Collections reuse the existing
-  specialised editors so every field still has a bespoke control.
+- Single pages use `PageStudio` in page mode. Multi-page collections show every
+  record as a card first; opening a card enters that record's focused editor.
+- Collection editors expose every persisted field: service icon, calculator,
+  nearby services and related case file, work-case image/evidence/metrics,
+  system image/specs/tags, legal sections and publication state, plan
+  pricing/inclusions, and so on.
+- Opening a service card enters that service's full-width editor only. The
+  public `/services/{id}` page is linked from the editor, and
+  `/admin/content?service={id}` deep-links directly to the selected service.
 - The document model remains `SiteContent` in `packages/shared/src/site.ts`.
   There is no second content model to keep in sync.
 

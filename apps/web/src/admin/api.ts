@@ -48,6 +48,11 @@ import type {
   NewsletterRecord,
   NewsletterSummary,
   NewsletterAudienceFeed,
+  NotificationCategory,
+  NotificationFeed,
+  NotificationPreferences,
+  NotificationPreferencesPatch,
+  NotificationView,
   SupportTicket,
   TeamMember,
   TeamMemberInput,
@@ -342,6 +347,10 @@ export const adminApi = {
       data: AdminLead[]
       meta: { count: number; total: number; page: number; pageSize: number; pages: number }
     }>(`/admin/leads${query}`),
+  lead: (ref: string) =>
+    request<{ data: AdminLead }>(`/admin/leads/${encodeURIComponent(ref)}`).then(
+      (payload) => payload.data,
+    ),
   patchLead: (
     ref: string,
     patch: {
@@ -568,6 +577,11 @@ export const adminApi = {
       method: 'POST',
       body: JSON.stringify(input),
     }).then((payload) => payload.data),
+  patchCustomerPreferences: (id: string, input: NotificationPreferencesPatch) =>
+    request<{ data: NotificationPreferences }>(
+      `/admin/customers/${encodeURIComponent(id)}/preferences`,
+      { method: 'PATCH', body: JSON.stringify(input) },
+    ),
   patchCustomer: (id: string, input: CustomerAdminPatchInput | CustomerStatus) =>
     request<{ data: CustomerAccountWithStats }>(`/admin/customers/${encodeURIComponent(id)}`, {
       method: 'PATCH',
@@ -702,6 +716,10 @@ export const adminApi = {
         byStatus: Record<string, number>
       }
     }>(`/admin/jobs${query}`),
+  job: (id: string) =>
+    request<{ data: JobRecord }>(`/admin/jobs/${encodeURIComponent(id)}`).then(
+      (payload) => payload.data,
+    ),
   createJob: (input: JobInput) =>
     request<{ data: JobRecord }>('/admin/jobs', {
       method: 'POST',
@@ -813,5 +831,31 @@ export const adminApi = {
     request<{ data: AppointmentRecord }>(`/admin/appointments/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),
+    }).then((payload) => payload.data),
+
+  notifications: (
+    params: {
+      category?: NotificationCategory | 'all'
+      state?: 'all' | 'unread' | 'read'
+      q?: string
+      limit?: number
+    } = {},
+  ) => {
+    const query = new URLSearchParams()
+    if (params.category && params.category !== 'all') query.set('category', params.category)
+    if (params.state && params.state !== 'all') query.set('state', params.state)
+    if (params.q) query.set('q', params.q)
+    if (params.limit) query.set('limit', String(params.limit))
+    return request<{ data: NotificationFeed }>(
+      `/admin/notifications${query.toString() ? `?${query}` : ''}`,
+    ).then((payload) => payload.data)
+  },
+  markNotificationRead: (id: string) =>
+    request<{ data: NotificationView }>(`/admin/notifications/${encodeURIComponent(id)}/read`, {
+      method: 'POST',
+    }).then((payload) => payload.data),
+  markAllNotificationsRead: () =>
+    request<{ data: NotificationFeed }>('/admin/notifications/read-all', {
+      method: 'POST',
     }).then((payload) => payload.data),
 }

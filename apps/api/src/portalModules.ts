@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto'
+import { mkdir, writeFile } from 'node:fs/promises'
+import path from 'node:path'
 import { Router } from 'express'
+import multer from 'multer'
 import {
   amcInputSchema,
   amcPatchSchema,
@@ -44,6 +47,7 @@ import {
 } from './mailer.js'
 import { removeNewsletterSignup } from './newsletterSignups.js'
 import { streamQuotationPdf } from './pdf.js'
+import { UPLOAD_ROOT, detectImage, safeOriginalName } from './media.js'
 import { appointmentStore } from './portal.js'
 import {
   customerStore,
@@ -512,6 +516,15 @@ portalFileRouter.post(
       res.status(404).json({ error: { code: 'not_found', message: 'Contract not found.' } })
       return
     }
+    if (contract.renewalRequestedAt) {
+      res.status(409).json({
+        error: {
+          code: 'renewal_exists',
+          message: 'A renewal request for this contract is already open with the works desk.',
+        },
+      })
+      return
+    }
     const customer = res.locals.customer as { name: string; email: string }
     const now = nowIso()
     let ticket: SupportTicket | undefined
@@ -574,6 +587,119 @@ portalFileRouter.post(
 )
 
 /* Reports */
+const reportUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024, files: 6 },
+})
+
+portalFileRouter.post(
+  '/portal/reports/:id/photos',
+  requireCustomer,
+  requireCustomerMutation,
+  reportUpload.array('files', 6),
+  async (req, res) => {
+    const id = customerId(res)
+    const reports = await reportStore.read()
+    const report = reports.find(
+      (entry) =>
+        (entry.id === req.params.id || entry.ref === req.params.id) && entry.customerId === id,
+    )
+    if (!report) {
+      res.status(404).json({ error: { code: 'not_found', message: 'Report not found.' } })
+      return
+    }
+    const files = (req.files ?? []) as Express.Multer.File[]
+    if (!files.length) {
+      res.status(400).json({ error: { code: 'no_files', message: 'Choose at least one photo.' } })
+      return
+    }
+    const detected = files.map((file) => ({ file, image: detectImage(file.buffer) }))
+    if (detected.some((entry) => !entry.image)) {
+      res.status(400).json({
+        error: {
+          code: 'invalid_image',
+          message: 'Only JPEG, PNG, WebP, GIF or AVIF images are accepted.',
+        },
+      })
+      return
+    }
+    const directory = path.join(UPLOAD_ROOT, 'reports')
+    await mkdir(directory, { recursive: true })
+    const photos: JobReport['photos'] = []
+    for (const entry of detected) {
+      const image = entry.image
+      if (!image) continue
+      const filename = `${Date.now()}-${randomUUID().slice(0, 8)}${image.extension}`
+      await writeFile(path.join(directory, filename), entry.file.buffer)
+      photos.push({
+        id: randomUUID(),
+        url: `/uploads/reports/${filename}`,
+        alt:
+          safeOriginalName(entry.file.originalname)
+            .replace(/\.[^.]+$/, '')
+            .replace(/[-_]+/g, ' ') || 'Customer photo',
+      })
+    }
+    let updated: JobReport | undefined
+    await reportStore.mutate((current) =>
+      current.map((entry) => {
+        if (entry.id !== report.id) return entry
+        updated = { ...entry, photos: [...entry.photos, ...photos], updatedAt: nowIso() }
+        return updated
+      }),
+    )
+    res.status(201).json({ data: updated })
+  },
+)
+
+portalFileRouter.patch(
+  '/portal/reports/:id/checklist',
+  requireCustomer,
+  requireCustomerMutation,
+  async (req, res) => {
+    const id = customerId(res)
+    const updates = Array.isArray(req.body?.checklist) ? req.body.checklist : null
+    if (!updates) {
+      res
+        .status(400)
+        .json({ error: { code: 'validation_error', message: 'Checklist updates are required.' } })
+      return
+    }
+    const report = (await reportStore.read()).find(
+      (entry) =>
+        (entry.id === req.params.id || entry.ref === req.params.id) && entry.customerId === id,
+    )
+    if (!report) {
+      res.status(404).json({ error: { code: 'not_found', message: 'Report not found.' } })
+      return
+    }
+    const byId = new Map<string, boolean>(
+      updates
+        .filter((entry: unknown): entry is { id: string; done: boolean } => {
+          if (!entry || typeof entry !== 'object') return false
+          const value = entry as { id?: unknown; done?: unknown }
+          return typeof value.id === 'string' && typeof value.done === 'boolean'
+        })
+        .map((entry: { id: string; done: boolean }): [string, boolean] => [entry.id, entry.done]),
+    )
+    let updated: JobReport | undefined
+    await reportStore.mutate((current) =>
+      current.map((entry) => {
+        if (entry.id !== report.id) return entry
+        updated = {
+          ...entry,
+          checklist: entry.checklist.map((item) =>
+            byId.has(item.id) ? { ...item, done: byId.get(item.id) ?? item.done } : item,
+          ),
+          updatedAt: nowIso(),
+        }
+        return updated
+      }),
+    )
+    res.json({ data: updated })
+  },
+)
+
 portalFileRouter.get('/portal/reports', requireCustomer, async (_req, res) => {
   const reports = await reportStore.read()
   res.json({
@@ -1290,9 +1416,13 @@ portalAdminRouter.patch('/customers/:id/quotations/:quotationId', async (req, re
           ? parsed.data.lines.map((line) => ({ ...line, id: line.id ?? randomUUID() }))
           : quotation.lines,
         sentAt:
-          (parsed.data.status ?? quotation.status) === 'sent' && !quotation.sentAt
+          (parsed.data.status ?? quotation.status) === 'sent' && quotation.status !== 'sent'
             ? nowIso()
             : quotation.sentAt,
+        acceptedAt:
+          (parsed.data.status ?? quotation.status) === 'sent' ? null : quotation.acceptedAt,
+        changeRequest:
+          (parsed.data.status ?? quotation.status) === 'sent' ? null : quotation.changeRequest,
         updatedAt: nowIso(),
       }
       if (quotation.status !== 'sent' && saved.status === 'sent') notifyCustomer = saved
@@ -1511,6 +1641,32 @@ portalAdminRouter.delete('/customers/:id/reports/:reportId', async (req, res) =>
 })
 
 /* Tickets */
+portalAdminRouter.patch('/customers/:id/preferences', async (req, res) => {
+  const parsed = notificationPreferencesPatchSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res
+      .status(400)
+      .json({ error: { code: 'validation_error', message: 'Check the preference values.' } })
+    return
+  }
+  const customer = await findCustomer(req.params.id)
+  if (!customer) {
+    res.status(404).json({ error: { code: 'not_found', message: 'Customer not found.' } })
+    return
+  }
+  let updated = null
+  await preferenceStore.mutate((all) => {
+    updated = {
+      ...(all[customer.id] ?? defaultPreferences(customer.id)),
+      ...parsed.data,
+      customerId: customer.id,
+      updatedAt: nowIso(),
+    }
+    return { ...all, [customer.id]: updated }
+  })
+  res.json({ data: updated })
+})
+
 portalAdminRouter.get('/support-tickets', async (_req, res) => {
   const tickets = await ticketStore.read()
   res.json({ data: [...tickets].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)) })

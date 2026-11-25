@@ -1,14 +1,18 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useLiveRefresh } from '@/admin/useLiveRefresh'
-import { Icon } from '@/components/icons'
+import { useRecordDeepLink } from '@/admin/useDeepLink'
 import {
   Button,
   ButtonAnchor,
   EmptyState,
   Input,
   Modal,
+  RecordDrawer,
+  SearchSuggest,
   Select,
   Table,
+  TableActionButton,
+  TableActions,
   Textarea,
   useToast,
   type Column,
@@ -42,6 +46,7 @@ export function AdminExpenses() {
   const [error, setError] = useState('')
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<ExpenseRecord | null>(null)
+  const [viewing, setViewing] = useState<ExpenseRecord | null>(null)
   const [busy, setBusy] = useState(false)
   const [filter, setFilter] = useState('all')
   const [period, setPeriod] = useState<'all' | 'this' | 'last'>('all')
@@ -88,6 +93,26 @@ export function AdminExpenses() {
       return true
     })
   }, [expenses, filter, method, period, search, monthKeys])
+
+  const suggestions = useMemo(
+    () =>
+      expenses.map((expense) => ({
+        id: expense.id,
+        label: expense.description,
+        value: expense.description,
+        description: `${expense.vendor || 'No vendor'} · ${formatDate(expense.date)} · ${formatMoney(expense.amount)}`,
+        meta: EXPENSE_CATEGORY_LABELS[expense.category] ?? expense.category,
+        keywords: `${expense.vendor} ${expense.reference} ${expense.notes}`,
+      })),
+    [expenses],
+  )
+
+  useRecordDeepLink({
+    param: 'open',
+    records: expenses,
+    resolve: (value) => expenses.find((expense) => expense.id === value),
+    onOpen: setViewing,
+  })
 
   const filteredTotal = filtered.reduce((sum, expense) => sum + expense.amount, 0)
   const thisMonthTotal = expenses
@@ -189,26 +214,23 @@ export function AdminExpenses() {
       header: '',
       align: 'right',
       render: (row) => (
-        <div className="flex items-center justify-end gap-1">
-          <button
-            type="button"
+        <TableActions>
+          <TableActionButton
+            label={`Edit ${row.description}`}
+            icon="edit"
+            tone="cold"
             onClick={() => {
               setEditing(row)
               setOpen(true)
             }}
-            className="flex h-7 items-center border border-line px-2 font-mono text-[8px] uppercase tracking-[0.06em] text-fg-dim hover:border-cold/40 hover:text-cold"
-          >
-            Edit
-          </button>
-          <button
-            type="button"
+          />
+          <TableActionButton
+            label={`Delete ${row.description}`}
+            icon="close"
+            tone="danger"
             onClick={() => void remove(row)}
-            aria-label={`Delete ${row.description}`}
-            className="flex h-7 w-7 items-center justify-center border border-line text-fg-faint hover:border-danger/40 hover:text-danger"
-          >
-            <Icon name="close" size={10} />
-          </button>
-        </div>
+          />
+        </TableActions>
       ),
     },
   ]
@@ -284,11 +306,18 @@ export function AdminExpenses() {
           ]}
         />
         <div className="flex items-end">
-          <Input
+          <SearchSuggest
             label="Search"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={setSearch}
+            suggestions={suggestions}
+            onSelect={(suggestion) => {
+              setSearch(suggestion.label)
+              const expense = expenses.find((entry) => entry.id === suggestion.id)
+              if (expense) setViewing(expense)
+            }}
             placeholder="Vendor, description, reference"
+            emptyMessage="No expense matches that vendor or reference."
           />
         </div>
       </div>
@@ -389,7 +418,13 @@ export function AdminExpenses() {
           }
         />
       ) : (
-        <Table columns={columns} rows={filtered} caption="Expenses" />
+        <Table
+          columns={columns}
+          rows={filtered}
+          caption="Expenses"
+          onRowView={setViewing}
+          viewLabel={(row) => row.description}
+        />
       )}
 
       <Modal
@@ -412,6 +447,33 @@ export function AdminExpenses() {
           }}
         />
       </Modal>
+
+      <RecordDrawer
+        open={Boolean(viewing)}
+        onClose={() => setViewing(null)}
+        title={viewing?.description ?? 'Expense'}
+        subtitle={
+          viewing
+            ? `${EXPENSE_CATEGORY_LABELS[viewing.category] ?? viewing.category} · ${formatDate(viewing.date)}`
+            : undefined
+        }
+        record={viewing as unknown as Record<string, unknown> | null}
+        exclude={['id']}
+        actions={
+          viewing ? (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setEditing(viewing)
+                setViewing(null)
+                setOpen(true)
+              }}
+            >
+              Edit expense
+            </Button>
+          ) : undefined
+        }
+      />
     </div>
   )
 }

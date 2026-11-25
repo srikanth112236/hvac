@@ -124,6 +124,37 @@ const glyphs = {
       <path d="M12 17h.01" />
     </>
   ),
+  eye: (
+    <>
+      <path d="M2.5 12s3.5-6.2 9.5-6.2 9.5 6.2 9.5 6.2-3.5 6.2-9.5 6.2S2.5 12 2.5 12Z" />
+      <circle cx="12" cy="12" r="2.6" />
+    </>
+  ),
+  bell: (
+    <>
+      <path d="M18 9.5a6 6 0 0 0-12 0c0 5-2 6.5-2 6.5h16s-2-1.5-2-6.5" />
+      <path d="M10 19a2.2 2.2 0 0 0 4 0" />
+    </>
+  ),
+  printer: (
+    <>
+      <path d="M7 8V3h10v5" />
+      <path d="M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+      <path d="M7 14h10v7H7z" />
+    </>
+  ),
+  lock: (
+    <>
+      <rect x="5" y="10" width="14" height="10" rx="1" />
+      <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+    </>
+  ),
+  edit: (
+    <>
+      <path d="M4 20h4L19 9l-4-4L4 16v4Z" />
+      <path d="m13.5 6.5 4 4" />
+    </>
+  ),
 
   /* --- thermal ------------------------------------------------------------ */
   snowflake: (
@@ -296,14 +327,7 @@ interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'name'> {
   title?: string
 }
 
-export function Icon({
-  name,
-  size = 20,
-  strokeWidth = 1.5,
-  title,
-  className,
-  ...rest
-}: IconProps) {
+export function Icon({ name, size = 20, strokeWidth = 1.5, title, className, ...rest }: IconProps) {
   return (
     <svg
       viewBox="0 0 24 24"

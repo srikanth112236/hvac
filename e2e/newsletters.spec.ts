@@ -16,12 +16,18 @@ test('newsletter platform shows all campaigns, suppression and advanced schedule
   await expect(page.getByRole('heading', { name: 'Suppression list' })).toBeVisible()
   await page.getByRole('button', { name: 'Close', exact: true }).click()
 
-  await page.getByRole('button', { name: 'Schedule', exact: true }).first().click()
+  await page
+    .getByRole('button', { name: /^Schedule / })
+    .first()
+    .click()
   await expect(page.getByRole('heading', { name: 'Schedule campaign' })).toBeVisible()
   await expect(page.getByText('Send schedule')).toBeVisible()
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
 
-  await page.getByRole('button', { name: 'Open', exact: true }).first().click()
+  await page
+    .getByRole('button', { name: /^Open / })
+    .first()
+    .click()
   await expect(page.getByLabel('Per minute')).toBeVisible()
   await expect(page.getByLabel('Per hour')).toBeVisible()
   await expect(page.getByLabel('Per day')).toBeVisible()

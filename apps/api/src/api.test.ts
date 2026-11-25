@@ -199,7 +199,9 @@ describe('lead → invoice → customer portal', () => {
       })
       .expect(201)
     expect(walkIn.body.data.status).toBe('active')
-    const updatedWalkIn = await adminHeaders(admin.patch(`/api/v1/admin/customers/${walkIn.body.data.id}`))
+    const updatedWalkIn = await adminHeaders(
+      admin.patch(`/api/v1/admin/customers/${walkIn.body.data.id}`),
+    )
       .send({ phone: '2145550199', name: 'Walk In Updated' })
       .expect(200)
     expect(updatedWalkIn.body.data.phone).toBe('2145550199')
@@ -296,9 +298,7 @@ describe('lead → invoice → customer portal', () => {
       })
       .expect(201)
     expect(globalQuote.body.data.leadRef).toBe(lead.body.data.ref)
-    const quotationList = await admin
-      .get('/api/v1/admin/quotations?q=Global')
-      .expect(200)
+    const quotationList = await admin.get('/api/v1/admin/quotations?q=Global').expect(200)
     expect(
       quotationList.body.data.some(
         (entry: { id: string }) => entry.id === globalQuote.body.data.id,
@@ -417,11 +417,105 @@ describe('lead → invoice → customer portal', () => {
       .set('X-Customer-Request', '1')
       .expect(200)
 
+    const reissueCreated = await adminHeaders(admin.post('/api/v1/admin/quotations'))
+      .send({
+        customerId: customer.id,
+        title: 'Reissue loop quote',
+        service: 'VRF / VRV design & installation',
+        status: 'sent',
+        validUntil: '2027-03-01',
+        lines: [
+          { description: 'Reissue loop line', quantity: 1, unitPrice: 500, taxPercent: 8.25 },
+        ],
+      })
+      .expect(201)
+    const reissueId = reissueCreated.body.data.id as string
+    await portal
+      .post(`/api/v1/portal/quotations/${reissueId}/changes`)
+      .set('Origin', ORIGIN)
+      .set('X-Customer-Request', '1')
+      .send({ note: 'Please add Saturday access.' })
+      .expect(200)
+    const reissued = await adminHeaders(
+      admin.patch(`/api/v1/admin/customers/${customer.id}/quotations/${reissueId}`),
+    )
+      .send({ status: 'sent', notes: 'Reissued with Saturday access.' })
+      .expect(200)
+    expect(reissued.body.data.status).toBe('sent')
+    expect(reissued.body.data.changeRequest).toBeNull()
+
     await portal
       .post(`/api/v1/portal/amc/${amcId}/renew`)
       .set('Origin', ORIGIN)
       .set('X-Customer-Request', '1')
       .expect(201)
+
+    await portal
+      .post(`/api/v1/portal/amc/${amcId}/renew`)
+      .set('Origin', ORIGIN)
+      .set('X-Customer-Request', '1')
+      .expect(409)
+
+    const report = file.body.data.reports[0] as {
+      id: string
+      checklist: { id: string; done: boolean }[]
+    }
+    const photoUpload = await portal
+      .post(`/api/v1/portal/reports/${report.id}/photos`)
+      .set('Origin', ORIGIN)
+      .set('X-Customer-Request', '1')
+      .attach(
+        'files',
+        Buffer.from(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII=',
+          'base64',
+        ),
+        { filename: 'customer-photo.png', contentType: 'image/png' },
+      )
+      .expect(201)
+    expect(photoUpload.body.data.photos.length).toBeGreaterThan(0)
+
+    await portal
+      .patch(`/api/v1/portal/reports/${report.id}/checklist`)
+      .set('Origin', ORIGIN)
+      .set('X-Customer-Request', '1')
+      .send({ checklist: [{ id: report.checklist[0]?.id, done: true }] })
+      .expect(200)
+
+    const portalBooking = await portal
+      .post('/api/v1/portal/appointments')
+      .set('Origin', ORIGIN)
+      .set('X-Customer-Request', '1')
+      .send({
+        serviceSlug: 'ac-servicing',
+        scheduledAt: '2027-02-10',
+        window: 'morning',
+        address: '1 Test Way, Dallas',
+        notes: 'Job sync test',
+      })
+      .expect(201)
+    await portal
+      .patch(`/api/v1/portal/appointments/${portalBooking.body.data.id}`)
+      .set('Origin', ORIGIN)
+      .set('X-Customer-Request', '1')
+      .send({ action: 'reschedule', scheduledAt: '2027-02-12', window: 'afternoon' })
+      .expect(200)
+    const jobsAfterReschedule = await (await import('./jobStore.js')).jobStore.read()
+    const linkedJob = jobsAfterReschedule.find(
+      (job) => job.appointmentId === portalBooking.body.data.id,
+    )
+    expect(linkedJob?.status).toBe('scheduled')
+    expect(linkedJob?.scheduledAt).toBe('2027-02-12T18:00:00.000Z')
+    await portal
+      .patch(`/api/v1/portal/appointments/${portalBooking.body.data.id}`)
+      .set('Origin', ORIGIN)
+      .set('X-Customer-Request', '1')
+      .send({ action: 'cancel' })
+      .expect(200)
+    const jobsAfterCancel = await (await import('./jobStore.js')).jobStore.read()
+    expect(
+      jobsAfterCancel.find((job) => job.appointmentId === portalBooking.body.data.id)?.status,
+    ).toBe('cancelled')
 
     await portal
       .patch('/api/v1/portal/preferences')
@@ -667,6 +761,35 @@ describe('permissions matrix', () => {
       .expect(403)
     await accountant.get('/api/v1/admin/export').expect(403)
     await accountant.get('/api/v1/admin/users').expect(403)
+  })
+})
+
+describe('reminder completion lock', () => {
+  it('turns a completed reminder into an immutable audit record', async () => {
+    const created = await adminHeaders(admin.post('/api/v1/admin/reminders'))
+      .send({
+        title: `Locked reminder ${Date.now()}`,
+        body: 'Completion must be final.',
+        dueAt: '2026-12-01T09:00:00.000Z',
+      })
+      .expect(201)
+    const id = created.body.data.id as string
+
+    await adminHeaders(admin.patch(`/api/v1/admin/reminders/${id}`))
+      .send({ status: 'done' })
+      .expect(200)
+
+    const edit = await adminHeaders(admin.patch(`/api/v1/admin/reminders/${id}`))
+      .send({ title: 'Should be rejected' })
+      .expect(409)
+    expect(edit.body.error.code).toBe('reminder_locked')
+
+    await adminHeaders(admin.patch(`/api/v1/admin/reminders/${id}`))
+      .send({ status: 'open' })
+      .expect(409)
+
+    const remove = await adminHeaders(admin.delete(`/api/v1/admin/reminders/${id}`)).expect(409)
+    expect(remove.body.error.code).toBe('reminder_locked')
   })
 })
 

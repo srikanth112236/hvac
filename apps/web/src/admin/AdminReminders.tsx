@@ -10,13 +10,17 @@ import {
   type ReminderRecord,
 } from '@hvac/shared'
 import { useLiveRefresh } from '@/admin/useLiveRefresh'
-import { Icon } from '@/components/icons'
+import { useRecordDeepLink } from '@/admin/useDeepLink'
+import { Icon, type IconName } from '@/components/icons'
 import {
   Badge,
   Button,
   EmptyState,
   Input,
   Modal,
+  RecordDrawer,
+  RecordViewButton,
+  SearchSuggest,
   Select,
   Textarea,
   useToast,
@@ -33,7 +37,7 @@ import {
   toLocalInput,
 } from '@/admin/ui'
 
-type StatusFilter = 'all' | 'attention' | 'overdue' | 'today' | 'upcoming' | 'done'
+type StatusFilter = 'all' | 'attention' | 'overdue' | 'today' | 'upcoming' | 'later' | 'done'
 type SortMode = 'smart' | 'due' | 'priority' | 'created'
 type DueBucket = 'overdue' | 'today' | 'next7' | 'later' | 'done'
 
@@ -82,14 +86,32 @@ const priorityMeta: Record<
   },
 }
 
-const statusOptions: { value: StatusFilter; label: string }[] = [
-  { value: 'all', label: 'All reminders' },
-  { value: 'attention', label: 'Needs attention' },
-  { value: 'overdue', label: 'Overdue' },
-  { value: 'today', label: 'Due today' },
-  { value: 'upcoming', label: 'Upcoming' },
-  { value: 'done', label: 'Completed' },
+const statusTabs: {
+  value: StatusFilter
+  label: string
+  tone: BadgeTone
+  hint: string
+}[] = [
+  { value: 'all', label: 'All', tone: 'neutral', hint: 'Every reminder' },
+  { value: 'attention', label: 'Needs attention', tone: 'danger', hint: 'Overdue or urgent' },
+  { value: 'overdue', label: 'Overdue', tone: 'heat', hint: 'Past the due time' },
+  { value: 'today', label: 'Due today', tone: 'warn', hint: 'Before midnight' },
+  { value: 'upcoming', label: 'Upcoming', tone: 'cold', hint: 'Open and scheduled' },
+  { value: 'later', label: 'Later', tone: 'neutral', hint: 'Beyond seven days' },
+  { value: 'done', label: 'Completed', tone: 'success', hint: 'Locked audit records' },
 ]
+
+const categoryMeta: Record<ReminderCategory, { icon: IconName; tone: BadgeTone; action: string }> =
+  {
+    'follow-up': { icon: 'phone', tone: 'cold', action: 'Call / follow up' },
+    payment: { icon: 'coil', tone: 'heat', action: 'Collect payment' },
+    maintenance: { icon: 'wrench', tone: 'cold', action: 'Service due' },
+    quotation: { icon: 'tag', tone: 'cold', action: 'Chase quotation' },
+    'site-visit': { icon: 'calendar', tone: 'warn', action: 'Attend site' },
+    parts: { icon: 'compressor', tone: 'warn', action: 'Supply parts' },
+    renewal: { icon: 'refresh', tone: 'success', action: 'Renew contract' },
+    other: { icon: 'clock', tone: 'neutral', action: 'General task' },
+  }
 
 const categoryOptions = REMINDER_CATEGORY_VALUES.map((value) => ({
   value,
@@ -298,6 +320,7 @@ export function AdminReminders() {
   const [categoryFilter, setCategoryFilter] = useState<'all' | ReminderCategory>('all')
   const [sort, setSort] = useState<SortMode>('smart')
   const [editing, setEditing] = useState<ReminderRecord | null>(null)
+  const [viewing, setViewing] = useState<ReminderRecord | null>(null)
   const [editDraft, setEditDraft] = useState<EditDraft>(blankEditDraft)
   const [editingPending, setEditingPending] = useState(false)
 
@@ -325,14 +348,28 @@ export function AdminReminders() {
   const counts = useMemo(() => {
     const open = reminders.filter((reminder) => reminder.status === 'open')
     return {
+      all: reminders.length,
       open: open.length,
+      attention: reminders.filter(isAttention).length,
       overdue: open.filter((reminder) => dueBucket(reminder) === 'overdue').length,
       today: open.filter((reminder) => dueBucket(reminder) === 'today').length,
+      upcoming: open.filter((reminder) => dueBucket(reminder) === 'next7').length,
+      later: open.filter((reminder) => dueBucket(reminder) === 'later').length,
       urgent: open.filter((reminder) => priorityOf(reminder) === 'urgent').length,
       high: open.filter((reminder) => priorityOf(reminder) === 'high').length,
       done: reminders.filter((reminder) => reminder.status === 'done').length,
     }
   }, [reminders])
+
+  const statusCount = (value: StatusFilter): number => {
+    if (value === 'all') return counts.all
+    if (value === 'attention') return counts.attention
+    if (value === 'overdue') return counts.overdue
+    if (value === 'today') return counts.today
+    if (value === 'upcoming') return counts.upcoming
+    if (value === 'later') return counts.later
+    return counts.done
+  }
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -343,12 +380,8 @@ export function AdminReminders() {
       if (statusFilter === 'attention' && !isAttention(reminder)) return false
       if (statusFilter === 'overdue' && bucket !== 'overdue') return false
       if (statusFilter === 'today' && bucket !== 'today') return false
-      if (
-        statusFilter === 'upcoming' &&
-        (bucket === 'overdue' || bucket === 'today' || bucket === 'done')
-      ) {
-        return false
-      }
+      if (statusFilter === 'upcoming' && bucket !== 'next7') return false
+      if (statusFilter === 'later' && bucket !== 'later') return false
       if (statusFilter === 'done' && bucket !== 'done') return false
       if (priorityFilter !== 'all' && reminderPriority !== priorityFilter) return false
       if (categoryFilter !== 'all' && reminderCategory !== categoryFilter) return false
@@ -372,6 +405,35 @@ export function AdminReminders() {
         .includes(needle)
     })
   }, [reminders, query, statusFilter, priorityFilter, categoryFilter, leadMap])
+
+  const suggestions = useMemo(
+    () =>
+      reminders.map((reminder) => {
+        const lead = reminder.leadRef ? leadMap.get(reminder.leadRef) : null
+        return {
+          id: reminder.id,
+          label: reminder.title,
+          value: reminder.title,
+          description: [
+            reminder.leadRef ? (lead?.name ?? reminder.leadRef) : null,
+            reminder.invoiceRef,
+            reminderCategoryLabel[categoryOf(reminder)],
+          ]
+            .filter(Boolean)
+            .join(' · '),
+          meta: priorityMeta[priorityOf(reminder)].label,
+          keywords: `${reminder.body} ${lead?.phone ?? ''} ${lead?.email ?? ''}`,
+        }
+      }),
+    [reminders, leadMap],
+  )
+
+  useRecordDeepLink({
+    param: 'open',
+    records: reminders,
+    resolve: (value) => reminders.find((reminder) => reminder.id === value),
+    onOpen: setViewing,
+  })
 
   const sorted = useMemo(() => {
     const byDue = (a: ReminderRecord, b: ReminderRecord) =>
@@ -460,14 +522,16 @@ export function AdminReminders() {
     }
   }
 
-  const setStatus = async (reminder: ReminderRecord, status: 'open' | 'done') => {
+  const setStatus = async (reminder: ReminderRecord) => {
+    if (reminder.status === 'done') return
     try {
-      const updated = await adminApi.patchReminder(reminder.id, { status })
+      const updated = await adminApi.patchReminder(reminder.id, { status: 'done' })
       replace(updated)
       toast({
-        title: status === 'done' ? 'Reminder completed' : 'Reminder reopened',
-        description: reminder.title,
-        tone: status === 'done' ? 'success' : 'info',
+        title: 'Reminder completed and locked',
+        description:
+          'Completed reminders are read-only audit records. Create a new reminder for further follow-up.',
+        tone: 'success',
       })
     } catch (caught) {
       toast({
@@ -479,6 +543,7 @@ export function AdminReminders() {
   }
 
   const snooze = async (reminder: ReminderRecord, minutes: number) => {
+    if (reminder.status === 'done') return
     const base = Math.max(Date.now(), Date.parse(reminder.dueAt) || Date.now())
     try {
       const updated = await adminApi.patchReminder(reminder.id, {
@@ -501,6 +566,14 @@ export function AdminReminders() {
   }
 
   const openEdit = (reminder: ReminderRecord) => {
+    if (reminder.status === 'done') {
+      toast({
+        title: 'Completed reminders are locked',
+        description: 'Create a new reminder if another follow-up is needed.',
+        tone: 'warn',
+      })
+      return
+    }
     setEditing(reminder)
     setEditDraft({
       title: reminder.title,
@@ -515,6 +588,10 @@ export function AdminReminders() {
   const saveEdit = async (event?: FormEvent) => {
     event?.preventDefault()
     if (!editing || editDraft.title.trim().length < 2 || !editDraft.dueAt) return
+    if (editing.status === 'done') {
+      setEditing(null)
+      return
+    }
     setEditingPending(true)
     try {
       const updated = await adminApi.patchReminder(editing.id, {
@@ -540,6 +617,14 @@ export function AdminReminders() {
   }
 
   const remove = async (reminder: ReminderRecord) => {
+    if (reminder.status === 'done') {
+      toast({
+        title: 'Completed reminders cannot be deleted',
+        description: 'They remain in the audit trail. Create a new reminder if needed.',
+        tone: 'warn',
+      })
+      return
+    }
     if (!window.confirm(`Delete "${reminder.title}"?`)) return
     try {
       await adminApi.deleteReminder(reminder.id)
@@ -562,23 +647,52 @@ export function AdminReminders() {
     const bucket = dueBucket(reminder)
     const done = reminder.status === 'done'
     const attention = isAttention(reminder)
+    const action = categoryMeta[reminderCategory]
+    const statusTone = done
+      ? 'success'
+      : bucket === 'overdue'
+        ? 'danger'
+        : bucket === 'today'
+          ? 'warn'
+          : bucket === 'next7'
+            ? 'cold'
+            : 'neutral'
+    const statusLabel = done
+      ? 'Locked'
+      : bucket === 'overdue'
+        ? 'Overdue'
+        : bucket === 'today'
+          ? 'Due today'
+          : bucket === 'next7'
+            ? 'Next 7 days'
+            : 'Scheduled'
     return (
       <li
         key={reminder.id}
-        className={`relative overflow-hidden border bg-panel/40 transition-colors hover:border-line-strong ${
-          attention ? 'border-heat/35' : 'border-line'
-        } ${done ? 'opacity-60' : ''}`}
+        className={`relative overflow-hidden border bg-panel/40 transition-colors ${
+          done
+            ? 'border-success/25 bg-success/[0.02]'
+            : attention
+              ? 'border-heat/35 hover:border-heat/60'
+              : 'border-line hover:border-line-strong'
+        }`}
       >
-        <span aria-hidden className={`absolute inset-y-0 left-0 w-[3px] ${meta.bar}`} />
+        <span
+          aria-hidden
+          className={`absolute inset-y-0 left-0 w-[3px] ${done ? 'bg-success/50' : meta.bar}`}
+        />
         <div className="flex flex-col gap-3 p-4 pl-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge tone={meta.tone} dot>
-                  {meta.label} priority
+                <Badge tone={statusTone} dot>
+                  {done ? <Icon name="lock" size={9} className="mr-1 inline" /> : null}
+                  {statusLabel}
                 </Badge>
-                <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-fg-faint">
-                  {reminderCategoryLabel[reminderCategory]}
+                <Badge tone={meta.tone}>{meta.label} priority</Badge>
+                <span className="inline-flex items-center gap-1 border border-line px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-fg-dim">
+                  <Icon name={action.icon} size={10} />
+                  {action.action}
                 </span>
                 {reminder.invoiceRef ? (
                   <span className="border border-line px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-cold">
@@ -617,18 +731,18 @@ export function AdminReminders() {
                         : 'text-fg-dim'
                 }`}
               >
-                {bucket === 'overdue'
-                  ? 'Overdue'
-                  : bucket === 'today'
-                    ? 'Due today'
-                    : done
-                      ? 'Completed'
-                      : 'Scheduled'}
+                {done ? 'Completed' : 'Due'}
               </span>
-              <span className="text-[11px] text-fg">{relativeDue(reminder)}</span>
-              <span className="font-mono text-[9px] text-fg-faint">
-                {formatDateTime(reminder.dueAt)}
-              </span>
+              {done ? null : <span className="text-[11px] text-fg">{relativeDue(reminder)}</span>}
+              {done ? (
+                <span className="font-mono text-[9px] text-fg-faint">
+                  {reminder.completedAt ? formatDateTime(reminder.completedAt) : 'Locked'}
+                </span>
+              ) : (
+                <span className="font-mono text-[9px] text-fg-faint">
+                  {formatDateTime(reminder.dueAt)}
+                </span>
+              )}
             </div>
           </div>
 
@@ -649,25 +763,32 @@ export function AdminReminders() {
                 <span>No lead linked</span>
               )}
               {reminder.invoiceRef ? <span>Payment reminder</span> : null}
+              {done ? (
+                <span className="inline-flex items-center gap-1 font-mono text-[8px] uppercase tracking-[0.08em] text-success">
+                  <Icon name="lock" size={10} /> Locked audit record · read-only
+                </span>
+              ) : null}
             </div>
 
             <div className="flex flex-wrap items-center justify-end gap-1.5">
               {done ? (
-                <button
-                  type="button"
-                  onClick={() => void setStatus(reminder, 'open')}
-                  className="flex h-8 items-center gap-1.5 border border-line px-2.5 font-mono text-[8px] uppercase tracking-[0.08em] text-fg-dim hover:border-cold/50 hover:text-cold"
-                >
-                  Reopen
-                </button>
+                <>
+                  <span className="inline-flex h-8 items-center gap-1.5 border border-success/30 bg-success/[0.05] px-2.5 font-mono text-[8px] uppercase tracking-[0.08em] text-success">
+                    <Icon name="lock" size={10} /> Read-only
+                  </span>
+                  <RecordViewButton
+                    label={`reminder ${reminder.title}`}
+                    onClick={() => setViewing(reminder)}
+                  />
+                </>
               ) : (
                 <>
                   <button
                     type="button"
-                    onClick={() => void setStatus(reminder, 'done')}
+                    onClick={() => void setStatus(reminder)}
                     className="flex h-8 items-center gap-1.5 border border-line px-2.5 font-mono text-[8px] uppercase tracking-[0.08em] text-fg-dim hover:border-success/50 hover:text-success"
                   >
-                    <Icon name="check" size={11} /> Done
+                    <Icon name="check" size={11} /> Complete
                   </button>
                   <Select
                     aria-label={`Snooze ${reminder.title}`}
@@ -686,23 +807,27 @@ export function AdminReminders() {
                       { value: '10080', label: '1 week' },
                     ]}
                   />
+                  <button
+                    type="button"
+                    onClick={() => openEdit(reminder)}
+                    className="flex h-8 items-center border border-line px-2.5 font-mono text-[8px] uppercase tracking-[0.08em] text-fg-dim hover:border-cold/50 hover:text-cold"
+                  >
+                    Edit
+                  </button>
+                  <RecordViewButton
+                    label={`reminder ${reminder.title}`}
+                    onClick={() => setViewing(reminder)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void remove(reminder)}
+                    aria-label={`Delete reminder ${reminder.title}`}
+                    className="flex h-8 w-8 items-center justify-center border border-line text-fg-faint hover:border-danger/40 hover:text-danger"
+                  >
+                    <Icon name="close" size={11} />
+                  </button>
                 </>
               )}
-              <button
-                type="button"
-                onClick={() => openEdit(reminder)}
-                className="flex h-8 items-center border border-line px-2.5 font-mono text-[8px] uppercase tracking-[0.08em] text-fg-dim hover:border-cold/50 hover:text-cold"
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                onClick={() => void remove(reminder)}
-                aria-label={`Delete reminder ${reminder.title}`}
-                className="flex h-8 w-8 items-center justify-center border border-line text-fg-faint hover:border-danger/40 hover:text-danger"
-              >
-                <Icon name="close" size={11} />
-              </button>
             </div>
           </div>
         </div>
@@ -742,6 +867,15 @@ export function AdminReminders() {
 
       {error ? <InlineError message={error} /> : null}
 
+      <div className="flex items-start gap-3 border border-warn/30 bg-warn/[0.04] p-3">
+        <Icon name="lock" size={14} className="mt-0.5 shrink-0 text-warn" />
+        <p className="text-[11px] leading-relaxed text-fg-dim">
+          <strong className="text-fg">Completion is final.</strong> Once a reminder is completed it
+          becomes a read-only audit record and cannot be edited, reopened, snoozed or deleted.
+          Create a new reminder for any further follow-up.
+        </p>
+      </div>
+
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
         <SummaryCard
           label="Open"
@@ -770,26 +904,60 @@ export function AdminReminders() {
         <SummaryCard
           label="Completed"
           value={counts.done}
-          note="Kept in the audit trail"
+          note="Locked audit records"
           tone="success"
         />
+      </div>
+
+      <div
+        role="tablist"
+        aria-label="Reminder status"
+        className="flex gap-1 overflow-x-auto border border-line bg-panel/30 p-1"
+      >
+        {statusTabs.map((tab) => (
+          <button
+            key={tab.value}
+            type="button"
+            role="tab"
+            aria-selected={statusFilter === tab.value}
+            title={tab.hint}
+            onClick={() => setStatusFilter(tab.value)}
+            className={`flex shrink-0 items-center gap-2 px-3 py-2 font-mono text-[9px] uppercase tracking-[0.08em] transition-colors ${
+              statusFilter === tab.value
+                ? 'bg-cold/[0.08] text-cold'
+                : 'text-fg-faint hover:bg-panel/60 hover:text-fg'
+            }`}
+          >
+            {tab.label}
+            <span
+              className={`min-w-5 border px-1 py-0.5 text-center text-[8px] ${
+                statusFilter === tab.value
+                  ? 'border-cold/30 text-cold'
+                  : 'border-line text-fg-faint'
+              }`}
+            >
+              {statusCount(tab.value)}
+            </span>
+          </button>
+        ))}
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0">
           <div className="flex flex-col gap-3 border border-line bg-panel/30 p-3">
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_150px_150px_160px]">
-              <Input
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_160px_170px]">
+              <SearchSuggest
                 label="Search"
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Title, note, lead, invoice, category"
-              />
-              <Select
-                label="Status"
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
-                options={statusOptions}
+                onChange={setQuery}
+                suggestions={suggestions}
+                onSelect={(suggestion) => {
+                  setQuery(suggestion.label)
+                  const reminder = reminders.find((entry) => entry.id === suggestion.id)
+                  if (reminder) setViewing(reminder)
+                }}
+                placeholder="Title, note, lead, invoice, action"
+                emptyMessage="No reminder matches that title or linked record."
               />
               <Select
                 label="Priority"
@@ -806,12 +974,12 @@ export function AdminReminders() {
                 ]}
               />
               <Select
-                label="Category"
+                label="Action type"
                 value={categoryFilter}
                 onChange={(event) =>
                   setCategoryFilter(event.target.value as 'all' | ReminderCategory)
                 }
-                options={[{ value: 'all', label: 'All categories' }, ...categoryOptions]}
+                options={[{ value: 'all', label: 'All action types' }, ...categoryOptions]}
               />
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -907,7 +1075,7 @@ export function AdminReminders() {
                 {groups.done.length ? (
                   <ReminderSection
                     title="Completed"
-                    note="Kept for history and audit"
+                    note="Locked read-only audit records"
                     tone="success"
                     count={groups.done.length}
                   >
@@ -986,7 +1154,7 @@ export function AdminReminders() {
                   }))}
                 />
                 <Select
-                  label="Category"
+                  label="Action type"
                   value={category}
                   onChange={(event) => setCategory(event.target.value as ReminderCategory)}
                   options={categoryOptions}
@@ -1072,7 +1240,7 @@ export function AdminReminders() {
               }))}
             />
             <Select
-              label="Category"
+              label="Action type"
               value={editDraft.category}
               onChange={(event) =>
                 setEditDraft({ ...editDraft, category: event.target.value as ReminderCategory })
@@ -1100,6 +1268,60 @@ export function AdminReminders() {
           </form>
         ) : null}
       </Modal>
+
+      <RecordDrawer
+        open={Boolean(viewing)}
+        onClose={() => setViewing(null)}
+        title={viewing?.title ?? 'Reminder'}
+        subtitle={viewing?.leadRef ? `Lead ${viewing.leadRef}` : 'Standalone reminder'}
+        record={
+          viewing
+            ? {
+                title: viewing.title,
+                notes: viewing.body,
+                due: formatDateTime(viewing.dueAt),
+                status: viewing.status === 'done' ? 'Completed · locked' : 'Open',
+                priority: reminderPriorityLabel[priorityOf(viewing)],
+                actionType: reminderCategoryLabel[categoryOf(viewing)],
+                linkedLead: viewing.leadRef,
+                linkedInvoice: viewing.invoiceRef,
+                createdAt: viewing.createdAt,
+                completedAt: viewing.completedAt,
+              }
+            : null
+        }
+        badge={
+          viewing ? (
+            <span className="flex flex-wrap items-center gap-2">
+              <Badge tone={priorityMeta[viewing.priority ?? 'normal'].tone} dot>
+                {priorityMeta[viewing.priority ?? 'normal'].label} priority
+              </Badge>
+              {viewing.status === 'done' ? (
+                <Badge tone="success" dot>
+                  Completed · locked
+                </Badge>
+              ) : null}
+            </span>
+          ) : undefined
+        }
+        actions={
+          viewing && viewing.status !== 'done' ? (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                openEdit(viewing)
+                setViewing(null)
+              }}
+            >
+              Edit reminder
+            </Button>
+          ) : viewing ? (
+            <span className="inline-flex h-9 items-center gap-1.5 border border-success/30 bg-success/[0.05] px-3 font-mono text-[8px] uppercase tracking-[0.08em] text-success">
+              <Icon name="lock" size={10} /> Locked
+            </span>
+          ) : undefined
+        }
+      />
     </div>
   )
 }

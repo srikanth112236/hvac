@@ -36,6 +36,7 @@ import { reminderStore } from './reminders.js'
 import { sanitizeNewsletterHtml } from './sanitize.js'
 import { mailerStatus, readEmailLog } from './mailer.js'
 import { readAuditLog } from './audit.js'
+import { readAllNotifications } from './notifications.js'
 import { DATA_VERSION } from './migrations.js'
 import { runAmcVisitScheduling } from './jobs.js'
 import { mediaStore } from './media.js'
@@ -132,6 +133,7 @@ adminRouter.get('/export', requireRole('owner', 'admin'), async (_req, res) => {
     preferences,
     audit,
     emailLog,
+    notifications,
   ] = await Promise.all([
     contentStore.read(),
     leadStore.read(),
@@ -156,6 +158,7 @@ adminRouter.get('/export', requireRole('owner', 'admin'), async (_req, res) => {
     preferenceStore.read(),
     readAuditLog(1000),
     readEmailLog(1000),
+    readAllNotifications(),
   ])
 
   const stamp = new Date().toISOString().slice(0, 10)
@@ -188,6 +191,7 @@ adminRouter.get('/export', requireRole('owner', 'admin'), async (_req, res) => {
       'customer-preferences.json': preferences,
       'audit-log.json': audit,
       'email-log.json': emailLog,
+      'notifications.json': notifications,
     },
   })
 })
@@ -879,9 +883,16 @@ adminRouter.patch('/reminders/:id', async (req, res) => {
     return
   }
   let updated: ReminderRecord | undefined
+  let found = false
+  let locked = false
   await reminderStore.mutate((reminders) =>
     reminders.map((current) => {
       if (current.id !== req.params.id) return current
+      found = true
+      if (current.status === 'done') {
+        locked = true
+        return current
+      }
       const status = parsed.data.status ?? current.status
       const record: ReminderRecord = {
         ...current,
@@ -893,7 +904,17 @@ adminRouter.patch('/reminders/:id', async (req, res) => {
       return record
     }),
   )
-  if (!updated) {
+  if (locked) {
+    res.status(409).json({
+      error: {
+        code: 'reminder_locked',
+        message:
+          'This reminder is completed and locked as an audit record. Create a new reminder for any further follow-up.',
+      },
+    })
+    return
+  }
+  if (!found || !updated) {
     res.status(404).json({ error: { code: 'not_found', message: 'Reminder not found.' } })
     return
   }
@@ -901,7 +922,25 @@ adminRouter.patch('/reminders/:id', async (req, res) => {
 })
 
 adminRouter.delete('/reminders/:id', async (req, res) => {
-  await reminderStore.mutate((reminders) => reminders.filter((entry) => entry.id !== req.params.id))
+  const reminders = await reminderStore.read()
+  const current = reminders.find((entry) => entry.id === req.params.id)
+  if (!current) {
+    res.status(404).json({ error: { code: 'not_found', message: 'Reminder not found.' } })
+    return
+  }
+  if (current.status === 'done') {
+    res.status(409).json({
+      error: {
+        code: 'reminder_locked',
+        message:
+          'Completed reminders are locked as audit records and cannot be deleted. Create a new reminder instead.',
+      },
+    })
+    return
+  }
+  await reminderStore.mutate((currentReminders) =>
+    currentReminders.filter((entry) => entry.id !== req.params.id),
+  )
   res.json({ data: { deleted: req.params.id } })
 })
 

@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLiveRefresh } from '@/admin/useLiveRefresh'
 import { Link, useNavigate } from 'react-router-dom'
-import { Icon } from '@/components/icons'
 import {
   Button,
   EmptyState,
-  Input,
   Modal,
   Pagination,
+  RecordDrawer,
+  SearchSuggest,
   Select,
   Table,
+  TableActionButton,
+  TableActionLink,
+  TableActions,
   useToast,
   type Column,
 } from '@/components/ui'
@@ -39,6 +42,7 @@ export function AdminInvoices() {
   const [creating, setCreating] = useState(false)
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
+  const [viewing, setViewing] = useState<InvoiceWithTotals | null>(null)
 
   const load = async () => {
     try {
@@ -71,6 +75,19 @@ export function AdminInvoices() {
     setPage(1)
   }, [filter, search])
 
+  const suggestions = useMemo(
+    () =>
+      invoices.map((invoice) => ({
+        id: invoice.id,
+        label: invoice.ref,
+        value: invoice.ref,
+        description: `${invoice.customerName} · ${invoice.service || 'Service invoice'}`,
+        meta: invoice.totals.state,
+        keywords: `${invoice.customerPhone} ${invoice.customerEmail} ${invoice.issueDate}`,
+      })),
+    [invoices],
+  )
+
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
   const paged = useMemo(
     () => filtered.slice((page - 1) * pageSize, page * pageSize),
@@ -98,7 +115,11 @@ export function AdminInvoices() {
   const remind = async (invoice: InvoiceWithTotals) => {
     try {
       await adminApi.remindInvoice(invoice.id)
-      toast({ title: 'Reminder queued', description: `${invoice.ref} · due tomorrow 9am`, tone: 'success' })
+      toast({
+        title: 'Reminder queued',
+        description: `${invoice.ref} · due tomorrow 9am`,
+        tone: 'success',
+      })
       await load()
     } catch (caught) {
       toast({
@@ -128,7 +149,9 @@ export function AdminInvoices() {
       render: (row) => (
         <div>
           <p className="text-[12px] text-fg">{row.customerName}</p>
-          <p className="text-[10px] text-fg-faint">{row.service || row.customerPhone || 'General works'}</p>
+          <p className="text-[10px] text-fg-faint">
+            {row.service || row.customerPhone || 'General works'}
+          </p>
         </div>
       ),
     },
@@ -136,7 +159,9 @@ export function AdminInvoices() {
       key: 'total',
       header: 'Total',
       align: 'right',
-      render: (row) => <span className="t-num text-[12px] text-fg">{formatMoney(row.totals.total)}</span>,
+      render: (row) => (
+        <span className="t-num text-[12px] text-fg">{formatMoney(row.totals.total)}</span>
+      ),
     },
     {
       key: 'balance',
@@ -144,7 +169,13 @@ export function AdminInvoices() {
       align: 'right',
       render: (row) => (
         <div className="text-right">
-          <p className={row.totals.balance > 0 ? 't-num text-[12px] text-heat' : 't-num text-[12px] text-success'}>
+          <p
+            className={
+              row.totals.balance > 0
+                ? 't-num text-[12px] text-heat'
+                : 't-num text-[12px] text-success'
+            }
+          >
             {formatMoney(row.totals.balance)}
           </p>
           {row.totals.paid > 0 ? (
@@ -165,23 +196,24 @@ export function AdminInvoices() {
       header: '',
       align: 'right',
       render: (row) => (
-        <div className="flex items-center justify-end gap-1">
-          {row.totals.balance > 0 && row.totals.state !== 'draft' && row.totals.state !== 'cancelled' ? (
-            <button
-              type="button"
+        <TableActions>
+          {row.totals.balance > 0 &&
+          row.totals.state !== 'draft' &&
+          row.totals.state !== 'cancelled' ? (
+            <TableActionButton
+              label={`Remind ${row.ref}`}
+              icon="mail"
+              tone="heat"
               onClick={() => void remind(row)}
-              className="flex h-7 items-center gap-1 border border-line px-2 font-mono text-[8px] uppercase tracking-[0.06em] text-fg-dim hover:border-heat/40 hover:text-heat"
-            >
-              <Icon name="mail" size={10} /> Remind
-            </button>
+            />
           ) : null}
-          <Link
+          <TableActionLink
             to={`/admin/invoices/${row.id}`}
-            className="flex h-7 items-center gap-1 border border-line px-2 font-mono text-[8px] uppercase tracking-[0.06em] text-fg-dim hover:border-cold/40 hover:text-cold"
-          >
-            Open <Icon name="arrow-right" size={10} />
-          </Link>
-        </div>
+            label={`Open invoice ${row.ref}`}
+            icon="arrow-right"
+            tone="cold"
+          />
+        </TableActions>
       ),
     },
   ]
@@ -244,11 +276,18 @@ export function AdminInvoices() {
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2 border border-line bg-panel/30 p-3">
-        <Input
+        <SearchSuggest
           aria-label="Search invoices"
           placeholder="Search reference, customer, phone or job…"
           value={search}
-          onChange={(event) => setSearch(event.target.value)}
+          onChange={setSearch}
+          suggestions={suggestions}
+          onSelect={(suggestion) => {
+            setSearch(suggestion.label)
+            const invoice = invoices.find((entry) => entry.id === suggestion.id)
+            if (invoice) setViewing(invoice)
+          }}
+          emptyMessage="No invoice matches that reference, customer or phone."
           className="max-w-md"
         />
         <span className="ml-auto font-mono text-[9px] uppercase tracking-[0.08em] text-fg-faint">
@@ -266,11 +305,22 @@ export function AdminInvoices() {
           action={<Button onClick={() => setCreateOpen(true)}>Create invoice</Button>}
         />
       ) : (
-        <Table columns={columns} rows={paged} caption="Invoices" />
+        <Table
+          columns={columns}
+          rows={paged}
+          caption="Invoices"
+          onRowView={setViewing}
+          viewLabel={(row) => row.ref}
+        />
       )}
 
       {filtered.length > pageSize ? (
-        <Pagination page={page} pageCount={pageCount} onPageChange={setPage} className="justify-end" />
+        <Pagination
+          page={page}
+          pageCount={pageCount}
+          onPageChange={setPage}
+          className="justify-end"
+        />
       ) : null}
 
       <Modal
@@ -287,6 +337,26 @@ export function AdminInvoices() {
           onCancel={() => setCreateOpen(false)}
         />
       </Modal>
+      <RecordDrawer
+        open={Boolean(viewing)}
+        onClose={() => setViewing(null)}
+        title={viewing?.ref ?? 'Invoice'}
+        subtitle={
+          viewing ? `${viewing.customerName} · ${viewing.service || 'General works'}` : undefined
+        }
+        record={viewing as unknown as Record<string, unknown> | null}
+        badge={viewing ? <InvoiceStateBadge state={viewing.totals.state} /> : undefined}
+        actions={
+          viewing ? (
+            <Link
+              to={`/admin/invoices/${viewing.id}`}
+              className="flex h-9 items-center border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:border-cold/50 hover:text-cold"
+            >
+              Open full invoice
+            </Link>
+          ) : undefined
+        }
+      />
     </div>
   )
 }

@@ -1,27 +1,10 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import {
-  Badge,
-  ButtonAnchor,
-  ButtonLink,
-  Marquee,
-  SectionHeader,
-  Tabs,
-} from '@/components/ui'
-import {
-  MagneticButton,
-  PlaceholderPlate,
-  ScrollReveal,
-  SplitReveal,
-  TiltCard,
-} from '@/motion'
+import { Badge, ButtonAnchor, ButtonLink, Marquee, SectionHeader, Tabs } from '@/components/ui'
+import { MagneticButton, PlaceholderPlate, ScrollReveal, SplitReveal, TiltCard } from '@/motion'
 import { useBrand } from '@/brand/BrandProvider'
-import {
-  type ProjectEntry,
-} from '@/content/home'
-import {
-  type WorkCaseFile,
-} from '@/content/company'
+import { type ProjectEntry } from '@/content/home'
+import { type WorkCaseFile } from '@/content/company'
 import { useSiteContent } from '@/content/SiteContentProvider'
 import { useSeo } from '@/lib/seo'
 import { PageBackdrop } from '@/components/site/PageBackdrop'
@@ -140,7 +123,8 @@ export function WorkPage() {
                 {caseEntries.map(({ project }, index) => (
                   <li key={project.id} className="border-t border-line/60 first:border-t-0">
                     <a
-                      href="#files"
+                      href={`#case-${project.id}`}
+                      onClick={() => setFilter('All')}
                       className="group flex items-baseline justify-between gap-3 py-2.5"
                     >
                       <span className="flex items-baseline gap-3">
@@ -171,7 +155,11 @@ export function WorkPage() {
             label="Case files"
             title={sections.cases.title}
             description={sections.cases.body}
-            action={<Badge tone="cold" dot>Filter by system</Badge>}
+            action={
+              <Badge tone="cold" dot>
+                Filter by system
+              </Badge>
+            }
           />
         </div>
 
@@ -186,7 +174,10 @@ export function WorkPage() {
                 className="min-w-max border-b-0"
               />
             </div>
-            <p aria-live="polite" className="shrink-0 pb-1 font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint">
+            <p
+              aria-live="polite"
+              className="shrink-0 pb-1 font-mono text-[9px] uppercase tracking-[0.12em] text-fg-faint"
+            >
               {filtered.length} of {caseEntries.length} files
             </p>
           </div>
@@ -194,7 +185,10 @@ export function WorkPage() {
 
         <div className="shell pb-16">
           {featured ? (
-            <article className="mt-10 grid gap-8 border-t border-line pt-8 lg:grid-cols-12">
+            <article
+              id={`case-${featured.project.id}`}
+              className="mt-10 scroll-mt-[calc(var(--header-h)+24px)] grid gap-8 border-t border-line pt-8 lg:grid-cols-12"
+            >
               <div className="lg:col-span-5">
                 <div className="h-[260px] border border-line">
                   {featured.project.image ? (
@@ -271,7 +265,10 @@ export function WorkPage() {
               {rest.map(({ project, file }, index) => (
                 <ScrollReveal key={project.id} delay={index * 0.04}>
                   <TiltCard max={4}>
-                    <article className="marks flex h-full flex-col gap-5 border border-line bg-panel/60 p-6">
+                    <article
+                      id={`case-${project.id}`}
+                      className="marks flex h-full scroll-mt-[calc(var(--header-h)+24px)] flex-col gap-5 border border-line bg-panel/60 p-6"
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <span className="t-label">{project.category}</span>
@@ -379,7 +376,12 @@ export function WorkPage() {
             <ButtonLink to="/contact" size="lg" icon="arrow-up-right">
               Start a file
             </ButtonLink>
-            <ButtonAnchor href={`tel:${brand.contact.phone}`} variant="secondary" size="lg" icon="phone">
+            <ButtonAnchor
+              href={`tel:${brand.contact.phone}`}
+              variant="secondary"
+              size="lg"
+              icon="phone"
+            >
               {brand.contact.phoneDisplay}
             </ButtonAnchor>
           </div>

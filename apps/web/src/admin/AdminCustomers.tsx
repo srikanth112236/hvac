@@ -1,7 +1,17 @@
 import { useCallback, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { customerStatusLabel, type CustomerAccountWithStats, type CustomerStatus } from '@hvac/shared'
-import { Badge, Button, EmptyState, Input, Modal, Textarea, useToast } from '@/components/ui'
+import { Icon } from '@/components/icons'
+import {
+  Badge,
+  Button,
+  EmptyState,
+  Input,
+  Modal,
+  SearchSuggest,
+  Textarea,
+  useToast,
+} from '@/components/ui'
 import { adminApi } from '@/admin/api'
 import { AdminLoading, AdminPageHeader, InlineError, formatDate, formatDateTime, formatMoney } from '@/admin/ui'
 import { useLiveRefresh } from '@/admin/useLiveRefresh'
@@ -17,6 +27,7 @@ const blankForm: CustomerForm = { name: '', email: '', phone: '', address: '' }
 
 export function AdminCustomers() {
   const { toast } = useToast()
+  const navigate = useNavigate()
   const [customers, setCustomers] = useState<CustomerAccountWithStats[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -48,6 +59,19 @@ export function AdminCustomers() {
         .includes(term),
     )
   }, [customers, query])
+
+  const suggestions = useMemo(
+    () =>
+      customers.map((customer) => ({
+        id: customer.id,
+        label: customer.name,
+        value: customer.name,
+        description: `${customer.email} · ${customer.phone || 'No phone'}`,
+        meta: customerStatusLabel[customer.status],
+        keywords: `${customer.email} ${customer.phone} ${customer.address}`,
+      })),
+    [customers],
+  )
 
   const totals = useMemo(
     () => ({
@@ -169,11 +193,17 @@ export function AdminCustomers() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
           <h2 className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">Customer records</h2>
           <div className="w-full max-w-sm">
-            <Input
+            <SearchSuggest
               aria-label="Search customers"
               placeholder="Search name, email, phone or address"
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={setQuery}
+              suggestions={suggestions}
+              onSelect={(suggestion) => {
+                setQuery(suggestion.label)
+                navigate(`/admin/customers/${suggestion.id}`)
+              }}
+              emptyMessage="No customer matches that search."
             />
           </div>
         </div>
@@ -212,6 +242,14 @@ export function AdminCustomers() {
                   <span className="text-[11px] text-fg-dim">{customer.nextAppointmentAt ? formatDateTime(customer.nextAppointmentAt) : 'None booked'}</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 lg:justify-self-end">
+                  <Link
+                    to={`/admin/customers/${customer.id}`}
+                    aria-label={`View ${customer.name}`}
+                    title={`View ${customer.name}`}
+                    className="flex h-8 w-8 items-center justify-center border border-line text-fg-faint hover:border-cold/50 hover:text-cold"
+                  >
+                    <Icon name="eye" size={13} />
+                  </Link>
                   <Link
                     to={`/admin/customers/${customer.id}`}
                     className="flex h-8 items-center border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-cold hover:border-cold/50 hover:text-fg"

@@ -177,3 +177,54 @@ export const contentRegistry: StudioPageEntry[] = [
 
 export const singlePages = contentRegistry.filter((entry) => entry.group === 'single')
 export const collectionPages = contentRegistry.filter((entry) => entry.group === 'collection')
+
+/** Collection editors are folded into the page that owns their public route. */
+const REVISION_PAGE_ALIAS: Record<string, string> = {
+  'services-detail': 'services',
+  'work-cases': 'work',
+  'products-detail': 'products',
+  'amc-plans': 'amc',
+  'amc-details': 'amc',
+  'process-details': 'process',
+  faqs: 'site',
+  'about-sections': 'about',
+}
+
+export interface RevisionPageCatalogEntry {
+  id: string
+  label: string
+  description: string
+  /** The public route, or the parent route for a collection. */
+  route: string
+  /** The page id used by the revision diff engine. */
+  revisionId: string
+}
+
+/**
+ * Every CMS page is listed here: single pages, collection and detail pages, and
+ * the two global scopes. `revisionId` maps a page to the content root that owns
+ * its revision changes without collapsing the page out of the list.
+ */
+export const revisionPageCatalog: RevisionPageCatalogEntry[] = [
+  ...contentRegistry.map((page) => ({
+    id: page.id,
+    label: page.label,
+    description: page.description,
+    route: page.route,
+    revisionId: REVISION_PAGE_ALIAS[page.id] ?? page.id,
+  })),
+  {
+    id: 'brand',
+    label: 'Brand & contact',
+    description: 'Brand identity, contact details, opening hours and credentials.',
+    route: 'Global scope',
+    revisionId: 'brand',
+  },
+  {
+    id: 'seo',
+    label: 'SEO & social',
+    description: 'Titles, descriptions, canonical routes and sharing metadata.',
+    route: 'Global scope',
+    revisionId: 'seo',
+  },
+]
