@@ -35,6 +35,12 @@ jobs:
         env:
           VITE_API_URL: /api/v1
 
+      - name: Materialize workspace @hvac/shared into node_modules
+        run: |
+          rm -rf node_modules/@hvac/shared
+          mkdir -p node_modules/@hvac
+          cp -r packages/shared node_modules/@hvac/shared
+
       - name: Package API artifact
         run: |
           zip -rqy api-package.zip \
