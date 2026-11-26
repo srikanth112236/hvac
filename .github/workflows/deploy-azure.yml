@@ -63,13 +63,13 @@ jobs:
             apps/web/dist \
             node_modules
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: api-package
           path: api-package.zip
           retention-days: 1
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: web-package
           path: web-package.zip
