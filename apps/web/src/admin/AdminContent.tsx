@@ -112,6 +112,7 @@ export function AdminContent({
     if (!draft) return
     const payload: SiteContentPayload = {
       brand: draft.brand,
+      navigation: draft.navigation,
       theme: draft.theme,
       home: draft.home,
       about: draft.about,

@@ -23,6 +23,24 @@ interface PdfBrand {
     upiId: string
     invoiceTerms: string
   }
+  documents?: {
+    accent: string
+    paper: 'A4' | 'Letter'
+    footerNote: string
+    paymentInstructions: string
+    signatureName: string
+    showBankDetails: boolean
+    showSignature: boolean
+  }
+}
+
+/** Documents settings store RGB triplets; PDFKit needs a hex string. */
+function accentHex(brand: PdfBrand): string {
+  const parts = (brand.documents?.accent ?? '').trim().split(/\s+/).map(Number)
+  if (parts.length !== 3 || parts.some((part) => !Number.isFinite(part))) return INK
+  return `#${parts
+    .map((part) => Math.max(0, Math.min(255, Math.round(part))).toString(16).padStart(2, '0'))
+    .join('')}`
 }
 
 const money = new Intl.NumberFormat('en-US', {
@@ -130,6 +148,7 @@ function documentHeader(
   },
 ): number {
   smallLabel(doc, options.title, PAGE_LEFT, 38)
+  doc.rect(PAGE_LEFT, 26, CONTENT_WIDTH, 3).fill(accentHex(brand))
   doc
     .font(SANS_BOLD)
     .fontSize(17)
@@ -487,26 +506,35 @@ function documentFooter(doc: PDFKit.PDFDocument, brand: PdfBrand, reference: str
       width: 330,
       characterSpacing: 0.4,
     })
+  if (brand.documents?.footerNote) {
+    doc
+      .font(SANS)
+      .fontSize(6.8)
+      .fillColor(MUTED)
+      .text(brand.documents.footerNote, PAGE_LEFT, y + 48, { width: 330 })
+  }
   const signatureY = y + 8
-  doc
-    .font(SANS)
-    .fontSize(8)
-    .fillColor(BODY)
-    .text(`For ${brand.legalName || brand.name}`, 390, signatureY, {
-      width: 169,
-      align: 'right',
-    })
-  doc
-    .moveTo(394, signatureY + 26)
-    .lineTo(547, signatureY + 26)
-    .lineWidth(0.8)
-    .strokeColor(INK)
-    .stroke()
+  if (brand.documents?.showSignature !== false) {
+    doc
+      .font(SANS)
+      .fontSize(8)
+      .fillColor(BODY)
+      .text(`For ${brand.legalName || brand.name}`, 390, signatureY, {
+        width: 169,
+        align: 'right',
+      })
+    doc
+      .moveTo(394, signatureY + 26)
+      .lineTo(547, signatureY + 26)
+      .lineWidth(0.8)
+      .strokeColor(INK)
+      .stroke()
+  }
   doc
     .font(MONO)
     .fontSize(6.5)
     .fillColor(MUTED)
-    .text('AUTHORISED SIGNATORY', 390, signatureY + 30, {
+    .text((brand.documents?.signatureName || 'Authorised signatory').toUpperCase(), 390, signatureY + 30, {
       width: 169,
       align: 'right',
       characterSpacing: 0.4,
@@ -653,15 +681,20 @@ function quotationFooter(
     .font(MONO)
     .fontSize(6.5)
     .fillColor(MUTED)
-    .text('AUTHORISED SIGNATORY', 390, y + 38, {
+    .text((brand.documents?.signatureName || 'Authorised signatory').toUpperCase(), 390, y + 38, {
       width: 169,
       align: 'right',
       characterSpacing: 0.4,
     })
 }
 
-function stream(res: Response, filename: string, build: (doc: PDFKit.PDFDocument) => void): void {
-  const doc = new PDFDocument({ size: 'A4', margin: PAGE_LEFT, autoFirstPage: true })
+function stream(
+  res: Response,
+  filename: string,
+  build: (doc: PDFKit.PDFDocument) => void,
+  paper: 'A4' | 'Letter' = 'A4',
+): void {
+  const doc = new PDFDocument({ size: paper, margin: PAGE_LEFT, autoFirstPage: true })
   res.setHeader('Content-Type', 'application/pdf')
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
   res.setHeader('Cache-Control', 'private, no-store')
@@ -710,7 +743,7 @@ export function streamInvoicePdf(res: Response, invoice: InvoiceWithTotals, bran
     y = payments(doc, invoice, y)
     doc.y = y
     documentFooter(doc, brand, invoice.ref)
-  })
+  }, brand.documents?.paper ?? 'A4')
 }
 
 export function streamQuotationPdf(
@@ -750,5 +783,5 @@ export function streamQuotationPdf(
     y = quotationTotals(doc, quotation, y)
     doc.y = y + 6
     quotationFooter(doc, brand, quotation)
-  })
+  }, brand.documents?.paper ?? 'A4')
 }

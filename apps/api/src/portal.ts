@@ -35,6 +35,7 @@ import { createStore } from './store.js'
 import { appointmentConfirmation, sendMail } from './mailer.js'
 import { createJob, jobStore } from './jobStore.js'
 import { streamInvoicePdf } from './pdf.js'
+import { pageMeta, readPaging, slicePage, textParam } from './paging.js'
 import { hourInZone, startOfTodayInZone, zonedTimeToUtc } from './time.js'
 
 export const appointmentStore = createStore<AppointmentRecord[]>('appointments.json', () => [])
@@ -517,7 +518,7 @@ customersRouter.post('/customers', async (req, res) => {
   res.status(201).json({ data: publicCustomer(record) })
 })
 
-customersRouter.get('/customers', async (_req, res) => {
+customersRouter.get('/customers', async (req, res) => {
   const [customers, invoices, appointments] = await Promise.all([
     readPublicCustomers(),
     invoiceStore.read(),
@@ -552,7 +553,29 @@ customersRouter.get('/customers', async (_req, res) => {
       }
     })
     .sort((a, b) => a.name.localeCompare(b.name))
-  res.json({ data })
+  const summary = {
+    accounts: data.length,
+    pending: data.filter(
+      (customer) => customer.status === 'pending' || customer.status === 'unverified',
+    ).length,
+    outstanding: data.reduce((sum, customer) => sum + customer.openBalance, 0),
+    invoiced: data.reduce((sum, customer) => sum + customer.invoiceCount, 0),
+  }
+  const query = textParam(req.query.q).toLowerCase()
+  const filtered = query
+    ? data.filter((customer) =>
+        [customer.name, customer.email, customer.phone, customer.address]
+          .join(' ')
+          .toLowerCase()
+          .includes(query),
+      )
+    : data
+  const paging = readPaging(req, 25)
+  res.json({
+    data: paging ? slicePage(filtered, paging) : filtered,
+    summary,
+    ...(paging ? { meta: pageMeta(filtered.length, data.length, paging) } : {}),
+  })
 })
 
 customersRouter.patch('/customers/:id', async (req, res) => {
@@ -611,6 +634,40 @@ customersRouter.patch('/customers/:id', async (req, res) => {
   res.json({ data: publicCustomer(customer) })
 })
 
+/**
+ * A technician is treated as busy for two hours from the booked slot, which
+ * also covers a sane travel gap between back-to-back visits.
+ */
+const BOOKING_SLOT_MS = 2 * 60 * 60 * 1000
+
+export function findTechnicianConflict(
+  appointments: AppointmentRecord[],
+  candidate: { technician: string; scheduledAt: string; excludeId?: string },
+): AppointmentRecord[] {
+  const technician = candidate.technician.trim().toLowerCase()
+  if (!technician) return []
+  const at = Date.parse(candidate.scheduledAt)
+  if (!Number.isFinite(at)) return []
+  const day = candidate.scheduledAt.slice(0, 10)
+  return appointments.filter((appointment) => {
+    if (appointment.id === candidate.excludeId) return false
+    if (appointment.status === 'cancelled' || appointment.status === 'completed') return false
+    if (appointment.technician.trim().toLowerCase() !== technician) return false
+    if (appointment.scheduledAt.slice(0, 10) !== day) return false
+    const other = Date.parse(appointment.scheduledAt)
+    if (!Number.isFinite(other)) return false
+    return Math.abs(other - at) < BOOKING_SLOT_MS
+  })
+}
+
+function conflictMessage(conflicts: AppointmentRecord[]): string {
+  const first = conflicts[0]
+  const when = first ? new Date(first.scheduledAt).toLocaleString('en-US') : 'that slot'
+  return `This technician is already booked at ${when}${
+    first ? ` (${first.ref})` : ''
+  }. Pick another slot, move the existing visit, or force the overlap.`
+}
+
 customersRouter.get('/appointments', async (_req, res) => {
   const appointments = await appointmentStore.read()
   res.json({
@@ -628,6 +685,24 @@ customersRouter.post('/appointments', async (req, res) => {
   if (!scheduled) {
     validationError(res, 'Choose a valid visit date.')
     return
+  }
+  const forceSchedule = (req.body as { forceSchedule?: unknown } | null)?.forceSchedule === true
+  if (!forceSchedule && parsed.data.technician.trim()) {
+    const existing = await appointmentStore.read()
+    const conflicts = findTechnicianConflict(existing, {
+      technician: parsed.data.technician,
+      scheduledAt: scheduled.toISOString(),
+    })
+    if (conflicts.length) {
+      res.status(409).json({
+        error: {
+          code: 'technician_conflict',
+          message: conflictMessage(conflicts),
+          conflicts: conflicts.map((entry) => entry.ref),
+        },
+      })
+      return
+    }
   }
   const account = parsed.data.customerEmail
     ? await findCustomerByEmail(parsed.data.customerEmail)
@@ -686,6 +761,40 @@ customersRouter.patch('/appointments/:id', async (req, res) => {
     const scheduled = parseSchedule(parsed.data.scheduledAt, parsed.data.window ?? current.window)
     if (!scheduled) {
       validationError(res, 'Choose a valid visit date.')
+      return
+    }
+  }
+  const forceSchedule = (req.body as { forceSchedule?: unknown } | null)?.forceSchedule === true
+  const nextTechnician = parsed.data.technician ?? current.technician
+  const nextScheduledAt = parsed.data.scheduledAt
+    ? (parseSchedule(
+        parsed.data.scheduledAt,
+        parsed.data.window ?? current.window,
+      )?.toISOString() ?? current.scheduledAt)
+    : current.scheduledAt
+  const nextStatus = parsed.data.status ?? current.status
+  const reschedules = parsed.data.scheduledAt !== undefined || parsed.data.technician !== undefined
+  if (
+    !forceSchedule &&
+    reschedules &&
+    nextTechnician.trim() &&
+    nextStatus !== 'cancelled' &&
+    nextStatus !== 'completed'
+  ) {
+    const existing = await appointmentStore.read()
+    const conflicts = findTechnicianConflict(existing, {
+      technician: nextTechnician,
+      scheduledAt: nextScheduledAt,
+      excludeId: current.id,
+    })
+    if (conflicts.length) {
+      res.status(409).json({
+        error: {
+          code: 'technician_conflict',
+          message: conflictMessage(conflicts),
+          conflicts: conflicts.map((entry) => entry.ref),
+        },
+      })
       return
     }
   }

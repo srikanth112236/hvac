@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLiveRefresh } from '@/admin/useLiveRefresh'
 import { Link, useNavigate } from 'react-router-dom'
 import {
@@ -17,7 +17,7 @@ import {
   type Column,
 } from '@/components/ui'
 import type { InvoiceInput, InvoiceSummary, InvoiceWithTotals } from '@hvac/shared'
-import { adminApi } from '@/admin/api'
+import { adminApi, type PageMeta } from '@/admin/api'
 import { InvoiceForm } from '@/admin/InvoiceForm'
 import { InvoiceStateBadge } from '@/admin/invoice-ui'
 import {
@@ -39,41 +39,74 @@ export function AdminInvoices() {
   const [createOpen, setCreateOpen] = useState(false)
   const [page, setPage] = useState(1)
   const pageSize = 20
+  const [meta, setMeta] = useState<PageMeta | null>(null)
+  const [searchTerm, setSearchTerm] = useState('')
   const [creating, setCreating] = useState(false)
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [viewing, setViewing] = useState<InvoiceWithTotals | null>(null)
+  const [amcBusy, setAmcBusy] = useState(false)
 
-  const load = async () => {
+  const billAmcContracts = async () => {
+    const period = window.prompt(
+      'Bill active AMC contracts for which billing period? (YYYY-MM)',
+      new Date().toISOString().slice(0, 7),
+    )
+    if (!period) return
+    setAmcBusy(true)
     try {
-      const payload = await adminApi.invoices()
+      const result = await adminApi.runAmcInvoices(period)
+      toast({
+        title: 'AMC billing run finished',
+        description: `${result.data.createdCount} invoice(s) raised for ${result.data.period} · ${result.data.skipped} already billed of ${result.data.eligible} active contracts.`,
+        tone: 'success',
+      })
+      await load()
+    } catch (caught) {
+      toast({
+        title: 'AMC billing failed',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
+    } finally {
+      setAmcBusy(false)
+    }
+  }
+
+  const load = useCallback(async () => {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+    if (filter !== 'all') params.set('state', filter)
+    if (searchTerm.trim()) params.set('q', searchTerm.trim())
+    try {
+      const payload = await adminApi.invoices(`?${params.toString()}`)
       setInvoices(payload.data)
       setSummary(payload.summary)
+      setMeta(payload.meta ?? null)
       setError('')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not load invoices.')
     } finally {
       setLoading(false)
     }
-  }
+  }, [page, filter, searchTerm])
 
   useLiveRefresh(load)
 
-  const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    return invoices.filter((invoice) => {
-      if (filter !== 'all' && invoice.totals.state !== filter) return false
-      if (!query) return true
-      return [invoice.ref, invoice.customerName, invoice.customerPhone, invoice.service]
-        .join(' ')
-        .toLowerCase()
-        .includes(query)
-    })
-  }, [invoices, filter, search])
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearchTerm(search)
+      setPage(1)
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [search])
 
   useEffect(() => {
     setPage(1)
-  }, [filter, search])
+  }, [filter])
 
   const suggestions = useMemo(
     () =>
@@ -86,12 +119,6 @@ export function AdminInvoices() {
         keywords: `${invoice.customerPhone} ${invoice.customerEmail} ${invoice.issueDate}`,
       })),
     [invoices],
-  )
-
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
-  const paged = useMemo(
-    () => filtered.slice((page - 1) * pageSize, page * pageSize),
-    [filtered, page],
   )
 
   const create = async (input: InvoiceInput) => {
@@ -241,6 +268,14 @@ export function AdminInvoices() {
               onChange={(event) => setFilter(event.target.value)}
               className="min-w-[140px]"
             />
+            <Button
+              variant="secondary"
+              icon="refresh"
+              disabled={amcBusy}
+              onClick={() => void billAmcContracts()}
+            >
+              {amcBusy ? 'Billing…' : 'Bill AMC'}
+            </Button>
             <Button icon="plus" onClick={() => setCreateOpen(true)}>
               New invoice
             </Button>
@@ -291,13 +326,15 @@ export function AdminInvoices() {
           className="max-w-md"
         />
         <span className="ml-auto font-mono text-[9px] uppercase tracking-[0.08em] text-fg-faint">
-          {filtered.length} of {invoices.length} invoices
+          {meta
+            ? `${meta.count} matching · ${meta.total} invoices`
+            : `${invoices.length} invoices`}
         </span>
       </div>
 
       {loading ? (
         <AdminLoading rows={5} />
-      ) : filtered.length === 0 ? (
+      ) : invoices.length === 0 ? (
         <EmptyState
           icon="coil"
           title="No invoices in this view."
@@ -307,17 +344,17 @@ export function AdminInvoices() {
       ) : (
         <Table
           columns={columns}
-          rows={paged}
+          rows={invoices}
           caption="Invoices"
           onRowView={setViewing}
           viewLabel={(row) => row.ref}
         />
       )}
 
-      {filtered.length > pageSize ? (
+      {meta && meta.pages > 1 ? (
         <Pagination
           page={page}
-          pageCount={pageCount}
+          pageCount={meta.pages}
           onPageChange={setPage}
           className="justify-end"
         />
@@ -328,7 +365,7 @@ export function AdminInvoices() {
         onClose={() => setCreateOpen(false)}
         title="New tax invoice"
         description="The reference is assigned on save. Part payments can be added from the invoice page."
-        size="lg"
+        size="xl"
       >
         <InvoiceForm
           submitLabel="Create invoice"

@@ -2,7 +2,8 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { Router, type NextFunction, type Request, type Response } from 'express'
 import { z } from 'zod'
 import type { AdminRole } from '@hvac/shared'
-import { ADMIN_ROLES, roleCan, rolesForPermission, type AdminPermission } from '@hvac/shared'
+import type { AdminPermission } from '@hvac/shared'
+import { permissionsForRole } from './roleMatrixStore.js'
 import { ADMIN_EMAIL, ADMIN_PASSWORD, IS_PROD, originAllowed } from './config.js'
 import { adminPasswordMatches, findAdminUserByEmail, findAdminUserById } from './adminUsers.js'
 import {
@@ -218,18 +219,55 @@ export function requireWriteRole(...roles: AdminRole[]) {
 
 /**
  * Permission-based write guard. Reads stay available to every authenticated
- * role; the matrix in @hvac/shared is the single source of truth for writes.
+ * role; the editable matrix (Settings → team → roles) is the source of truth.
  */
 export function requirePermission(permission: AdminPermission) {
-  return requireWriteRole(...rolesForPermission(permission))
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    if (req.method === 'GET' || req.method === 'HEAD') {
+      next()
+      return
+    }
+    const admin = res.locals.admin as Session | undefined
+    if (!admin) {
+      res
+        .status(401)
+        .json({ error: { code: 'unauthorised', message: 'Sign in to the admin panel.' } })
+      return
+    }
+    const allowed = await permissionsForRole(admin.role)
+    if (!allowed.includes(permission)) {
+      res.status(403).json({
+        error: { code: 'forbidden', message: 'Your role cannot perform this action.' },
+      })
+      return
+    }
+    next()
+  }
 }
 
 /** Require every listed permission for a write (reads remain open). */
 export function requirePermissions(...permissions: AdminPermission[]) {
-  const allowed = ADMIN_ROLES.filter((role) =>
-    permissions.every((permission) => roleCan(role, permission)),
-  )
-  return requireWriteRole(...allowed)
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    if (req.method === 'GET' || req.method === 'HEAD') {
+      next()
+      return
+    }
+    const admin = res.locals.admin as Session | undefined
+    if (!admin) {
+      res
+        .status(401)
+        .json({ error: { code: 'unauthorised', message: 'Sign in to the admin panel.' } })
+      return
+    }
+    const allowed = await permissionsForRole(admin.role)
+    if (!permissions.every((permission) => allowed.includes(permission))) {
+      res.status(403).json({
+        error: { code: 'forbidden', message: 'Your role cannot perform this action.' },
+      })
+      return
+    }
+    next()
+  }
 }
 
 async function issueSession(

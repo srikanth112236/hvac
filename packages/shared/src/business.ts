@@ -28,6 +28,19 @@ export interface InvoicePayment {
   receivedAt: string
   recordedAt: string
   recordedBy: string
+  /** A reversed payment stays on the record; it is never deleted. */
+  reversedAt?: string | null
+  reversedBy?: string | null
+  reversalReason?: string | null
+}
+
+/** A credit note reduces the amount due without editing the invoice lines. */
+export interface InvoiceCreditNote {
+  id: string
+  amount: number
+  reason: string
+  createdAt: string
+  createdBy: string
 }
 
 export interface InvoiceRecord {
@@ -49,8 +62,16 @@ export interface InvoiceRecord {
   notes: string
   terms: string
   payments: InvoicePayment[]
+  creditNotes?: InvoiceCreditNote[]
   reminderDates: string[]
   lastReminderAt: string | null
+  /** Set when an issued invoice is voided. The record is never deleted. */
+  voidReason?: string | null
+  voidedAt?: string | null
+  voidedBy?: string | null
+  /** Set when the invoice was generated from an AMC contract. */
+  amcContractId?: string | null
+  billingPeriod?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -65,6 +86,7 @@ export interface InvoiceTotals {
   igst: number
   total: number
   paid: number
+  credited: number
   balance: number
   state: InvoiceState
   daysOverdue: number
@@ -75,6 +97,8 @@ export type InvoiceWithTotals = InvoiceRecord & { totals: InvoiceTotals }
 export interface InvoiceSummary {
   invoiced: number
   collected: number
+  credited: number
+  voidedCount: number
   outstanding: number
   overdueAmount: number
   paidCount: number
@@ -124,6 +148,33 @@ export const invoicePaymentInputSchema = z.object({
   receivedAt: z.string().trim().min(4).max(40),
 })
 export type InvoicePaymentInput = z.infer<typeof invoicePaymentInputSchema>
+
+/** A void keeps the invoice and its history; it never deletes it. */
+export const invoiceVoidSchema = z.object({
+  reason: z.string().trim().min(5, 'Give a reason for voiding this invoice').max(500),
+})
+export type InvoiceVoidInput = z.infer<typeof invoiceVoidSchema>
+
+export const invoiceCreditNoteSchema = z.object({
+  amount: z.number().positive('Enter a credit amount').max(100_000_000),
+  reason: z.string().trim().min(5, 'Give a reason for the credit note').max(500),
+})
+export type InvoiceCreditNoteInput = z.infer<typeof invoiceCreditNoteSchema>
+
+/** Payments are reversed with a reason, never erased. */
+export const invoicePaymentReversalSchema = z.object({
+  reason: z.string().trim().min(5, 'Give a reason for reversing this payment').max(500),
+})
+export type InvoicePaymentReversalInput = z.infer<typeof invoicePaymentReversalSchema>
+
+/** Generate the period's invoices from active AMC contracts. */
+export const amcInvoiceRunSchema = z.object({
+  period: z
+    .string()
+    .regex(/^\d{4}-\d{2}$/, 'Use a YYYY-MM billing period')
+    .optional(),
+})
+export type AmcInvoiceRunInput = z.infer<typeof amcInvoiceRunSchema>
 
 export const EXPENSE_CATEGORIES = [
   'materials',
@@ -261,8 +312,11 @@ export function invoiceTotals(invoice: InvoiceRecord, now = Date.now()): Invoice
     taxTotal += lineNet * (line.taxPercent / 100)
   }
   const total = Math.round((taxable + taxTotal) * 100) / 100
-  const paid = invoice.payments.reduce((sum, payment) => sum + payment.amount, 0)
-  const balance = Math.max(0, Math.round((total - paid) * 100) / 100)
+  const paid = invoice.payments
+    .filter((payment) => !payment.reversedAt)
+    .reduce((sum, payment) => sum + payment.amount, 0)
+  const credited = (invoice.creditNotes ?? []).reduce((sum, note) => sum + note.amount, 0)
+  const balance = Math.max(0, Math.round((total - paid - credited) * 100) / 100)
   const due = new Date(invoice.dueDate).getTime()
   const daysOverdue =
     invoice.status === 'issued' && balance > 0 && Number.isFinite(due)
@@ -284,6 +338,7 @@ export function invoiceTotals(invoice: InvoiceRecord, now = Date.now()): Invoice
     igst: invoice.taxMode === 'inter' ? Math.round(taxTotal * 100) / 100 : 0,
     total,
     paid,
+    credited: Math.round(credited * 100) / 100,
     balance,
     state,
     daysOverdue,

@@ -1,27 +1,10 @@
 import { useEffect, type ReactNode } from 'react'
-import type { SiteContent, SiteTheme } from '@hvac/shared'
+import type { SiteContent } from '@hvac/shared'
 import { useSiteContent, SiteContentProvider } from '@/content/SiteContentProvider'
 import { BrandProvider, type BrandOverrides } from '@/brand/BrandProvider'
 import { ToastProvider } from '@/components/ui'
 import { ThemeProvider, type Theme } from '@/theme/ThemeProvider'
-
-const themeTokens: [string, keyof SiteTheme['palette']][] = [
-  ['--base', 'base'],
-  ['--panel', 'panel'],
-  ['--panel-2', 'panel2'],
-  ['--fg', 'text'],
-  ['--fg-dim', 'muted'],
-  ['--fg-faint', 'faint'],
-  ['--line', 'line'],
-  ['--line-strong', 'lineStrong'],
-  ['--cold', 'cold'],
-  ['--cold-ink', 'coldInk'],
-  ['--heat', 'heat'],
-  ['--success', 'success'],
-  ['--warn', 'warn'],
-  ['--danger', 'danger'],
-  ['--focus', 'accent'],
-]
+import { applySiteTheme } from '@/theme/applySiteTheme'
 
 function BrandFromContent({ children }: { children: ReactNode }) {
   const { content } = useSiteContent()
@@ -46,20 +29,7 @@ function BrandFromContent({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    const root = document.documentElement
-    const theme = content.theme
-    if (!theme) {
-      for (const [token] of themeTokens) root.style.removeProperty(token)
-      root.style.removeProperty('--radius-control')
-      return
-    }
-    for (const [token, key] of themeTokens) {
-      root.style.setProperty(token, theme.palette[key])
-    }
-    root.style.setProperty('--cold', theme.buttons.primaryBg)
-    root.style.setProperty('--cold-ink', theme.buttons.primaryText)
-    root.style.setProperty('--line-strong', theme.buttons.secondaryBorder)
-    root.style.setProperty('--radius-control', theme.buttons.radius)
+    applySiteTheme(content.theme)
   }, [content.theme])
 
   useEffect(() => {

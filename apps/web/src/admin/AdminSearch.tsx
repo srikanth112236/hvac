@@ -86,7 +86,7 @@ export function AdminSearch() {
         open={open}
         onClose={() => setOpen(false)}
         title="Search the works"
-        description="Leads, customers, invoices, quotations, tickets and equipment."
+        description="Leads, customers, invoices, quotations, jobs, reminders, tickets, equipment, services, journal, products, pages, team, expenses and notifications."
       >
         <Input
           autoFocus
@@ -126,6 +126,25 @@ export function AdminSearch() {
             </ul>
           )}
         </div>
+        {results.length ? (
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-fg-faint">
+              {results.length} results ·{' '}
+              {new Set(results.map((result) => result.type)).size} types
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                const term = query.trim()
+                setOpen(false)
+                navigate(`/admin/search?q=${encodeURIComponent(term)}`)
+              }}
+              className="flex items-center gap-1.5 border border-line px-2.5 py-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:border-cold/50 hover:text-cold"
+            >
+              Full search <Icon name="arrow-right" size={11} />
+            </button>
+          </div>
+        ) : null}
       </Modal>
     </>
   )

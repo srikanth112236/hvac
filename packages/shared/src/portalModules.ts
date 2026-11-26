@@ -103,6 +103,22 @@ export interface QuotationLine {
   taxPercent: number
 }
 
+/** An immutable snapshot of a quotation before it was reissued or edited. */
+export interface QuotationRevision {
+  id: string
+  version: number
+  at: string
+  by: string
+  note: string
+  status: QuotationStatus
+  lines: QuotationLine[]
+  discount: number
+  notes: string
+  terms: string
+  validUntil: string
+  total: number
+}
+
 export interface QuotationRecord {
   id: string
   ref: string
@@ -121,6 +137,12 @@ export interface QuotationRecord {
   sentAt: string | null
   lastReminderAt: string | null
   changeRequest: string | null
+  /** Prior versions, newest first. Capped at 20. */
+  revisions?: QuotationRevision[]
+  /** Set once the accepted quotation has been converted to an invoice. */
+  invoiceId?: string | null
+  invoiceRef?: string | null
+  invoiceCreatedAt?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -171,6 +193,14 @@ export const quotationChangeRequestSchema = z.object({
   note: z.string().trim().min(5, 'Describe the change you need').max(1500),
 })
 export type QuotationChangeRequest = z.infer<typeof quotationChangeRequestSchema>
+
+/** Convert an accepted quotation into an invoice. */
+export const quotationConvertSchema = z.object({
+  dueInDays: z.number().int().min(0).max(365).default(14),
+  issueDate: z.string().trim().max(40).optional(),
+  notes: z.string().trim().max(1500).optional(),
+})
+export type QuotationConvertInput = z.infer<typeof quotationConvertSchema>
 
 export function quotationTotals(quotation: QuotationRecord): QuotationTotals {
   const subtotal = quotation.lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0)

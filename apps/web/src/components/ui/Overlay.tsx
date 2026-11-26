@@ -101,7 +101,7 @@ interface OverlayShellProps {
   description?: ReactNode
   children: ReactNode
   footer?: ReactNode
-  size?: 'sm' | 'md' | 'lg'
+  size?: 'sm' | 'md' | 'lg' | 'xl'
   className?: string
 }
 
@@ -119,7 +119,14 @@ export function Modal({
   const descriptionId = useId()
   const panelRef = useDismissable(open, onClose)
   const hydrated = useHydrated()
-  const width = size === 'sm' ? 'max-w-sm' : size === 'lg' ? 'max-w-2xl' : 'max-w-lg'
+  const width =
+    size === 'sm'
+      ? 'max-w-sm'
+      : size === 'xl'
+        ? 'max-w-6xl'
+        : size === 'lg'
+          ? 'max-w-2xl'
+          : 'max-w-lg'
 
   if (!hydrated) return null
   return createPortal(

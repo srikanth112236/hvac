@@ -22,23 +22,28 @@ import {
 } from '@/admin/AdminContentCollections'
 import { PageStudio } from '@/admin/PageStudio'
 import { ContentThemeTab } from '@/admin/ContentThemeTab'
+import { ContentDocumentsTab } from '@/admin/ContentDocumentsTab'
+import { ContentNavigationTab } from '@/admin/ContentNavigationTab'
 import { contentRegistry, collectionPages, singlePages } from '@/admin/contentRegistry'
 import { normalizeStudioDraft } from '@/admin/contentStudioAdapter'
 import { AdminLoading, AdminPageHeader, InlineError, formatDateTime } from '@/admin/ui'
 
-type Workspace = 'pages' | 'brand' | 'billing' | 'seo'
+type Workspace = 'pages' | 'navigation' | 'brand' | 'billing' | 'documents' | 'seo'
 type Update = (recipe: (current: SiteContent) => SiteContent) => void
 
 const workspaces: { id: Workspace; label: string }[] = [
   { id: 'pages', label: 'Pages & sections' },
+  { id: 'navigation', label: 'Navigation' },
   { id: 'brand', label: 'Brand & contact' },
   { id: 'billing', label: 'Billing identity' },
+  { id: 'documents', label: 'Documents' },
   { id: 'seo', label: 'SEO & social' },
 ]
 
 function payloadFor(draft: SiteContent): SiteContentPayload {
   return {
     brand: draft.brand,
+    navigation: draft.navigation,
     theme: draft.theme,
     home: draft.home,
     about: draft.about,
@@ -143,7 +148,11 @@ export function ContentStudioV2() {
   const requestedService = searchParams.get('service')?.trim() ?? ''
   const [draft, setDraft] = useState<SiteContent | null>(null)
   const [published, setPublished] = useState<SiteContent | null>(null)
-  const [workspace, setWorkspace] = useState<Workspace>('pages')
+  const [workspace, setWorkspace] = useState<Workspace>(() => {
+    if (typeof window === 'undefined') return 'pages'
+    const requested = new URLSearchParams(window.location.search).get('workspace')
+    return workspaces.some((entry) => entry.id === requested) ? (requested as Workspace) : 'pages'
+  })
   const [selectedId, setSelectedId] = useState(requestedService ? 'services-detail' : 'home')
   const [serviceId, setServiceId] = useState(requestedService)
   const [loading, setLoading] = useState(true)
@@ -429,7 +438,7 @@ export function ContentStudioV2() {
       <AdminPageHeader
         eyebrow="Content & SEO"
         title="Content studio."
-        description="One versioned workspace for pages, collections, brand, theme, billing and SEO. Draft changes are safe until you publish."
+        description="One versioned workspace for pages, collections, navigation, brand, theme, billing and SEO. Draft changes are safe until you publish."
         actions={
           <>
             <Badge tone="cold" dot>
@@ -668,6 +677,9 @@ export function ContentStudioV2() {
         </div>
       ) : null}
 
+      {workspace === 'navigation' ? (
+        <ContentNavigationTab draft={draft} update={update} />
+      ) : null}
       {workspace === 'brand' ? (
         <div className="flex flex-col gap-5">
           <BrandTab draft={draft} update={update} />
@@ -675,6 +687,7 @@ export function ContentStudioV2() {
         </div>
       ) : null}
       {workspace === 'billing' ? <BillingTab draft={draft} update={update} /> : null}
+      {workspace === 'documents' ? <ContentDocumentsTab draft={draft} update={update} /> : null}
       {workspace === 'seo' ? <SeoTab draft={draft} update={update} /> : null}
 
       <div className="flex flex-wrap items-center justify-between gap-3 border border-line bg-panel/20 px-4 py-3">

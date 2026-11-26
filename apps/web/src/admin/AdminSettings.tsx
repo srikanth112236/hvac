@@ -17,6 +17,7 @@ import {
   type TwoFactorStatus,
 } from '@/admin/api'
 import { AdminPageHeader, Panel, formatDateTime } from '@/admin/ui'
+import { AdminLeadScoringPanel } from '@/admin/AdminLeadScoringPanel'
 
 export function AdminSettings() {
   const { content, syncedAt, stale, refresh } = useSiteContent()
@@ -186,6 +187,90 @@ export function AdminSettings() {
       />
 
       <div className="grid gap-4 xl:grid-cols-2">
+        <Panel
+          title="Brand, appearance & documents"
+          action={<Badge tone="cold">One place</Badge>}
+          className="xl:col-span-2"
+        >
+          <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_280px]">
+            <div>
+              <p className="text-[12px] leading-relaxed text-fg-dim">
+                The live palette, button colours, logo and document settings all live in the
+                content document. Saving a change rewrites the tokens on <code>:root</code>, so the
+                public site, customer portal and this control room recolor together — and invoices,
+                quotations and expense reports pick up the same accent and signature.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {(
+                  [
+                    ['Canvas', content.theme?.palette.base],
+                    ['Panel', content.theme?.palette.panel],
+                    ['Text', content.theme?.palette.text],
+                    ['Accent', content.theme?.buttons.primaryBg ?? content.theme?.palette.cold],
+                    ['Heat', content.theme?.palette.heat],
+                    ['Line', content.theme?.palette.line],
+                  ] as const
+                ).map(([label, value]) => (
+                  <span key={label} className="flex items-center gap-2 border border-line px-2 py-1.5">
+                    <span
+                      className="h-5 w-5 border border-line"
+                      style={{ background: value ? `rgb(${value})` : 'transparent' }}
+                    />
+                    <span className="font-mono text-[8px] uppercase tracking-[0.08em] text-fg-faint">
+                      {label}
+                    </span>
+                  </span>
+                ))}
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {[
+                  ['brand', 'Logo, palette & buttons'],
+                  ['billing', 'Billing identity'],
+                  ['documents', 'Documents & signature'],
+                  ['navigation', 'Navigation & menus'],
+                ].map(([workspace, label]) => (
+                  <Link
+                    key={workspace}
+                    to={`/admin/content?workspace=${workspace}`}
+                    className="flex h-9 items-center gap-2 border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:border-cold/50 hover:text-cold"
+                  >
+                    {label} <Icon name="arrow-up-right" size={11} />
+                  </Link>
+                ))}
+              </div>
+            </div>
+            <div className="border border-line bg-panel/30 p-4">
+              <p className="font-mono text-[8px] uppercase tracking-[0.1em] text-fg-faint">
+                Documents
+              </p>
+              <dl className="mt-2 flex flex-col gap-2 text-[11px] text-fg-dim">
+                <div className="flex justify-between gap-3">
+                  <dt className="text-fg-faint">Paper</dt>
+                  <dd>{content.brand.documents?.paper ?? 'A4'}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-fg-faint">Signature</dt>
+                  <dd>{content.brand.documents?.signatureName || 'Authorised signatory'}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-fg-faint">Bank details</dt>
+                  <dd>{content.brand.documents?.showBankDetails === false ? 'Hidden' : 'Printed'}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-fg-faint">Content</dt>
+                  <dd>{stale ? 'Stale' : `v${content.version}`}</dd>
+                </div>
+              </dl>
+              <Link
+                to="/admin/content?workspace=documents"
+                className="mt-4 flex h-9 items-center justify-center gap-2 border border-cold/50 bg-cold/[0.08] font-mono text-[9px] uppercase tracking-[0.1em] text-cold hover:bg-cold/[0.14]"
+              >
+                Edit documents <Icon name="arrow-up-right" size={11} />
+              </Link>
+            </div>
+          </div>
+        </Panel>
+
         <Panel title="Account">
           <dl className="flex flex-col">
             <div className="flex items-center justify-between border-b border-line/70 py-3 first:pt-0">
@@ -404,12 +489,19 @@ export function AdminSettings() {
           </Panel>
         ) : null}
 
+        <Panel title="Lead scoring" action={<Badge tone="cold">Kanban rules</Badge>}>
+          <AdminLeadScoringPanel />
+        </Panel>
+
         <Panel
           title="Permissions matrix"
           action={
-            <Badge tone={permissions ? 'neutral' : 'warn'}>
-              {permissions ? `${permissions.roles.length} roles` : 'Unavailable'}
-            </Badge>
+            <Link
+              to="/admin/team"
+              className="font-mono text-[9px] uppercase tracking-[0.1em] text-cold hover:text-fg"
+            >
+              Edit in Team → Roles & access
+            </Link>
           }
         >
           {permissions ? (

@@ -69,6 +69,10 @@ export interface NotificationFeed {
   unread: number
   total: number
   byCategory: Record<NotificationCategory, number>
+  matching?: number
+  page?: number
+  pageSize?: number
+  pages?: number
 }
 
 export type NotificationClientMessage =

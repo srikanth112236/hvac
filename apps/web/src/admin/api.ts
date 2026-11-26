@@ -31,6 +31,7 @@ import type {
   PayrollPatch,
   PayrollRecord,
   QuotationRecord,
+  QuotationRevision,
   QuotationTotals,
   QuotationInput,
   ReminderRecord,
@@ -53,6 +54,10 @@ import type {
   NotificationPreferences,
   NotificationPreferencesPatch,
   NotificationView,
+  LeadScoringConfig,
+  LeadScoringSave,
+  RoleMatrix,
+  RoleMatrixSave,
   SupportTicket,
   TeamMember,
   TeamMemberInput,
@@ -164,9 +169,18 @@ export interface AdminMetrics {
   content: { version: number; updatedAt: string }
 }
 
+export interface PageMeta {
+  count: number
+  total: number
+  page: number
+  pageSize: number
+  pages: number
+}
+
 export interface ExpenseSummary {
   total: number
   thisMonth: number
+  lastMonth?: number
   byCategory: Record<string, number>
   count: number
 }
@@ -219,6 +233,43 @@ export class ApiError extends Error {
     this.name = 'ApiError'
     this.status = status
     this.issues = issues
+  }
+}
+
+export type QuotationRecordWithRevisions = QuotationRecord & {
+  totals: QuotationTotals
+  revisions: QuotationRevision[]
+  customer: CustomerAccount | null
+}
+
+export type AgendaKind = 'task' | 'payment' | 'lead' | 'quotation' | 'amc'
+
+export interface AgendaItemDto {
+  id: string
+  kind: AgendaKind
+  ref: string | null
+  title: string
+  subtitle: string
+  customer: string | null
+  dueAt: string | null
+  overdue: boolean
+  priority: 'urgent' | 'high' | 'normal' | 'low'
+  amount: number | null
+  href: string
+}
+
+export interface AgendaMetaDto {
+  generatedAt: string
+  counts: {
+    all: number
+    overdue: number
+    today: number
+    next7: number
+    task: number
+    payment: number
+    lead: number
+    quotation: number
+    amc: number
   }
 }
 
@@ -328,6 +379,24 @@ export const adminApi = {
   users: () => request<{ data: PublicAdminUser[] }>('/admin/users').then((payload) => payload.data),
   permissions: () =>
     request<{ data: PermissionMatrix }>('/admin/permissions').then((payload) => payload.data),
+  roleMatrix: () =>
+    request<{ data: RoleMatrix }>('/admin/roles/matrix').then((payload) => payload.data),
+  saveRoleMatrix: (input: RoleMatrixSave) =>
+    request<{ data: RoleMatrix }>('/admin/roles/matrix', {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }).then((payload) => payload.data),
+  leadScoring: () =>
+    request<{ data: LeadScoringConfig }>('/admin/lead-scoring').then((payload) => payload.data),
+  saveLeadScoring: (input: LeadScoringSave) =>
+    request<{ data: LeadScoringConfig }>('/admin/lead-scoring', {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }).then((payload) => payload.data),
+  notification: (id: string) =>
+    request<{ data: NotificationView }>(`/admin/notifications/${encodeURIComponent(id)}`).then(
+      (payload) => payload.data,
+    ),
   createAdminUser: (input: { name: string; email: string; password: string; role: AdminRole }) =>
     request<{ data: PublicAdminUser }>('/admin/users', {
       method: 'POST',
@@ -387,8 +456,10 @@ export const adminApi = {
       method: 'DELETE',
     }),
 
-  invoices: () =>
-    request<{ data: InvoiceWithTotals[]; summary: InvoiceSummary }>('/admin/invoices'),
+  invoices: (query = '') =>
+    request<{ data: InvoiceWithTotals[]; summary: InvoiceSummary; meta?: PageMeta }>(
+      `/admin/invoices${query}`,
+    ),
   invoice: (id: string) =>
     request<{ data: InvoiceWithTotals }>(`/admin/invoices/${encodeURIComponent(id)}`).then(
       (payload) => payload.data,
@@ -423,8 +494,50 @@ export const adminApi = {
       `/admin/invoices/${encodeURIComponent(id)}/remind`,
       { method: 'POST' },
     ),
+  /** Void keeps the invoice as an audit record; it is never deleted. */
+  voidInvoice: (id: string, reason: string) =>
+    request<{ data: InvoiceWithTotals; summary: InvoiceSummary }>(
+      `/admin/invoices/${encodeURIComponent(id)}/void`,
+      { method: 'POST', body: JSON.stringify({ reason }) },
+    ),
+  addInvoiceCreditNote: (id: string, input: { amount: number; reason: string }) =>
+    request<{ data: InvoiceWithTotals; summary: InvoiceSummary }>(
+      `/admin/invoices/${encodeURIComponent(id)}/credit-notes`,
+      { method: 'POST', body: JSON.stringify(input) },
+    ),
+  /** Payments are reversed with a reason, never erased from the ledger. */
+  reverseInvoicePayment: (id: string, paymentId: string, reason: string) =>
+    request<{ data: InvoiceWithTotals; summary: InvoiceSummary }>(
+      `/admin/invoices/${encodeURIComponent(id)}/payments/${encodeURIComponent(paymentId)}/reverse`,
+      { method: 'POST', body: JSON.stringify({ reason }) },
+    ),
+  runAmcInvoices: (period?: string) =>
+    request<{
+      data: { period: string; createdCount: number; skipped: number; eligible: number }
+      summary: InvoiceSummary
+    }>('/admin/invoices/amc-run', {
+      method: 'POST',
+      body: JSON.stringify(period ? { period } : {}),
+    }),
+  convertQuotation: (customerId: string, quotationId: string, input?: { dueInDays?: number }) =>
+    request<{ data: InvoiceWithTotals }>(
+      `/admin/customers/${encodeURIComponent(customerId)}/quotations/${encodeURIComponent(
+        quotationId,
+      )}/convert`,
+      { method: 'POST', body: JSON.stringify(input ?? {}) },
+    ),
+  quotation: (customerId: string, quotationId: string) =>
+    request<{ data: QuotationRecordWithRevisions }>(
+      `/admin/customers/${encodeURIComponent(customerId)}/quotations/${encodeURIComponent(
+        quotationId,
+      )}`,
+    ),
+  agenda: () => request<{ data: AgendaItemDto[]; meta: AgendaMetaDto }>('/admin/agenda'),
 
-  expenses: () => request<{ data: ExpenseRecord[]; summary: ExpenseSummary }>('/admin/expenses'),
+  expenses: (query = '') =>
+    request<{ data: ExpenseRecord[]; summary: ExpenseSummary; meta?: PageMeta }>(
+      `/admin/expenses${query}`,
+    ),
   createExpense: (input: ExpenseInput) =>
     request<{ data: ExpenseRecord; summary: ExpenseSummary }>('/admin/expenses', {
       method: 'POST',
@@ -572,6 +685,12 @@ export const adminApi = {
     request<{ data: CustomerAccountWithStats[] }>('/admin/customers').then(
       (payload) => payload.data,
     ),
+  customersPage: (query = '') =>
+    request<{
+      data: CustomerAccountWithStats[]
+      summary?: { accounts: number; pending: number; outstanding: number; invoiced: number }
+      meta?: PageMeta
+    }>(`/admin/customers${query}`),
   createCustomer: (input: CustomerAdminCreateInput) =>
     request<{ data: CustomerAccount }>('/admin/customers', {
       method: 'POST',
@@ -645,7 +764,14 @@ export const adminApi = {
           leadName: string | null
         }
       >
-      meta: { count: number; totals: { counts: Record<string, number>; value: number } }
+      meta: {
+        count: number
+        total: number
+        page: number
+        pageSize: number
+        pages: number
+        totals: { counts: Record<string, number>; value: number }
+      }
     }>(`/admin/quotations${query}`),
   createGlobalQuotation: (input: QuotationInput & { customerId: string }) =>
     request<{ data: QuotationRecord & { totals: QuotationTotals } }>('/admin/quotations', {
@@ -839,6 +965,7 @@ export const adminApi = {
       state?: 'all' | 'unread' | 'read'
       q?: string
       limit?: number
+      page?: number
     } = {},
   ) => {
     const query = new URLSearchParams()
@@ -846,6 +973,7 @@ export const adminApi = {
     if (params.state && params.state !== 'all') query.set('state', params.state)
     if (params.q) query.set('q', params.q)
     if (params.limit) query.set('limit', String(params.limit))
+    if (params.page) query.set('page', String(params.page))
     return request<{ data: NotificationFeed }>(
       `/admin/notifications${query.toString() ? `?${query}` : ''}`,
     ).then((payload) => payload.data)

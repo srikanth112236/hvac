@@ -3,7 +3,6 @@ import { Router } from 'express'
 import {
   ADMIN_PERMISSIONS,
   ADMIN_ROLES,
-  ROLE_PERMISSIONS,
   adminLeadCreateSchema,
   leadPatchSchema,
   reminderInputSchema,
@@ -36,6 +35,7 @@ import { reminderStore } from './reminders.js'
 import { sanitizeNewsletterHtml } from './sanitize.js'
 import { mailerStatus, readEmailLog } from './mailer.js'
 import { readAuditLog } from './audit.js'
+import { readRoleMatrix } from './roleMatrixStore.js'
 import { readAllNotifications } from './notifications.js'
 import { DATA_VERSION } from './migrations.js'
 import { runAmcVisitScheduling } from './jobs.js'
@@ -62,13 +62,15 @@ adminRouter.use(
   requireAdminMutation,
 )
 
-adminRouter.get('/permissions', (_req, res) => {
+adminRouter.get('/permissions', async (_req, res) => {
+  const matrix = await readRoleMatrix()
   res.json({
     data: {
       roles: ADMIN_ROLES,
       permissions: ADMIN_PERMISSIONS,
-      matrix: ROLE_PERMISSIONS,
-      readOnly: true,
+      matrix: Object.fromEntries(matrix.roles.map((role) => [role.id, role.permissions])),
+      version: matrix.version,
+      readOnly: false,
     },
   })
 })
@@ -282,7 +284,116 @@ adminRouter.get('/search', async (req, res) => {
     }
   }
 
-  res.json({ data: { results: results.slice(0, 30) } })
+  const [content, team, reminders, jobs, expenses, notifications] = await Promise.all([
+    readSiteContent(),
+    teamStore.read(),
+    reminderStore.read(),
+    jobStore.read(),
+    expenseStore.read(),
+    readAllNotifications(),
+  ])
+
+  for (const service of content.services) {
+    if (matches(service.name, service.headline, service.intro, service.capacity)) {
+      results.push({
+        type: 'Service',
+        id: service.id,
+        title: `Service · ${service.name}`,
+        subtitle: [service.capacity, service.category].filter(Boolean).join(' · '),
+        path: `/admin/content?service=${encodeURIComponent(service.id)}`,
+      })
+    }
+  }
+  for (const post of content.posts) {
+    if (matches(post.title, post.excerpt, post.authorName, ...post.tags)) {
+      results.push({
+        type: 'Journal',
+        id: post.id,
+        title: post.title,
+        subtitle: `${post.category} · ${post.published ? 'published' : 'draft'}`,
+        path: `/admin/blog/${post.id}`,
+      })
+    }
+  }
+  for (const product of content.products) {
+    if (matches(product.name, product.summary, product.brand, product.category)) {
+      results.push({
+        type: 'Product',
+        id: product.id,
+        title: product.name,
+        subtitle: [product.brand, product.capacity].filter(Boolean).join(' · '),
+        path: '/admin/content',
+      })
+    }
+  }
+  for (const [key, page] of Object.entries(content.pages)) {
+    if (matches(key, page.headline, page.lead)) {
+      results.push({
+        type: 'Page',
+        id: key,
+        title: `Page · ${key}`,
+        subtitle: page.headline,
+        path: '/admin/content',
+      })
+    }
+  }
+  for (const member of team) {
+    if (matches(member.name, member.email, member.phone, member.role, ...member.skills)) {
+      results.push({
+        type: 'Team',
+        id: member.id,
+        title: member.name,
+        subtitle: `${member.role} · ${member.email || member.phone || 'No contact'}`,
+        path: `/admin/team?member=${member.id}`,
+      })
+    }
+  }
+  for (const reminder of reminders) {
+    if (matches(reminder.title, reminder.body, reminder.leadRef ?? '')) {
+      results.push({
+        type: 'Reminder',
+        id: reminder.id,
+        title: reminder.title,
+        subtitle: `${reminder.status} · due ${reminder.dueAt}`,
+        path: '/admin/reminders',
+      })
+    }
+  }
+  for (const job of jobs) {
+    if (matches(job.ref, job.title, job.customerName, job.technician, job.status)) {
+      results.push({
+        type: 'Job',
+        id: job.id,
+        title: `${job.ref} · ${job.title}`,
+        subtitle: `${job.status} · ${job.technician || 'Unassigned'}`,
+        path: '/admin/jobs',
+      })
+    }
+  }
+  for (const expense of expenses) {
+    if (matches(expense.vendor, expense.category, expense.notes, expense.reference)) {
+      results.push({
+        type: 'Expense',
+        id: expense.id,
+        title: expense.vendor,
+        subtitle: `${expense.category} · ${expense.amount}`,
+        path: '/admin/expenses',
+      })
+    }
+  }
+  for (const notification of notifications) {
+    if (matches(notification.title, notification.message, notification.entityLabel ?? '')) {
+      results.push({
+        type: 'Notification',
+        id: notification.id,
+        title: notification.title,
+        subtitle: `${notification.category} · ${notification.createdAt.slice(0, 10)}`,
+        path: `/admin/notifications/${notification.id}`,
+      })
+    }
+  }
+
+  res.json({ data: { results: results.slice(0, 80) } })
 })
 
 function csvEscape(value: unknown): string {

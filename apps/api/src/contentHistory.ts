@@ -42,6 +42,7 @@ function nowIso(): string {
 function toPayload(content: SiteContent): SiteContentPayload {
   return {
     brand: content.brand,
+    navigation: content.navigation,
     home: content.home,
     about: content.about,
     workCases: content.workCases,
@@ -230,6 +231,8 @@ function restorePagePayload(
   if (record) return record
 
   switch (pageId) {
+    case 'navigation':
+      return { ...base, navigation: old.navigation }
     case 'home':
       return { ...base, home: old.home }
     case 'about':

@@ -13,6 +13,7 @@ import {
   workCases,
   type SiteContent,
   type SiteContentPayload,
+  type SiteNavigation,
   type SiteServiceOverride,
 } from '@hvac/shared'
 import { createStore } from './store.js'
@@ -41,6 +42,143 @@ const serviceSeed: [id: string, index: string, name: string, category: SiteServi
   ['chiller-maintenance', '21', 'Chiller, AHU & cooling tower service', 'maintenance', '60 – 2,000 TR', 'Per visit', 'Tube brush · water treatment'],
   ['kitchen-ventilation', '22', 'Commercial kitchen ventilation', 'commercial', '2,000 – 20,000 CFM', '2 – 5 weeks', 'Hood · UV · grease filter'],
 ]
+
+/** Columns for the default mega panels, grouped from the service seed. */
+function navColumn(
+  title: string,
+  category: SiteServiceOverride['category'],
+  limit = 6,
+): { title: string; links: { label: string; href: string }[] } {
+  return {
+    title,
+    links: serviceSeed
+      .filter(([, , , entryCategory]) => entryCategory === category)
+      .slice(0, limit)
+      .map(([id, , name]) => ({ label: name, href: `/services/${id}` })),
+  }
+}
+
+/**
+ * The shipped header: two mega panels (services, company) and direct links for
+ * the rest. Everything here is editable in Content Studio, and existing
+ * content documents pick it up through normalizeContent().
+ */
+function navigationDefaults(): SiteNavigation {
+  return {
+    announcement: {
+      enabled: true,
+      text: '24 × 7 breakdown dispatch',
+      secondary: 'Dallas · Fort Worth · Plano',
+      linkLabel: 'Emergency line',
+      linkHref: 'tel:+15555550177',
+    },
+    items: [
+      {
+        id: 'services',
+        label: 'Services',
+        href: '/services',
+        kind: 'mega',
+        published: true,
+        eyebrow: 'Capability index',
+        description: 'Twenty-two services, from a wall split to a 2,000 TR chiller plant.',
+        columns: [
+          navColumn('Residential', 'residential'),
+          navColumn('Commercial', 'commercial', 5),
+          navColumn('Industrial & precision', 'industrial', 4),
+          navColumn('Maintenance', 'maintenance', 2),
+        ],
+        feature: {
+          eyebrow: 'Dispatch',
+          title: 'A failure at 02:00 gets an engineer.',
+          body: 'Four-hour response inside city limits, measured from the logged call to an engineer on site.',
+          ctaLabel: 'Request a callback',
+          ctaHref: '/#callback',
+        },
+        cta: { label: 'All 22 services', href: '/services' },
+      },
+      {
+        id: 'systems',
+        label: 'Systems',
+        href: '/products',
+        kind: 'link',
+        published: true,
+        columns: [],
+      },
+      {
+        id: 'maintenance',
+        label: 'Maintenance',
+        href: '/amc',
+        kind: 'link',
+        published: true,
+        columns: [],
+      },
+      {
+        id: 'work',
+        label: 'Work',
+        href: '/work',
+        kind: 'link',
+        published: true,
+        columns: [],
+      },
+      {
+        id: 'company',
+        label: 'Company',
+        href: '/about',
+        kind: 'mega',
+        published: true,
+        eyebrow: 'The works',
+        description: 'Who answers the phone, how a job is run, and what gets written down.',
+        columns: [
+          {
+            title: 'The practice',
+            links: [
+              { label: 'About', href: '/about', description: 'Seventeen years of survey, design and handover.' },
+              { label: 'Process', href: '/process', description: 'Six stages, each with a written deliverable.' },
+              { label: 'Work', href: '/work', description: 'Plant rooms, cold chains and cleanrooms.' },
+            ],
+          },
+          {
+            title: 'Field notes',
+            links: [
+              { label: 'Journal', href: '/blog', description: 'Answer-first technical guides.' },
+              { label: 'FAQs', href: '/faq', description: 'The questions that decide the invoice.' },
+              { label: 'Systems catalogue', href: '/products', description: 'Capacity, refrigerant and checks.' },
+            ],
+          },
+          {
+            title: 'Talk to us',
+            links: [
+              { label: 'Contact', href: '/contact', description: 'Phone, email and the enquiry brief.' },
+              { label: 'Client portal', href: '/portal', description: 'Quotes, invoices, AMC and job reports.' },
+            ],
+          },
+        ],
+        feature: {
+          eyebrow: 'Handover',
+          title: 'The file arrives before the invoice.',
+          body: 'Load calculation, equipment schedule, as-builts, test record and refrigerant log — issued together.',
+          ctaLabel: 'See the process',
+          ctaHref: '/process',
+        },
+      },
+      {
+        id: 'contact',
+        label: 'Contact',
+        href: '/contact',
+        kind: 'link',
+        published: true,
+        columns: [],
+      },
+    ],
+    actions: {
+      primaryLabel: 'Request callback',
+      primaryHref: '/#callback',
+      secondaryLabel: 'Client portal',
+      secondaryHref: '/portal',
+      showPhone: true,
+    },
+  }
+}
 
 function defaultPayload(): SiteContentPayload {
   return {
@@ -99,7 +237,19 @@ function defaultPayload(): SiteContentPayload {
         invoiceNotes:
           'Thank you for choosing Coolvane. This invoice is issued by Coolvane Climate Systems LLC, Dallas, TX. For billing questions call (555) 555-0142 or write to works@coolvane.example.',
       },
+      documents: {
+        accent: '94 200 229',
+        paper: 'A4',
+        footerNote:
+          'Coolvane Climate Systems LLC · 8420 Central Commerce Drive, Suite 210, Dallas, TX 75201',
+        paymentInstructions:
+          'Pay by bank transfer quoting the document reference. Card and cheque payments are receipted the same working day.',
+        signatureName: 'Authorised signatory',
+        showBankDetails: true,
+        showSignature: true,
+      },
     },
+    navigation: navigationDefaults(),
     home: {
       heroEyebrow: 'Dallas · Fort Worth · Plano',
       heroTitle: 'Air, held to a setpoint.',
@@ -392,8 +542,22 @@ function normalizeContent(stored: SiteContent): SiteContent {
       hours: { ...defaults.brand.hours, ...(current.brand?.hours ?? {}) },
       stats: { ...defaults.brand.stats, ...(current.brand?.stats ?? {}) },
       billing: { ...defaults.brand.billing, ...(current.brand?.billing ?? {}) },
+      documents: { ...defaults.brand.documents!, ...(current.brand?.documents ?? {}) },
       serviceAreas: current.brand?.serviceAreas ?? defaults.brand.serviceAreas,
       credentials: current.brand?.credentials ?? defaults.brand.credentials,
+    },
+    navigation: {
+      ...defaults.navigation,
+      ...(current.navigation ?? {}),
+      announcement: {
+        ...defaults.navigation.announcement,
+        ...(current.navigation?.announcement ?? {}),
+      },
+      actions: {
+        ...defaults.navigation.actions,
+        ...(current.navigation?.actions ?? {}),
+      },
+      items: current.navigation?.items ?? defaults.navigation.items,
     },
     home: { ...defaults.home, ...(current.home ?? {}) },
     pages: {

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { customerStatusLabel, type CustomerAccountWithStats, type CustomerStatus } from '@hvac/shared'
 import { Icon } from '@/components/icons'
@@ -8,11 +8,12 @@ import {
   EmptyState,
   Input,
   Modal,
+  Pagination,
   SearchSuggest,
   Textarea,
   useToast,
 } from '@/components/ui'
-import { adminApi } from '@/admin/api'
+import { adminApi, type PageMeta } from '@/admin/api'
 import { AdminLoading, AdminPageHeader, InlineError, formatDate, formatDateTime, formatMoney } from '@/admin/ui'
 import { useLiveRefresh } from '@/admin/useLiveRefresh'
 
@@ -32,6 +33,15 @@ export function AdminCustomers() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
+  const [term, setTerm] = useState('')
+  const [page, setPage] = useState(1)
+  const [meta, setMeta] = useState<PageMeta | null>(null)
+  const [summary, setSummary] = useState<{
+    accounts: number
+    pending: number
+    outstanding: number
+    invoiced: number
+  } | null>(null)
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<CustomerAccountWithStats | null>(null)
   const [form, setForm] = useState<CustomerForm>(blankForm)
@@ -39,26 +49,32 @@ export function AdminCustomers() {
 
   const load = useCallback(async () => {
     setError('')
+    const params = new URLSearchParams({ page: String(page), pageSize: '25' })
+    if (term.trim()) params.set('q', term.trim())
     try {
-      setCustomers(await adminApi.customers())
+      const payload = await adminApi.customersPage(`?${params.toString()}`)
+      setCustomers(payload.data)
+      setMeta(payload.meta ?? null)
+      if (payload.summary) setSummary(payload.summary)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not load customers.')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [page, term])
   useLiveRefresh(load)
 
-  const filtered = useMemo(() => {
-    const term = query.trim().toLowerCase()
-    if (!term) return customers
-    return customers.filter((customer) =>
-      [customer.name, customer.email, customer.phone, customer.address]
-        .join(' ')
-        .toLowerCase()
-        .includes(term),
-    )
-  }, [customers, query])
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setTerm(query)
+      setPage(1)
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [query])
 
   const suggestions = useMemo(
     () =>
@@ -75,14 +91,12 @@ export function AdminCustomers() {
 
   const totals = useMemo(
     () => ({
-      accounts: customers.length,
-      pending: customers.filter(
-        (customer) => customer.status === 'pending' || customer.status === 'unverified',
-      ).length,
-      outstanding: customers.reduce((sum, customer) => sum + customer.openBalance, 0),
-      invoiced: customers.reduce((sum, customer) => sum + customer.invoiceCount, 0),
+      accounts: summary?.accounts ?? meta?.total ?? customers.length,
+      pending: summary?.pending ?? 0,
+      outstanding: summary?.outstanding ?? 0,
+      invoiced: summary?.invoiced ?? 0,
     }),
-    [customers],
+    [customers.length, meta?.total, summary],
   )
 
   const openCreate = () => {
@@ -207,7 +221,7 @@ export function AdminCustomers() {
             />
           </div>
         </div>
-        {filtered.length === 0 ? (
+        {customers.length === 0 ? (
           <div className="p-4">
             <EmptyState
               title="No customers in this view"
@@ -217,7 +231,7 @@ export function AdminCustomers() {
           </div>
         ) : (
           <div className="divide-y divide-line">
-            {filtered.map((customer) => (
+            {customers.map((customer) => (
               <article key={customer.id} className="grid gap-4 px-4 py-5 lg:grid-cols-[minmax(0,1.4fr)_repeat(2,minmax(0,0.5fr))_auto] lg:items-center">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -275,6 +289,14 @@ export function AdminCustomers() {
             ))}
           </div>
         )}
+        {meta && meta.pages > 1 ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-3">
+            <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-fg-faint">
+              {meta.count} matching · {meta.total} customers
+            </span>
+            <Pagination page={meta.page} pageCount={meta.pages} onPageChange={setPage} />
+          </div>
+        ) : null}
       </section>
 
       <Modal

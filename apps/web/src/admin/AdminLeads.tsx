@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useLiveRefresh } from '@/admin/useLiveRefresh'
 import { useDetailBack } from '@/admin/useDetailBack'
 import { Icon } from '@/components/icons'
@@ -14,7 +14,14 @@ import {
   useToast,
 } from '@/components/ui'
 import { catalogueServices } from '@/content/services'
-import type { AdminLead, CustomerAccount } from '@hvac/shared'
+import {
+  defaultLeadScoring,
+  scoreLead,
+  type AdminLead,
+  type CustomerAccount,
+  type LeadScoringConfig,
+  type TeamMember,
+} from '@hvac/shared'
 import { adminApi } from '@/admin/api'
 import {
   AdminLoading,
@@ -71,12 +78,21 @@ export function AdminLeads() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [suggestionResults, setSuggestionResults] = useState<AdminLead[]>([])
   const [importing, setImporting] = useState(false)
+  const [scoring, setScoring] = useState<LeadScoringConfig>(defaultLeadScoring())
+  const [team, setTeam] = useState<TeamMember[]>([])
+  const [ownerFilter, setOwnerFilter] = useState('all')
   const importRef = useRef<HTMLInputElement>(null)
 
   const load = async () => {
     try {
-      const payload = await adminApi.leads(`?page=${page}&pageSize=40`)
+      const [payload, config, teamPayload] = await Promise.all([
+        adminApi.leads(`?page=${page}&pageSize=40`),
+        adminApi.leadScoring().catch(() => null),
+        adminApi.team().catch(() => null),
+      ])
       setLeads(payload.data)
+      if (config) setScoring(config)
+      if (teamPayload) setTeam(teamPayload.data)
       setMeta({
         total: payload.meta.total,
         pages: payload.meta.pages,
@@ -101,13 +117,29 @@ export function AdminLeads() {
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    if (!needle) return leads
-    return leads.filter((lead) =>
-      `${lead.ref} ${lead.name} ${lead.phone} ${lead.email} ${lead.city ?? ''} ${lead.serviceName ?? ''}`
+    return leads.filter((lead) => {
+      if (ownerFilter === 'unassigned' && lead.owner) return false
+      if (ownerFilter !== 'all' && ownerFilter !== 'unassigned' && lead.owner !== ownerFilter)
+        return false
+      if (!needle) return true
+      return `${lead.ref} ${lead.name} ${lead.phone} ${lead.email} ${lead.city ?? ''} ${lead.serviceName ?? ''} ${lead.owner ?? ''}`
         .toLowerCase()
-        .includes(needle),
-    )
-  }, [leads, query])
+        .includes(needle)
+    })
+  }, [leads, query, ownerFilter])
+
+  const scores = useMemo(
+    () => new Map(filtered.map((lead) => [lead.ref, scoreLead(lead, scoring)])),
+    [filtered, scoring],
+  )
+  const ownerOptions = useMemo(
+    () => [
+      { value: 'all', label: 'All owners' },
+      { value: 'unassigned', label: 'Unassigned' },
+      ...team.map((member) => ({ value: member.name, label: member.name })),
+    ],
+    [team],
+  )
 
   const suggestions = suggestionResults
 
@@ -354,6 +386,20 @@ export function AdminLeads() {
         <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint">
           Drag between stages · changes save immediately
         </span>
+        <div className="w-44">
+          <Select
+            aria-label="Filter by owner"
+            value={ownerFilter}
+            options={ownerOptions}
+            onChange={(event) => setOwnerFilter(event.target.value)}
+          />
+        </div>
+        <Link
+          to="/admin/settings"
+          className="flex items-center gap-1.5 border border-line px-2.5 py-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:border-cold/50 hover:text-cold"
+        >
+          <Icon name="airflow" size={11} /> Scoring rules
+        </Link>
         <button
           type="button"
           onClick={() => void load()}
@@ -377,7 +423,7 @@ export function AdminLeads() {
         />
       ) : (
         <div className="-mx-4 overflow-x-auto px-4 pb-3 sm:mx-0 sm:px-0">
-          <div className="grid min-w-[1620px] grid-cols-6 gap-3">
+          <div className="grid min-w-[1620px] grid-cols-6 items-start gap-3">
             {columns.map((status) => {
               const meta = LEAD_STATUS_META[status]
               const items = filtered.filter((lead) => lead.status === status)
@@ -386,7 +432,7 @@ export function AdminLeads() {
                   key={status}
                   onDragOver={(event) => event.preventDefault()}
                   onDrop={(event) => onDrop(event, status)}
-                  className={`flex min-h-[460px] flex-col border border-t-2 bg-gradient-to-b to-transparent ${columnTheme[status]}`}
+                  className={`flex max-h-[calc(100vh-16rem)] min-h-[420px] flex-col border border-t-2 bg-gradient-to-b to-transparent ${columnTheme[status]}`}
                 >
                   <div className="flex items-center justify-between gap-2 border-b border-line/70 px-3 py-2.5">
                     <span className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim">
@@ -396,7 +442,10 @@ export function AdminLeads() {
                     <span className="t-num text-[10px] text-fg-faint">{items.length}</span>
                   </div>
 
-                  <div className="flex flex-1 flex-col gap-2 p-2">
+                  <div
+                    data-lenis-prevent
+                    className="flex flex-1 flex-col gap-2 overflow-y-auto p-2 [scrollbar-width:thin]"
+                  >
                     {items.map((lead) => {
                       const overdue =
                         lead.followUpAt &&
@@ -426,8 +475,24 @@ export function AdminLeads() {
                             aria-label={`Open ${lead.name}, ${lead.ref}`}
                           >
                             <div className="flex items-start justify-between gap-2">
-                              <span className="font-mono text-[8px] uppercase tracking-[0.08em] text-fg-faint">
-                                {lead.ref}
+                              <span className="flex items-center gap-1.5">
+                                <span className="font-mono text-[8px] uppercase tracking-[0.08em] text-fg-faint">
+                                  {lead.ref}
+                                </span>
+                                {scores.get(lead.ref) ? (
+                                  <span
+                                    title={`Lead score ${scores.get(lead.ref)!.total}/100`}
+                                    className={`border px-1 py-0.5 font-mono text-[7.5px] uppercase tracking-[0.05em] ${
+                                      scores.get(lead.ref)!.band === 'hot'
+                                        ? 'border-heat/60 text-heat'
+                                        : scores.get(lead.ref)!.band === 'warm'
+                                          ? 'border-warn/60 text-warn'
+                                          : 'border-line text-fg-faint'
+                                    }`}
+                                  >
+                                    {scores.get(lead.ref)!.total}
+                                  </span>
+                                ) : null}
                               </span>
                               {lead.urgency === 'emergency' ? (
                                 <span className="inline-flex items-center gap-1 font-mono text-[8px] uppercase tracking-[0.06em] text-heat">
@@ -446,6 +511,12 @@ export function AdminLeads() {
                             <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
                               <span className="font-mono text-[8px] uppercase tracking-[0.06em] text-fg-faint">
                                 {lead.city ?? 'No city'}
+                              </span>
+                              <span className="h-2 w-px bg-line" />
+                              <span
+                                className={`font-mono text-[8px] uppercase tracking-[0.06em] ${lead.owner ? 'text-fg-dim' : 'text-warn'}`}
+                              >
+                                {lead.owner || 'Unassigned'}
                               </span>
                               {lead.value ? (
                                 <>
@@ -544,6 +615,8 @@ export function AdminLeads() {
 
       <LeadDrawer
         lead={selected}
+        scoring={scoring}
+        team={team}
         onClose={() => setSelected(null)}
         onUpdated={(updated) => {
           setLeads((current) => current.map((lead) => (lead.ref === updated.ref ? updated : lead)))
@@ -571,11 +644,15 @@ export function AdminLeads() {
 
 function LeadDrawer({
   lead,
+  scoring,
+  team,
   onClose,
   onUpdated,
   onMoved,
 }: {
   lead: AdminLead | null
+  scoring: LeadScoringConfig
+  team: TeamMember[]
   onClose: () => void
   onUpdated: (lead: AdminLead) => void
   onMoved: (ref: string, status: string) => void
@@ -712,6 +789,51 @@ function LeadDrawer({
             </div>
           ) : null}
 
+          {lead ? (
+            <div className="border border-line bg-panel/30 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-fg-faint">
+                  Lead score
+                </span>
+                <span
+                  className={`font-mono text-[9px] uppercase tracking-[0.08em] ${
+                    scoreLead(lead, scoring).band === 'hot'
+                      ? 'text-heat'
+                      : scoreLead(lead, scoring).band === 'warm'
+                        ? 'text-warn'
+                        : 'text-fg-dim'
+                  }`}
+                >
+                  {scoreLead(lead, scoring).band} · {scoreLead(lead, scoring).total}/100
+                </span>
+              </div>
+              <div className="mt-2 h-1.5 w-full bg-line/40">
+                <div
+                  className="h-full bg-cold"
+                  style={{ width: `${scoreLead(lead, scoring).total}%` }}
+                />
+              </div>
+              {scoreLead(lead, scoring).matched.length ? (
+                <ul className="mt-2 flex flex-col gap-1">
+                  {scoreLead(lead, scoring).matched.map((match) => (
+                    <li
+                      key={match.id}
+                      className="flex items-center justify-between gap-2 text-[10px] text-fg-dim"
+                    >
+                      <span>{match.label}</span>
+                      <span className={match.points < 0 ? 'text-danger' : 'text-success'}>
+                        {match.points > 0 ? '+' : ''}
+                        {match.points}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-[10px] text-fg-faint">No scoring rule matched yet.</p>
+              )}
+            </div>
+          ) : null}
+
           <div className="grid grid-cols-2 gap-3">
             <Select
               label="Stage"
@@ -722,10 +844,19 @@ function LeadDrawer({
               }))}
               onChange={(event) => setStatus(event.target.value as AdminLead['status'])}
             />
-            <Input
-              label="Owner"
+            <Select
+              label="Assigned to"
               value={owner}
-              placeholder="Engineer or desk"
+              options={[
+                { value: '', label: 'Unassigned' },
+                ...team.map((member) => ({
+                  value: member.name,
+                  label: `${member.name} · ${member.role}`,
+                })),
+                ...(owner && !team.some((member) => member.name === owner)
+                  ? [{ value: owner, label: owner }]
+                  : []),
+              ]}
               onChange={(event) => setOwner(event.target.value)}
             />
             <Input

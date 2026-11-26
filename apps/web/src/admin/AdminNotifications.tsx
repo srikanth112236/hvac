@@ -1,25 +1,28 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   NOTIFICATION_CATEGORIES,
   notificationCategoryLabel,
   notificationPriorityLabel,
   type NotificationCategory,
+  type NotificationFeed,
 } from '@hvac/shared'
 import { Icon } from '@/components/icons'
 import {
   Badge,
   Button,
   EmptyState,
+  Pagination,
   SearchSuggest,
   Select,
   type SearchSuggestion,
 } from '@/components/ui'
 import { AdminPageHeader, MetricCard, Panel } from '@/admin/ui'
+import { adminApi } from '@/admin/api'
+import { useLiveRefresh } from '@/admin/useLiveRefresh'
 import {
   notificationCategoryIcon,
   notificationCategoryTone,
-  notificationDestination,
   useAdminNotifications,
 } from '@/admin/notifications'
 
@@ -46,24 +49,54 @@ const sourceLabel = {
 
 export function AdminNotifications() {
   const navigate = useNavigate()
-  const { feed, notifications, unread, connected, loading, error, refresh, markRead, markAllRead } =
-    useAdminNotifications()
+  const { unread, connected, markRead, markAllRead } = useAdminNotifications()
+  const [feed, setFeed] = useState<NotificationFeed | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [query, setQuery] = useState('')
+  const [term, setTerm] = useState('')
+  const [page, setPage] = useState(1)
   const [category, setCategory] = useState<NotificationCategory | 'all'>('all')
   const [state, setState] = useState<'all' | 'unread' | 'read'>('all')
 
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    return notifications.filter((notification) => {
-      if (category !== 'all' && notification.category !== category) return false
-      if (state === 'unread' && notification.read) return false
-      if (state === 'read' && !notification.read) return false
-      if (!needle) return true
-      return `${notification.title} ${notification.message} ${notification.entityLabel ?? ''} ${notification.actor ?? ''}`
-        .toLowerCase()
-        .includes(needle)
-    })
-  }, [category, notifications, query, state])
+  const load = useCallback(async () => {
+    try {
+      const next = await adminApi.notifications({
+        category,
+        state,
+        q: term.trim() || undefined,
+        page,
+        limit: 50,
+      })
+      setFeed(next)
+      setError('')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not load notifications.')
+    } finally {
+      setLoading(false)
+    }
+  }, [category, page, state, term])
+
+  useLiveRefresh(load, 15_000)
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setTerm(query)
+      setPage(1)
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [query])
+
+  useEffect(() => {
+    setPage(1)
+  }, [category, state])
+
+  const notifications = useMemo(() => feed?.data ?? [], [feed])
+  const filtered = notifications
 
   const suggestions: SearchSuggestion[] = useMemo(
     () =>
@@ -79,10 +112,12 @@ export function AdminNotifications() {
     [notifications],
   )
 
-  const open = (id: string, link: string) => {
+  const open = (id: string) => {
     void markRead(id)
-    navigate(notificationDestination(link))
+    navigate(`/admin/notifications/${id}`)
   }
+
+  const refresh = () => void load()
 
   return (
     <div className="flex flex-col gap-6">
@@ -99,7 +134,9 @@ export function AdminNotifications() {
               variant="secondary"
               icon="check"
               disabled={!unread}
-              onClick={() => void markAllRead()}
+              onClick={() => {
+                void markAllRead().then(load)
+              }}
             >
               Mark all read
             </Button>
@@ -122,7 +159,7 @@ export function AdminNotifications() {
         />
         <MetricCard
           label="Leads"
-          value={notifications.filter((entry) => entry.category === 'leads').length}
+          value={feed?.byCategory.leads ?? 0}
           note="New and updated enquiries"
           accent="cold"
         />
@@ -152,7 +189,7 @@ export function AdminNotifications() {
             suggestions={suggestions}
             onSelect={(suggestion) => {
               const notification = notifications.find((entry) => entry.id === suggestion.id)
-              if (notification) open(notification.id, notification.link)
+              if (notification) open(notification.id)
             }}
             emptyMessage="No notification matches that search."
           />
@@ -180,7 +217,7 @@ export function AdminNotifications() {
           />
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
-          <Badge tone="neutral">{filtered.length} matching</Badge>
+          <Badge tone="neutral">{feed?.matching ?? filtered.length} matching</Badge>
           <span className="font-mono text-[8px] uppercase tracking-[0.08em] text-fg-faint">
             Click a row to open the exact record
           </span>
@@ -203,7 +240,7 @@ export function AdminNotifications() {
             <button
               key={notification.id}
               type="button"
-              onClick={() => open(notification.id, notification.link)}
+              onClick={() => open(notification.id)}
               className={`group flex w-full items-start gap-4 px-4 py-4 text-left transition-colors hover:bg-cold/[0.05] ${
                 notification.read ? '' : 'bg-cold/[0.025]'
               }`}
@@ -262,6 +299,10 @@ export function AdminNotifications() {
           ))}
         </section>
       )}
+
+      {feed?.pages && feed.pages > 1 ? (
+        <Pagination page={feed.page ?? 1} pageCount={feed.pages} onPageChange={setPage} className="justify-end" />
+      ) : null}
     </div>
   )
 }

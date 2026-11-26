@@ -1,9 +1,11 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { SiteContent, SiteTheme } from '@hvac/shared'
 import { Button, Input, Select } from '@/components/ui'
 import { Icon } from '@/components/icons'
 import { MediaPicker } from '@/admin/MediaPicker'
 import type { ContentUpdate } from '@/admin/contentUpdate'
+import { useSiteContent } from '@/content/SiteContentProvider'
+import { applySiteTheme } from '@/theme/applySiteTheme'
 
 const defaultTheme: SiteTheme = {
   defaultVariant: 'foundry',
@@ -233,6 +235,15 @@ export function ContentThemeTab({ draft, update }: { draft: SiteContent; update:
   const theme = draft.theme ?? defaultTheme
   const brand = draft.brand
   const logo = brand.logo ?? { mark: '', wordmark: '' }
+  const savedTheme = useSiteContent().content.theme
+
+  // Restyling the control room you are editing in is the point: every colour
+  // change lands on :root immediately, and leaving the tab restores the
+  // published palette until the draft is saved.
+  useEffect(() => {
+    applySiteTheme(theme)
+    return () => applySiteTheme(savedTheme)
+  }, [theme, savedTheme])
 
   const setTheme = (recipe: (current: SiteTheme) => SiteTheme) => {
     update((current) => ({ ...current, theme: recipe(current.theme ?? defaultTheme) }))

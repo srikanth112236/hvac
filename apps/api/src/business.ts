@@ -1,17 +1,21 @@
 import { randomUUID } from 'node:crypto'
-import { Router } from 'express'
+import { Router, type Request, type Response } from 'express'
 import {
   expenseInputSchema,
   expensePatchSchema,
+  invoiceCreditNoteSchema,
   invoiceInputSchema,
   invoicePatchSchema,
   invoicePaymentInputSchema,
+  invoicePaymentReversalSchema,
   invoiceTotals,
+  invoiceVoidSchema,
   payrollInputSchema,
   payrollPatchSchema,
   teamMemberInputSchema,
   teamMemberPatchSchema,
   type ExpenseRecord,
+  type InvoiceCreditNote,
   type InvoicePayment,
   type InvoiceRecord,
   type InvoiceSummary,
@@ -28,6 +32,7 @@ import { reminderStore } from './reminders.js'
 import { createStore } from './store.js'
 import { invoiceIssuedEmail, invoiceReminderEmail, sendMail } from './mailer.js'
 import { streamInvoicePdf } from './pdf.js'
+import { pageMeta, readPaging, slicePage, textParam } from './paging.js'
 import { streamExpenseReportPdf } from './expensePdf.js'
 import { PUBLIC_SITE_URL } from './config.js'
 
@@ -66,6 +71,8 @@ export function summarizeInvoices(invoices: InvoiceRecord[], now = Date.now()): 
   let draftCount = 0
   let collectedThisMonth = 0
   let invoicedThisMonth = 0
+  let credited = 0
+  let voidedCount = 0
 
   for (const invoice of invoices) {
     const totals = invoiceTotals(invoice, now)
@@ -73,9 +80,13 @@ export function summarizeInvoices(invoices: InvoiceRecord[], now = Date.now()): 
       draftCount += 1
       continue
     }
-    if (totals.state === 'cancelled') continue
+    if (totals.state === 'cancelled') {
+      voidedCount += 1
+      continue
+    }
     invoiced += totals.total
     collected += totals.paid
+    credited += totals.credited
     outstanding += totals.balance
     if (totals.state === 'paid') paidCount += 1
     if (totals.state === 'partial') partialCount += 1
@@ -92,6 +103,8 @@ export function summarizeInvoices(invoices: InvoiceRecord[], now = Date.now()): 
   return {
     invoiced,
     collected,
+    credited,
+    voidedCount,
     outstanding,
     overdueAmount,
     paidCount,
@@ -104,7 +117,7 @@ export function summarizeInvoices(invoices: InvoiceRecord[], now = Date.now()): 
   }
 }
 
-function nextInvoiceReference(invoices: InvoiceRecord[], prefixValue: string): string {
+export function nextInvoiceReference(invoices: InvoiceRecord[], prefixValue: string): string {
   const prefix = (prefixValue || 'INV').toUpperCase()
   const year = new Date().getFullYear()
   const head = `${prefix}-${year}-`
@@ -170,11 +183,17 @@ export function summarizeExpenses(expenses: ExpenseRecord[]) {
   const thisMonth = expenses
     .filter((expense) => monthKey(expense.date) === month)
     .reduce((sum, expense) => sum + expense.amount, 0)
+  const previousMonth = monthKey(
+    new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).toISOString(),
+  )
+  const lastMonth = expenses
+    .filter((expense) => monthKey(expense.date) === previousMonth)
+    .reduce((sum, expense) => sum + expense.amount, 0)
   const byCategory: Record<string, number> = {}
   for (const expense of expenses) {
     byCategory[expense.category] = (byCategory[expense.category] ?? 0) + expense.amount
   }
-  return { total, thisMonth, byCategory, count: expenses.length }
+  return { total, thisMonth, lastMonth, byCategory, count: expenses.length }
 }
 
 export function summarizePayroll(payroll: PayrollRecord[], team: TeamMember[]) {
@@ -235,12 +254,26 @@ businessRouter.use(requireAdmin, requirePermission('billing.write'), requireAdmi
 /*  Invoices                                                                   */
 /* -------------------------------------------------------------------------- */
 
-businessRouter.get('/invoices', async (_req, res) => {
+businessRouter.get('/invoices', async (req, res) => {
   const invoices = await invoiceStore.read()
-  const sorted = [...invoices].sort((a, b) => Date.parse(b.issueDate) - Date.parse(a.issueDate))
+  const state = textParam(req.query.state)
+  const query = textParam(req.query.q).toLowerCase()
+  const sorted = [...invoices]
+    .sort((a, b) => Date.parse(b.issueDate) - Date.parse(a.issueDate))
+    .filter((invoice) => {
+      if (state && state !== 'all' && invoiceTotals(invoice).state !== state) return false
+      if (!query) return true
+      return [invoice.ref, invoice.customerName, invoice.customerEmail, invoice.customerPhone, invoice.service]
+        .join(' ')
+        .toLowerCase()
+        .includes(query)
+    })
+  const paging = readPaging(req, 20)
+  const page = paging ? slicePage(sorted, paging) : sorted
   res.json({
-    data: sorted.map((invoice) => toInvoiceView(invoice)),
+    data: page.map((invoice) => toInvoiceView(invoice)),
     summary: summarizeInvoices(invoices),
+    ...(paging ? { meta: pageMeta(sorted.length, invoices.length, paging) } : {}),
   })
 })
 
@@ -323,9 +356,46 @@ businessRouter.patch('/invoices/:id', async (req, res) => {
   const content = await readSiteContent()
   let saved: InvoiceRecord | undefined
   let becameIssued = false
+  let refusal: { status: number; code: string; message: string } | null = null
+  const FINANCIAL = ['lines', 'discount', 'taxMode', 'issueDate', 'dueDate', 'status'] as const
   const next = await invoiceStore.mutate((invoices) =>
     invoices.map((current) => {
       if (current.id !== req.params.id && current.ref !== req.params.id) return current
+      const totals = invoiceTotals(current)
+      const touchesMoney = FINANCIAL.some((key) => patch[key] !== undefined)
+      if (totals.state === 'cancelled') {
+        refusal = {
+          status: 409,
+          code: 'invoice_voided',
+          message: 'This invoice is void. Raise a new invoice instead of editing the voided record.',
+        }
+        return current
+      }
+      if (patch.status === 'cancelled') {
+        refusal = {
+          status: 409,
+          code: 'use_void',
+          message: 'Void the invoice with a reason instead of changing its status.',
+        }
+        return current
+      }
+      if (touchesMoney && (totals.paid > 0 || totals.credited > 0)) {
+        refusal = {
+          status: 409,
+          code: 'invoice_has_money',
+          message:
+            'Money is already recorded against this invoice. Issue a credit note or void it instead of editing the amounts.',
+        }
+        return current
+      }
+      if (touchesMoney && current.status === 'issued' && patch.status === 'draft') {
+        refusal = {
+          status: 409,
+          code: 'invalid_transition',
+          message: 'An issued invoice cannot return to draft. Void it and raise a new one.',
+        }
+        return current
+      }
       const updated: InvoiceRecord = {
         ...current,
         ...patch,
@@ -340,6 +410,11 @@ businessRouter.patch('/invoices/:id', async (req, res) => {
       return updated
     }),
   )
+  if (refusal) {
+    const known = refusal as { status: number; code: string; message: string }
+    res.status(known.status).json({ error: { code: known.code, message: known.message } })
+    return
+  }
   if (!saved) {
     res.status(404).json({ error: { code: 'not_found', message: 'Invoice not found.' } })
     return
@@ -354,11 +429,160 @@ businessRouter.patch('/invoices/:id', async (req, res) => {
   res.json({ data: toInvoiceView(saved), summary: summarizeInvoices(next) })
 })
 
+/**
+ * Only an unissued draft with no money against it can be deleted. Everything
+ * else is voided so the paper trail survives an audit.
+ */
 businessRouter.delete('/invoices/:id', async (req, res) => {
-  const next = await invoiceStore.mutate((invoices) =>
-    invoices.filter((entry) => entry.id !== req.params.id && entry.ref !== req.params.id),
+  const invoices = await invoiceStore.read()
+  const invoice = invoices.find(
+    (entry) => entry.id === req.params.id || entry.ref === req.params.id,
   )
-  res.json({ data: { deleted: req.params.id }, summary: summarizeInvoices(next) })
+  if (!invoice) {
+    res.status(404).json({ error: { code: 'not_found', message: 'Invoice not found.' } })
+    return
+  }
+  if (invoice.status !== 'draft' || invoice.payments.length > 0) {
+    res.status(409).json({
+      error: {
+        code: 'use_void',
+        message:
+          'Issued invoices are kept as financial records. Void this invoice with a reason instead of deleting it.',
+      },
+    })
+    return
+  }
+  const next = await invoiceStore.mutate((entries) =>
+    entries.filter((entry) => entry.id !== invoice.id),
+  )
+  res.json({ data: { deleted: invoice.id }, summary: summarizeInvoices(next) })
+})
+
+/** Void an issued invoice. The record and its history stay in place. */
+businessRouter.post('/invoices/:id/void', async (req, res) => {
+  const parsed = invoiceVoidSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({
+      error: {
+        code: 'validation_error',
+        message: parsed.error.issues[0]?.message ?? 'Give a reason for voiding this invoice.',
+      },
+    })
+    return
+  }
+  let saved: InvoiceRecord | undefined
+  let refusal: { status: number; code: string; message: string } | null = null
+  const next = await invoiceStore.mutate((invoices) =>
+    invoices.map((current) => {
+      if (current.id !== req.params.id && current.ref !== req.params.id) return current
+      if (current.status === 'cancelled') {
+        refusal = {
+          status: 409,
+          code: 'invoice_voided',
+          message: 'This invoice is already void.',
+        }
+        return current
+      }
+      if (current.status === 'draft') {
+        refusal = {
+          status: 400,
+          code: 'invoice_not_issued',
+          message: 'This invoice was never issued. Delete the draft instead of voiding it.',
+        }
+        return current
+      }
+      const updated: InvoiceRecord = {
+        ...current,
+        status: 'cancelled',
+        voidReason: parsed.data.reason,
+        voidedAt: nowIso(),
+        voidedBy: String(res.locals.admin.email),
+        updatedAt: nowIso(),
+      }
+      saved = updated
+      return updated
+    }),
+  )
+  if (refusal) {
+    const known = refusal as { status: number; code: string; message: string }
+    res.status(known.status).json({ error: { code: known.code, message: known.message } })
+    return
+  }
+  if (!saved) {
+    res.status(404).json({ error: { code: 'not_found', message: 'Invoice not found.' } })
+    return
+  }
+  res.json({ data: toInvoiceView(saved), summary: summarizeInvoices(next) })
+})
+
+/** Credit notes reduce the amount due without rewriting issued lines. */
+businessRouter.post('/invoices/:id/credit-notes', async (req, res) => {
+  const parsed = invoiceCreditNoteSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({
+      error: {
+        code: 'validation_error',
+        message: parsed.error.issues[0]?.message ?? 'Check the credit note.',
+      },
+    })
+    return
+  }
+  let saved: InvoiceRecord | undefined
+  let refusal: { status: number; code: string; message: string } | null = null
+  const next = await invoiceStore.mutate((invoices) =>
+    invoices.map((current) => {
+      if (current.id !== req.params.id && current.ref !== req.params.id) return current
+      const totals = invoiceTotals(current)
+      if (totals.state === 'cancelled') {
+        refusal = {
+          status: 409,
+          code: 'invoice_voided',
+          message: 'A void invoice cannot take a credit note.',
+        }
+        return current
+      }
+      if (current.status === 'draft') {
+        refusal = {
+          status: 400,
+          code: 'invoice_not_issued',
+          message: 'Edit the draft lines instead of crediting an invoice that was never issued.',
+        }
+        return current
+      }
+      if (parsed.data.amount > totals.balance + 0.01) {
+        refusal = {
+          status: 400,
+          code: 'credit_exceeds_balance',
+          message: `The credit is larger than the open balance of ${money(totals.balance)}.`,
+        }
+        return current
+      }
+      const note: InvoiceCreditNote = {
+        id: randomUUID(),
+        amount: Math.round(parsed.data.amount * 100) / 100,
+        reason: parsed.data.reason,
+        createdAt: nowIso(),
+        createdBy: String(res.locals.admin.email),
+      }
+      const updated: InvoiceRecord = {
+        ...current,
+        creditNotes: [...(current.creditNotes ?? []), note],
+        updatedAt: nowIso(),
+      }
+      saved = updated
+      return updated
+    }),
+  )
+  if (refusal) {
+    const known = refusal as { status: number; code: string; message: string }
+    res.status(known.status).json({ error: { code: known.code, message: known.message } })
+    return
+  }
+  if (!saved) {
+    res.status(404).json({ error: { code: 'not_found', message: 'Invoice not found.' } })
+    return
+  }
+  res.status(201).json({ data: toInvoiceView(saved), summary: summarizeInvoices(next) })
 })
 
 businessRouter.post('/invoices/:id/payments', async (req, res) => {
@@ -425,26 +649,72 @@ businessRouter.post('/invoices/:id/payments', async (req, res) => {
   res.status(201).json({ data: toInvoiceView(saved), summary: summarizeInvoices(next) })
 })
 
-businessRouter.delete('/invoices/:id/payments/:paymentId', async (req, res) => {
+/**
+ * Reverse a recorded payment. The payment line stays on the invoice with the
+ * reason and who reversed it, so the cash history is never rewritten.
+ */
+async function reversePayment(req: Request, res: Response): Promise<void> {
+  const parsed = invoicePaymentReversalSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({
+      error: {
+        code: 'reason_required',
+        message: parsed.error.issues[0]?.message ?? 'Give a reason for reversing this payment.',
+      },
+    })
+    return
+  }
   let saved: InvoiceRecord | undefined
+  let refusal: { status: number; code: string; message: string } | null = null
   const next = await invoiceStore.mutate((invoices) =>
     invoices.map((current) => {
       if (current.id !== req.params.id && current.ref !== req.params.id) return current
+      const payment = current.payments.find((entry) => entry.id === req.params.paymentId)
+      if (!payment) {
+        refusal = { status: 404, code: 'not_found', message: 'Payment not found.' }
+        return current
+      }
+      if (payment.reversedAt) {
+        refusal = {
+          status: 409,
+          code: 'payment_reversed',
+          message: 'That payment is already reversed.',
+        }
+        return current
+      }
       const updated: InvoiceRecord = {
         ...current,
-        payments: current.payments.filter((payment) => payment.id !== req.params.paymentId),
+        payments: current.payments.map((entry) =>
+          entry.id === payment.id
+            ? {
+                ...entry,
+                reversedAt: nowIso(),
+                reversedBy: String(res.locals.admin.email),
+                reversalReason: parsed.data.reason,
+              }
+            : entry,
+        ),
         updatedAt: nowIso(),
       }
       saved = updated
       return updated
     }),
   )
+  if (refusal) {
+    const known = refusal as { status: number; code: string; message: string }
+    res.status(known.status).json({ error: { code: known.code, message: known.message } })
+    return
+  }
   if (!saved) {
     res.status(404).json({ error: { code: 'not_found', message: 'Invoice not found.' } })
     return
   }
   res.json({ data: toInvoiceView(saved), summary: summarizeInvoices(next) })
-})
+}
+
+businessRouter.delete('/invoices/:id/payments/:paymentId', reversePayment)
+businessRouter.post('/invoices/:id/payments/:paymentId/reverse', reversePayment)
+
 
 businessRouter.post('/invoices/:id/remind', async (req, res) => {
   const invoices = await invoiceStore.read()
@@ -523,11 +793,28 @@ businessRouter.post('/invoices/:id/remind', async (req, res) => {
 /*  Expenses                                                                   */
 /* -------------------------------------------------------------------------- */
 
-businessRouter.get('/expenses', async (_req, res) => {
+businessRouter.get('/expenses', async (req, res) => {
   const expenses = await expenseStore.read()
+  const category = textParam(req.query.category)
+  const method = textParam(req.query.method)
+  const month = textParam(req.query.month)
+  const query = textParam(req.query.q).toLowerCase()
+  const sorted = [...expenses]
+    .sort((a, b) => Date.parse(b.date) - Date.parse(a.date))
+    .filter((expense) => {
+      if (category && category !== 'all' && expense.category !== category) return false
+      if (method && method !== 'all' && expense.method !== method) return false
+      if (month && expense.date.slice(0, 7) !== month) return false
+      if (!query) return true
+      return `${expense.description} ${expense.vendor} ${expense.reference} ${expense.notes}`
+        .toLowerCase()
+        .includes(query)
+    })
+  const paging = readPaging(req, 20)
   res.json({
-    data: [...expenses].sort((a, b) => Date.parse(b.date) - Date.parse(a.date)),
+    data: paging ? slicePage(sorted, paging) : sorted,
     summary: summarizeExpenses(expenses),
+    ...(paging ? { meta: pageMeta(sorted.length, expenses.length, paging) } : {}),
   })
 })
 

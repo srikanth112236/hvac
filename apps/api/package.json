@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed:demo": "tsx src/seedDemo.ts"
+    "seed:demo": "tsx src/seedDemo.ts",
+    "seed:reset": "tsx src/seedReset.ts"
   },
   "dependencies": {
     "@hvac/shared": "*",

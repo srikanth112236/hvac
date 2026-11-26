@@ -72,6 +72,7 @@ export function feedFor(
   viewer: string,
   options: {
     limit?: number
+    page?: number
     category?: NotificationCategory | 'all'
     state?: 'all' | 'unread' | 'read'
     query?: string
@@ -90,13 +91,19 @@ export function feedFor(
       .toLowerCase()
       .includes(needle)
   })
+  const pageSize = Math.max(1, Math.min(200, options.limit ?? 100))
+  const page = Math.max(1, options.page ?? 1)
   return {
     data: filtered
-      .slice(0, Math.max(1, Math.min(200, options.limit ?? 100)))
+      .slice((page - 1) * pageSize, page * pageSize)
       .map((record) => viewFor(record, viewer)),
     unread: records.filter((record) => !record.readBy.includes(key)).length,
     total: records.length,
     byCategory: categoryCounts(records),
+    matching: filtered.length,
+    page,
+    pageSize,
+    pages: Math.max(1, Math.ceil(filtered.length / pageSize)),
   }
 }
 
@@ -276,18 +283,32 @@ notificationsRouter.get('/notifications', async (req, res, next) => {
     const state = rawState === 'unread' || rawState === 'read' ? rawState : 'all'
     const query = typeof req.query.q === 'string' ? req.query.q : ''
     const limit = Number.parseInt(String(req.query.limit ?? '100'), 10)
+    const page = Number.parseInt(String(req.query.page ?? '1'), 10)
     res.set('Cache-Control', 'private, no-store')
     res.json({
       data: await readNotificationFeed(admin.email, {
         category,
         state,
         query,
+        page: Number.isFinite(page) ? page : 1,
         limit: Number.isFinite(limit) ? limit : 100,
       }),
     })
   } catch (error) {
     next(error)
   }
+})
+
+notificationsRouter.get('/notifications/:id', async (req, res) => {
+  const admin = res.locals.admin as AdminSession
+  const records = await notificationStore.read()
+  const record = records.find((entry) => entry.id === req.params.id)
+  if (!record) {
+    res.status(404).json({ error: { code: 'not_found', message: 'Notification not found.' } })
+    return
+  }
+  res.set('Cache-Control', 'private, no-store')
+  res.json({ data: viewFor(record, admin.email) })
 })
 
 notificationsRouter.post('/notifications/read-all', async (_req, res, next) => {

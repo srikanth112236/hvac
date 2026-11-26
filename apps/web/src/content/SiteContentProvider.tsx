@@ -21,14 +21,126 @@ import {
   testimonials as testimonialSeed,
   workCases as workCaseSeed,
   type SiteContent,
+  type SiteNavigation,
 } from '@hvac/shared'
 import { brandConfig } from '@/brand/brand.config'
 import { amcPlans, homeFaqs } from '@/content/home'
 import { catalogueServices } from '@/content/services'
 
+/** Header fallback when the API cannot be reached; mirrors the API defaults. */
+const navColumn = (title: string, category: string, limit: number) => ({
+  title,
+  links: catalogueServices
+    .filter((service) => service.category === category)
+    .slice(0, limit)
+    .map((service) => ({ label: service.name, href: `/services/${service.id}` })),
+})
+
+const fallbackNavigation: SiteNavigation = {
+  announcement: {
+    enabled: true,
+    text: '24 × 7 breakdown dispatch',
+    secondary: 'Dallas · Fort Worth · Plano',
+    linkLabel: 'Emergency line',
+    linkHref: `tel:${brandConfig.contact.emergencyPhone}`,
+  },
+  items: [
+    {
+      id: 'services',
+      label: 'Services',
+      href: '/services',
+      kind: 'mega',
+      published: true,
+      eyebrow: 'Capability index',
+      description: 'Twenty-two services, from a wall split to a 2,000 TR chiller plant.',
+      columns: [
+        navColumn('Residential', 'residential', 6),
+        navColumn('Commercial', 'commercial', 5),
+        navColumn('Industrial & precision', 'industrial', 4),
+        navColumn('Maintenance', 'maintenance', 2),
+      ],
+      feature: {
+        eyebrow: 'Dispatch',
+        title: 'A failure at 02:00 gets an engineer.',
+        body: 'Four-hour response inside city limits, measured from the logged call to an engineer on site.',
+        ctaLabel: 'Request a callback',
+        ctaHref: '/#callback',
+      },
+      cta: { label: 'All 22 services', href: '/services' },
+    },
+    {
+      id: 'systems',
+      label: 'Systems',
+      href: '/products',
+      kind: 'link',
+      published: true,
+      columns: [],
+    },
+    {
+      id: 'maintenance',
+      label: 'Maintenance',
+      href: '/amc',
+      kind: 'link',
+      published: true,
+      columns: [],
+    },
+    { id: 'work', label: 'Work', href: '/work', kind: 'link', published: true, columns: [] },
+    {
+      id: 'company',
+      label: 'Company',
+      href: '/about',
+      kind: 'mega',
+      published: true,
+      eyebrow: 'The works',
+      description: 'Who answers the phone, how a job is run, and what gets written down.',
+      columns: [
+        {
+          title: 'The practice',
+          links: [
+            { label: 'About', href: '/about' },
+            { label: 'Process', href: '/process' },
+            { label: 'Work', href: '/work' },
+          ],
+        },
+        {
+          title: 'Field notes',
+          links: [
+            { label: 'Journal', href: '/blog' },
+            { label: 'FAQs', href: '/faq' },
+            { label: 'Systems catalogue', href: '/products' },
+          ],
+        },
+        {
+          title: 'Talk to us',
+          links: [
+            { label: 'Contact', href: '/contact' },
+            { label: 'Client portal', href: '/portal' },
+          ],
+        },
+      ],
+      feature: {
+        eyebrow: 'Handover',
+        title: 'The file arrives before the invoice.',
+        body: 'Load calculation, equipment schedule, as-builts, test record and refrigerant log.',
+        ctaLabel: 'See the process',
+        ctaHref: '/process',
+      },
+    },
+    { id: 'contact', label: 'Contact', href: '/contact', kind: 'link', published: true, columns: [] },
+  ],
+  actions: {
+    primaryLabel: 'Request callback',
+    primaryHref: '/#callback',
+    secondaryLabel: 'Client portal',
+    secondaryHref: '/portal',
+    showPhone: true,
+  },
+}
+
 const fallbackContent: SiteContent = {
   version: 0,
   updatedAt: '',
+  navigation: fallbackNavigation,
   brand: {
     name: brandConfig.name,
     shortName: brandConfig.shortName,
@@ -58,6 +170,17 @@ const fallbackContent: SiteContent = {
         'Payment by cash, cheque, card on site or bank transfer. Cheques in favour of Coolvane Climate Systems LLC. Please quote the invoice reference with every transfer.',
       invoiceNotes:
         'Thank you for choosing Coolvane. This invoice is issued by Coolvane Climate Systems LLC, Dallas, TX.',
+    },
+    documents: {
+      accent: '94 200 229',
+      paper: 'A4',
+      footerNote:
+        'Coolvane Climate Systems LLC · 8420 Central Commerce Drive, Suite 210, Dallas, TX 75201',
+      paymentInstructions:
+        'Pay by bank transfer quoting the document reference. Card and cheque payments are receipted the same working day.',
+      signatureName: 'Authorised signatory',
+      showBankDetails: true,
+      showSignature: true,
     },
   },
   home: {

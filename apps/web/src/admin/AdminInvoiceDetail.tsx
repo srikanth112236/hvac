@@ -197,24 +197,58 @@ export function AdminInvoiceDetail() {
     }
   }
 
-  const deletePayment = async (paymentId: string) => {
-    if (!window.confirm('Remove this payment from the ledger?')) return
+  const [moneyAction, setMoneyAction] = useState<'void' | 'credit' | 'reverse' | null>(null)
+  const [moneyReason, setMoneyReason] = useState('')
+  const [creditAmount, setCreditAmount] = useState('')
+  const [reverseTarget, setReverseTarget] = useState('')
+  const [moneyBusy, setMoneyBusy] = useState(false)
+
+  const openMoney = (action: 'void' | 'credit' | 'reverse', paymentId = '') => {
+    setMoneyAction(action)
+    setMoneyReason('')
+    setReverseTarget(paymentId)
+    setCreditAmount(
+      action === 'credit' && invoice ? String(invoice.totals.balance) : '',
+    )
+  }
+
+  const submitMoney = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!invoice || !moneyAction) return
+    setMoneyBusy(true)
     try {
-      const result = await adminApi.deleteInvoicePayment(invoiceId, paymentId)
-      setInvoice(result.data)
-      toast({ title: 'Payment removed', tone: 'success' })
+      const reason = moneyReason.trim()
+      if (moneyAction === 'void') {
+        const result = await adminApi.voidInvoice(invoice.id, reason)
+        setInvoice(result.data)
+        toast({ title: 'Invoice voided', description: `${invoice.ref} kept as a void record`, tone: 'success' })
+      } else if (moneyAction === 'credit') {
+        const result = await adminApi.addInvoiceCreditNote(invoice.id, {
+          amount: Number.parseFloat(creditAmount) || 0,
+          reason,
+        })
+        setInvoice(result.data)
+        toast({ title: 'Credit note recorded', description: invoice.ref, tone: 'success' })
+      } else {
+        const result = await adminApi.reverseInvoicePayment(invoice.id, reverseTarget, reason)
+        setInvoice(result.data)
+        toast({ title: 'Payment reversed', description: 'The ledger entry is kept with a reason.', tone: 'success' })
+      }
+      setMoneyAction(null)
     } catch (caught) {
       toast({
-        title: 'Payment not removed',
+        title: 'Nothing was saved',
         description: caught instanceof Error ? caught.message : 'Try again.',
         tone: 'danger',
       })
+    } finally {
+      setMoneyBusy(false)
     }
   }
 
-  const removeInvoice = async () => {
-    if (!invoice || !window.confirm(`Delete invoice ${invoice.ref} and its payment history?`))
-      return
+  const removeDraft = async () => {
+    if (!invoice) return
+    if (!window.confirm(`Delete draft ${invoice.ref}? A draft never reached the customer.`)) return
     try {
       await adminApi.deleteInvoice(invoice.id)
       navigate('/admin/invoices')
@@ -232,6 +266,8 @@ export function AdminInvoiceDetail() {
 
   const totals = invoice.totals
   const discountRatio = totals.subtotal > 0 ? totals.taxable / totals.subtotal : 0
+  const docs = content.brand.documents
+  const accent = docs?.accent || '94 200 229'
 
   return (
     <div className="flex flex-col gap-5">
@@ -265,9 +301,21 @@ export function AdminInvoiceDetail() {
               Record payment
             </Button>
           ) : null}
-          <Button variant="secondary" icon="wrench" onClick={() => setEditOpen(true)}>
-            Edit
-          </Button>
+          {totals.paid === 0 && totals.credited === 0 && totals.state !== 'cancelled' ? (
+            <Button variant="secondary" icon="wrench" onClick={() => setEditOpen(true)}>
+              Edit
+            </Button>
+          ) : null}
+          {totals.state !== 'draft' && totals.state !== 'cancelled' ? (
+            <Button variant="secondary" icon="close" onClick={() => openMoney('void')}>
+              Void
+            </Button>
+          ) : null}
+          {totals.state !== 'draft' && totals.state !== 'cancelled' && totals.balance > 0 ? (
+            <Button variant="secondary" icon="tag" onClick={() => openMoney('credit')}>
+              Credit note
+            </Button>
+          ) : null}
           <Button variant="secondary" icon="printer" onClick={() => window.print()}>
             Print
           </Button>
@@ -279,14 +327,17 @@ export function AdminInvoiceDetail() {
           >
             Download PDF
           </ButtonAnchor>
-          <button
-            type="button"
-            onClick={() => void removeInvoice()}
-            className="flex h-9 items-center justify-center border border-line px-3 text-fg-faint hover:border-danger/40 hover:text-danger"
-            aria-label="Delete invoice"
-          >
-            <Icon name="close" size={13} />
-          </button>
+          {invoice.status === 'draft' ? (
+            <button
+              type="button"
+              onClick={() => void removeDraft()}
+              className="flex h-9 items-center justify-center border border-line px-3 text-fg-faint hover:border-danger/40 hover:text-danger"
+              aria-label="Delete draft invoice"
+              title="Delete draft"
+            >
+              <Icon name="close" size={13} />
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -295,6 +346,7 @@ export function AdminInvoiceDetail() {
           id="invoice-sheet"
           className="invoice-document marks border border-line bg-white p-7 text-[#161616] sm:p-10"
         >
+          <div className="mb-6 h-[3px] w-full" style={{ backgroundColor: `rgb(${accent})` }} />
           <header className="flex flex-wrap items-start justify-between gap-6 border-b-2 border-[#161616] pb-5">
             <div>
               <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-[#555]">
@@ -429,16 +481,23 @@ export function AdminInvoiceDetail() {
                   <p className="mt-1 whitespace-pre-line">{invoice.notes}</p>
                 </div>
               ) : null}
-              <div>
-                <p className="font-mono text-[8px] uppercase tracking-[0.14em] text-[#555]">
-                  Payment details
-                </p>
-                <p className="mt-1">
-                  {billing.bankName} · A/c {billing.accountName} · {billing.accountNumber} · Routing{' '}
-                  {billing.ifsc}
-                  {billing.upiId ? ` · Pay link ${billing.upiId}` : ''}
-                </p>
-              </div>
+              {docs?.showBankDetails !== false ? (
+                <div>
+                  <p className="font-mono text-[8px] uppercase tracking-[0.14em] text-[#555]">
+                    Payment details
+                  </p>
+                  <p className="mt-1">
+                    {billing.bankName} · A/c {billing.accountName} · {billing.accountNumber} · Routing{' '}
+                    {billing.ifsc}
+                    {billing.upiId ? ` · Pay link ${billing.upiId}` : ''}
+                  </p>
+                  {docs?.paymentInstructions ? (
+                    <p className="mt-1 whitespace-pre-line text-[#555]">
+                      {docs.paymentInstructions}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
               {invoice.terms ? (
                 <div>
                   <p className="font-mono text-[8px] uppercase tracking-[0.14em] text-[#555]">
@@ -535,13 +594,18 @@ export function AdminInvoiceDetail() {
               <p className="mt-3 font-mono text-[8px] uppercase tracking-[0.06em]">
                 Computer-generated tax invoice · {invoice.ref}
               </p>
+              {docs?.footerNote ? (
+                <p className="mt-2 text-[8px] leading-relaxed text-[#666]">{docs.footerNote}</p>
+              ) : null}
             </div>
-            <div className="text-right">
-              <p>For {content.brand.legalName}</p>
-              <div className="mt-8 border-t border-[#161616] pt-2 font-mono text-[8px] uppercase tracking-[0.1em]">
-                Authorised signatory
+            {docs?.showSignature !== false ? (
+              <div className="text-right">
+                <p>For {content.brand.legalName}</p>
+                <div className="mt-8 border-t border-[#161616] pt-2 font-mono text-[8px] uppercase tracking-[0.1em]">
+                  {docs?.signatureName || 'Authorised signatory'}
+                </div>
               </div>
-            </div>
+            ) : null}
           </footer>
         </article>
 
@@ -609,21 +673,32 @@ export function AdminInvoiceDetail() {
                     className="flex items-start justify-between gap-2 border-t border-line py-2 first:border-t-0 first:pt-0"
                   >
                     <div>
-                      <p className="text-[11px] text-fg">
+                      <p
+                        className={`text-[11px] ${
+                          payment.reversedAt ? 'text-fg-faint line-through' : 'text-fg'
+                        }`}
+                      >
                         {formatMoneyExact(payment.amount)} · {METHOD_LABELS[payment.method]}
                       </p>
                       <p className="font-mono text-[8px] uppercase tracking-[0.06em] text-fg-faint">
                         {formatDate(payment.receivedAt)} · {payment.reference || 'no reference'}
                       </p>
+                      {payment.reversedAt ? (
+                        <p className="mt-1 text-[9px] leading-snug text-danger">
+                          Reversed {formatDate(payment.reversedAt)} · {payment.reversalReason}
+                        </p>
+                      ) : null}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => void deletePayment(payment.id)}
-                      aria-label="Remove payment"
-                      className="text-fg-faint hover:text-danger"
-                    >
-                      <Icon name="close" size={10} />
-                    </button>
+                    {payment.reversedAt ? null : (
+                      <button
+                        type="button"
+                        onClick={() => openMoney('reverse', payment.id)}
+                        aria-label="Reverse payment"
+                        className="shrink-0 font-mono text-[8px] uppercase tracking-[0.08em] text-fg-faint hover:text-danger"
+                      >
+                        Reverse
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -744,11 +819,64 @@ export function AdminInvoiceDetail() {
       </Modal>
 
       <Modal
+        open={moneyAction !== null}
+        onClose={() => setMoneyAction(null)}
+        title={
+          moneyAction === 'void'
+            ? `Void invoice · ${invoice.ref}`
+            : moneyAction === 'credit'
+              ? `Credit note · ${invoice.ref}`
+              : 'Reverse payment'
+        }
+        description={
+          moneyAction === 'void'
+            ? 'The invoice stays on file as a void record with your reason. Nothing is deleted.'
+            : moneyAction === 'credit'
+              ? `The open balance is ${formatMoneyExact(totals.balance)}. A credit note reduces what is due and stays on the record.`
+              : 'The payment stays in the ledger, marked as reversed with your reason.'
+        }
+      >
+        <form className="flex flex-col gap-4" onSubmit={submitMoney}>
+          {moneyAction === 'credit' ? (
+            <Input
+              label="Credit amount"
+              value={creditAmount}
+              onChange={(event) => setCreditAmount(event.target.value)}
+              placeholder={String(totals.balance)}
+              required
+            />
+          ) : null}
+          <Textarea
+            label="Reason"
+            rows={3}
+            value={moneyReason}
+            onChange={(event) => setMoneyReason(event.target.value)}
+            placeholder={
+              moneyAction === 'void'
+                ? 'Duplicate of INV-…, raised in error, cancelled before work started…'
+                : moneyReason === '' && moneyAction === 'credit'
+                  ? 'Goodwill credit, meter reading correction…'
+                  : 'Cheque returned, recorded against the wrong invoice…'
+            }
+            required
+          />
+          <div className="flex justify-end gap-2 border-t border-line pt-4">
+            <Button type="button" variant="secondary" onClick={() => setMoneyAction(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" icon="check" disabled={moneyBusy}>
+              {moneyBusy ? 'Saving…' : 'Confirm'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
         open={editOpen}
         onClose={() => setEditOpen(false)}
         title={`Edit invoice · ${invoice.ref}`}
         description="Payment history is preserved. Changing line items recalculates the balance."
-        size="lg"
+        size="xl"
       >
         <InvoiceForm
           initial={invoice}

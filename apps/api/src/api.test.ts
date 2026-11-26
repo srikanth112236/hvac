@@ -818,3 +818,279 @@ describe('spam and upload defences', () => {
       .expect(400)
   })
 })
+
+describe('invoice money integrity', () => {
+  it('locks amounts once money is recorded and keeps void and reversal records', async () => {
+    const created = await adminHeaders(admin.post('/api/v1/admin/invoices'))
+      .send({
+        customerName: 'Ledger Test',
+        customerEmail: 'ledger@test.local',
+        issueDate: '2026-11-01',
+        dueDate: '2026-11-15',
+        status: 'issued',
+        lines: [{ description: 'Service call', quantity: 1, unitPrice: 100, taxPercent: 0 }],
+      })
+      .expect(201)
+    const id = created.body.data.id as string
+
+    // Still unmoneyed: the amount can be corrected.
+    await adminHeaders(admin.patch(`/api/v1/admin/invoices/${id}`))
+      .send({ dueDate: '2026-12-01' })
+      .expect(200)
+
+    const paid = await adminHeaders(admin.post(`/api/v1/admin/invoices/${id}/payments`))
+      .send({ amount: 40, method: 'cash', receivedAt: '2026-11-10' })
+      .expect(201)
+    expect(paid.body.data.totals.balance).toBe(60)
+
+    const blockedPatch = await adminHeaders(admin.patch(`/api/v1/admin/invoices/${id}`))
+      .send({ lines: [{ description: 'Rewritten', quantity: 1, unitPrice: 5, taxPercent: 0 }] })
+      .expect(409)
+    expect(blockedPatch.body.error.code).toBe('invoice_has_money')
+
+    const blockedDelete = await adminHeaders(admin.delete(`/api/v1/admin/invoices/${id}`)).expect(
+      409,
+    )
+    expect(blockedDelete.body.error.code).toBe('use_void')
+
+    await adminHeaders(admin.post(`/api/v1/admin/invoices/${id}/credit-notes`))
+      .send({ amount: 500, reason: 'More than the balance' })
+      .expect(400)
+
+    const credited = await adminHeaders(admin.post(`/api/v1/admin/invoices/${id}/credit-notes`))
+      .send({ amount: 10, reason: 'Meter reading correction' })
+      .expect(201)
+    expect(credited.body.data.totals.balance).toBe(50)
+
+    const paymentId = paid.body.data.payments[0].id as string
+    await adminHeaders(
+      admin.post(`/api/v1/admin/invoices/${id}/payments/${paymentId}/reverse`),
+    )
+      .send({})
+      .expect(400)
+    const reversed = await adminHeaders(
+      admin.post(`/api/v1/admin/invoices/${id}/payments/${paymentId}/reverse`),
+    )
+      .send({ reason: 'Cheque returned' })
+      .expect(200)
+    expect(reversed.body.data.payments[0].reversedAt).toBeTruthy()
+    expect(reversed.body.data.totals.balance).toBe(90)
+    await adminHeaders(
+      admin.post(`/api/v1/admin/invoices/${id}/payments/${paymentId}/reverse`),
+    )
+      .send({ reason: 'Again' })
+      .expect(409)
+
+    const voided = await adminHeaders(admin.post(`/api/v1/admin/invoices/${id}/void`))
+      .send({ reason: 'Raised twice' })
+      .expect(200)
+    expect(voided.body.data.status).toBe('cancelled')
+    expect(voided.body.data.voidReason).toBe('Raised twice')
+    await adminHeaders(admin.post(`/api/v1/admin/invoices/${id}/void`))
+      .send({ reason: 'Again' })
+      .expect(409)
+  })
+})
+
+describe('dispatch conflicts', () => {
+  it('refuses a double booking unless the overlap is forced', async () => {
+    const base = {
+      customerName: 'Conflict Test',
+      customerPhone: '',
+      serviceName: 'HVAC service',
+      address: '1 Test Street',
+      window: 'morning' as const,
+      technician: 'Ravi Test',
+      scheduledAt: '2026-12-10',
+    }
+    await adminHeaders(admin.post('/api/v1/admin/appointments')).send(base).expect(201)
+    const clash = await adminHeaders(admin.post('/api/v1/admin/appointments'))
+      .send(base)
+      .expect(409)
+    expect(clash.body.error.code).toBe('technician_conflict')
+    await adminHeaders(admin.post('/api/v1/admin/appointments'))
+      .send({ ...base, forceSchedule: true })
+      .expect(201)
+  })
+})
+
+describe('AMC billing and quotation conversion', () => {
+  it('bills an active AMC contract once per period and converts an accepted quote once', async () => {
+    const customer = await adminHeaders(admin.post('/api/v1/admin/customers'))
+      .send({
+        name: 'Billing Test',
+        email: 'billing.test@example.com',
+        phone: '2145550199',
+        address: '5 Ledger Way',
+      })
+      .expect(201)
+    const customerId = customer.body.data.id as string
+
+    await adminHeaders(admin.post(`/api/v1/admin/customers/${customerId}/amc`))
+      .send({
+        plan: 'Comprehensive',
+        startDate: '2026-01-01',
+        endDate: '2026-12-31',
+        visitsPerYear: 4,
+        price: 1200,
+        status: 'active',
+      })
+      .expect(201)
+
+    const first = await adminHeaders(admin.post('/api/v1/admin/invoices/amc-run'))
+      .send({ period: '2026-11' })
+      .expect(200)
+    expect(first.body.data.createdCount).toBeGreaterThanOrEqual(1)
+    const contractInvoice = first.body.data.created.find(
+      (invoice: { totals: { total: number } }) => invoice.totals.total === 1200,
+    ) as { billingPeriod: string; ref: string; amcContractId: string }
+    expect(contractInvoice.billingPeriod).toBe('2026-11')
+    expect(contractInvoice.ref).toMatch(/^INV-/)
+    expect(contractInvoice.amcContractId).toBeTruthy()
+
+    const second = await adminHeaders(admin.post('/api/v1/admin/invoices/amc-run'))
+      .send({ period: '2026-11' })
+      .expect(200)
+    expect(second.body.data.createdCount).toBe(0)
+    expect(second.body.data.skipped).toBe(second.body.data.eligible)
+
+    const quote = await adminHeaders(
+      admin.post(`/api/v1/admin/customers/${customerId}/quotations`),
+    )
+      .send({
+        title: 'Replacement cassette bank',
+        service: 'VRF installation',
+        status: 'accepted',
+        validUntil: '2026-12-31',
+        lines: [{ description: 'Cassette unit', quantity: 2, unitPrice: 900, taxPercent: 0 }],
+      })
+      .expect(201)
+    const quotationId = quote.body.data.id as string
+
+    const converted = await adminHeaders(
+      admin.post(`/api/v1/admin/customers/${customerId}/quotations/${quotationId}/convert`),
+    )
+      .send({ dueInDays: 14 })
+      .expect(201)
+    expect(converted.body.data.ref).toMatch(/^INV-/)
+    expect(converted.body.data.totals.total).toBe(1800)
+    expect(converted.body.quotation.invoiceRef).toBe(converted.body.data.ref)
+
+    await adminHeaders(
+      admin.post(`/api/v1/admin/customers/${customerId}/quotations/${quotationId}/convert`),
+    )
+      .send({})
+      .expect(409)
+  })
+})
+
+describe('desk agenda', () => {
+  it('returns one queue with matching counts', async () => {
+    const response = await admin.get('/api/v1/admin/agenda').expect(200)
+    expect(Array.isArray(response.body.data)).toBe(true)
+    expect(response.body.meta.counts.all).toBe(response.body.data.length)
+  })
+})
+
+describe('lead scoring rules', () => {
+  it('keeps rules versioned and rejects a stale save', async () => {
+    const first = await admin.get('/api/v1/admin/lead-scoring').expect(200)
+    expect(Array.isArray(first.body.data.rules)).toBe(true)
+    expect(first.body.data.rules.length).toBeGreaterThan(0)
+    const version = first.body.data.version as number
+
+    const saved = await adminHeaders(admin.put('/api/v1/admin/lead-scoring'))
+      .send({
+        expectedVersion: version,
+        hotAt: 70,
+        warmAt: 35,
+        rules: first.body.data.rules,
+      })
+      .expect(200)
+    expect(saved.body.data.version).toBe(version + 1)
+    expect(saved.body.data.hotAt).toBe(70)
+
+    await adminHeaders(admin.put('/api/v1/admin/lead-scoring'))
+      .send({
+        expectedVersion: version,
+        hotAt: 70,
+        warmAt: 35,
+        rules: first.body.data.rules,
+      })
+      .expect(409)
+
+    await adminHeaders(admin.put('/api/v1/admin/lead-scoring'))
+      .send({
+        expectedVersion: saved.body.data.version,
+        hotAt: first.body.data.hotAt,
+        warmAt: first.body.data.warmAt,
+        rules: first.body.data.rules,
+      })
+      .expect(200)
+  })
+})
+
+describe('editable role matrix', () => {
+  it('saves a versioned matrix, keeps the owner whole, and restores', async () => {
+    const first = await admin.get('/api/v1/admin/roles/matrix').expect(200)
+    const version = first.body.data.version as number
+    const roles = first.body.data.roles as {
+      id: string
+      label: string
+      description: string
+      permissions: string[]
+    }[]
+    const edited = roles.map((role) =>
+      role.id === 'viewer'
+        ? { ...role, permissions: [...new Set([...role.permissions, 'leads.write'])] }
+        : role.id === 'owner'
+          ? { ...role, permissions: [] }
+          : role,
+    )
+
+    const saved = await adminHeaders(admin.put('/api/v1/admin/roles/matrix'))
+      .send({ expectedVersion: version, roles: edited })
+      .expect(200)
+    expect(saved.body.data.version).toBe(version + 1)
+    const viewer = saved.body.data.roles.find((role: { id: string }) => role.id === 'viewer')
+    expect(viewer.permissions).toContain('leads.write')
+    const owner = saved.body.data.roles.find((role: { id: string }) => role.id === 'owner')
+    expect(owner.permissions).toContain('users.manage')
+
+    await adminHeaders(admin.put('/api/v1/admin/roles/matrix'))
+      .send({ expectedVersion: version, roles: edited })
+      .expect(409)
+
+    await adminHeaders(admin.put('/api/v1/admin/roles/matrix'))
+      .send({ expectedVersion: saved.body.data.version, roles })
+      .expect(200)
+  })
+})
+
+describe('server-side pagination', () => {
+  it('pages every ledger and keeps counts in meta', async () => {
+    const invoices = await admin.get('/api/v1/admin/invoices?page=1&pageSize=5').expect(200)
+    expect(invoices.body.data.length).toBeLessThanOrEqual(5)
+    expect(invoices.body.meta.page).toBe(1)
+    expect(invoices.body.meta.total).toBeGreaterThanOrEqual(invoices.body.meta.count)
+    const second = await admin.get('/api/v1/admin/invoices?page=2&pageSize=5').expect(200)
+    if (invoices.body.meta.pages > 1) {
+      expect(second.body.data[0]?.id).not.toBe(invoices.body.data[0]?.id)
+    }
+
+    const customers = await admin.get('/api/v1/admin/customers?page=1&pageSize=3').expect(200)
+    expect(customers.body.meta.pageSize).toBe(3)
+    expect(customers.body.summary.accounts).toBeGreaterThan(0)
+
+    const expenses = await admin.get('/api/v1/admin/expenses?page=1&pageSize=2').expect(200)
+    expect(expenses.body.meta.page).toBe(1)
+
+    const quotations = await admin.get('/api/v1/admin/quotations?page=1&pageSize=2').expect(200)
+    expect(quotations.body.meta.pageSize).toBe(2)
+
+    const notifications = await admin.get('/api/v1/admin/notifications?page=1&limit=5').expect(200)
+    expect(notifications.body.data.page).toBe(1)
+    expect(notifications.body.data.pages).toBeGreaterThanOrEqual(1)
+    expect(notifications.body.data.data.length).toBeLessThanOrEqual(5)
+  })
+})

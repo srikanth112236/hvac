@@ -5,6 +5,7 @@ import { Router } from 'express'
 import multer from 'multer'
 import {
   amcInputSchema,
+  amcInvoiceRunSchema,
   amcPatchSchema,
   customerSiteInputSchema,
   customerSitePatchSchema,
@@ -16,6 +17,7 @@ import {
   jobReportPatchSchema,
   notificationPreferencesPatchSchema,
   quotationChangeRequestSchema,
+  quotationConvertSchema,
   quotationInputSchema,
   quotationPatchSchema,
   quotationTotals,
@@ -26,13 +28,20 @@ import {
   type CustomerPortalFile,
   type CustomerSite,
   type EquipmentRecord,
+  type InvoiceRecord,
   type JobReport,
   type QuotationRecord,
+  type QuotationRevision,
   type SupportTicket,
 } from '@hvac/shared'
 import { requireAdmin, requireAdminMutation, requirePermission } from './auth.js'
 import { ADMIN_NOTIFY_EMAIL, PUBLIC_SITE_URL } from './config.js'
-import { invoiceStore, toInvoiceView } from './business.js'
+import {
+  invoiceStore,
+  nextInvoiceReference,
+  summarizeInvoices,
+  toInvoiceView,
+} from './business.js'
 import { readSiteContent } from './content.js'
 import { ifMatchSatisfied } from './concurrency.js'
 import { customerWantsEmail, preferenceStore, preferencesFor } from './customerPreferences.js'
@@ -47,6 +56,7 @@ import {
 } from './mailer.js'
 import { removeNewsletterSignup } from './newsletterSignups.js'
 import { streamQuotationPdf } from './pdf.js'
+import { readPaging, slicePage } from './paging.js'
 import { UPLOAD_ROOT, detectImage, safeOriginalName } from './media.js'
 import { appointmentStore } from './portal.js'
 import {
@@ -1154,7 +1164,7 @@ portalAdminRouter.get('/quotations', async (req, res) => {
   const status = typeof req.query.status === 'string' ? req.query.status : ''
   const query = typeof req.query.q === 'string' ? req.query.q.trim().toLowerCase() : ''
   const customersById = new Map(customers.map((customer) => [customer.id, customer]))
-  const data = quotations
+  const filtered = quotations
     .filter((quotation) => (status ? quotation.status === status : true))
     .filter((quotation) => {
       if (!query) return true
@@ -1173,6 +1183,8 @@ portalAdminRouter.get('/quotations', async (req, res) => {
         .includes(query)
     })
     .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+  const paging = readPaging(req, 20)
+  const data = (paging ? slicePage(filtered, paging) : filtered)
     .map((quotation) => {
       const customer = customersById.get(quotation.customerId)
       const lead = quotation.leadRef ? leads.find((entry) => entry.ref === quotation.leadRef) : null
@@ -1187,7 +1199,11 @@ portalAdminRouter.get('/quotations', async (req, res) => {
   res.json({
     data,
     meta: {
-      count: data.length,
+      count: filtered.length,
+      total: quotations.length,
+      page: paging?.page ?? 1,
+      pageSize: paging?.pageSize ?? filtered.length,
+      pages: paging ? Math.max(1, Math.ceil(filtered.length / paging.pageSize)) : 1,
       totals: {
         counts: Object.fromEntries(
           ['draft', 'sent', 'accepted', 'declined', 'changes-requested', 'expired'].map((entry) => [
@@ -1198,6 +1214,262 @@ portalAdminRouter.get('/quotations', async (req, res) => {
         value: quotations.reduce((sum, quotation) => sum + quotationTotals(quotation).total, 0),
       },
     },
+  })
+})
+
+/** Quotation detail, including the immutable revision timeline. */
+portalAdminRouter.get('/customers/:id/quotations/:quotationId', async (req, res) => {
+  const quotations = await quotationStore.read()
+  const quotation = quotations.find(
+    (entry) => entry.id === req.params.quotationId && entry.customerId === req.params.id,
+  )
+  if (!quotation) {
+    res.status(404).json({ error: { code: 'not_found', message: 'Quotation not found.' } })
+    return
+  }
+  const customer = await findCustomer(req.params.id)
+  res.json({
+    data: {
+      ...quotation,
+      totals: quotationTotals(quotation),
+      revisions: quotation.revisions ?? [],
+      customer: customer ? publicCustomer(customer) : null,
+    },
+  })
+})
+
+/**
+ * Convert an accepted quotation into an issued invoice. The quotation keeps a
+ * link to the invoice so a second click cannot bill the customer twice.
+ */
+portalAdminRouter.post(
+  '/customers/:id/quotations/:quotationId/convert',
+  async (req, res) => {
+    const parsed = quotationConvertSchema.safeParse(req.body ?? {})
+    if (!parsed.success) {
+      res.status(400).json({
+        error: {
+          code: 'validation_error',
+          message: parsed.error.issues[0]?.message ?? 'Check the conversion details.',
+        },
+      })
+      return
+    }
+    const quotations = await quotationStore.read()
+    const quotation = quotations.find(
+      (entry) => entry.id === req.params.quotationId && entry.customerId === req.params.id,
+    )
+    if (!quotation) {
+      res.status(404).json({ error: { code: 'not_found', message: 'Quotation not found.' } })
+      return
+    }
+    if (quotation.invoiceId) {
+      res.status(409).json({
+        error: {
+          code: 'already_converted',
+          message: `This quotation was already invoiced as ${quotation.invoiceRef ?? 'an invoice'}.`,
+        },
+      })
+      return
+    }
+    if (quotation.status !== 'accepted') {
+      res.status(409).json({
+        error: {
+          code: 'quotation_not_accepted',
+          message: 'Only an accepted quotation can be converted to an invoice.',
+        },
+      })
+      return
+    }
+    const customer = await findCustomer(req.params.id)
+    if (!customer) {
+      res.status(404).json({ error: { code: 'not_found', message: 'Customer not found.' } })
+      return
+    }
+    const content = await readSiteContent()
+    const now = nowIso()
+    const issueDate = parsed.data.issueDate || now.slice(0, 10)
+    const issued = Date.parse(issueDate)
+    const dueDate = new Date(
+      (Number.isFinite(issued) ? issued : Date.now()) + parsed.data.dueInDays * 86_400_000,
+    )
+      .toISOString()
+      .slice(0, 10)
+    let created: InvoiceRecord | undefined
+    await invoiceStore.mutate((invoices) => {
+      const record: InvoiceRecord = {
+        id: randomUUID(),
+        ref: nextInvoiceReference(invoices, content.brand.billing.invoicePrefix),
+        customerName: customer.name,
+        customerPhone: customer.phone,
+        customerEmail: customer.email,
+        customerAddress: customer.address,
+        customerGstin: '',
+        service: quotation.service || quotation.title,
+        leadRef: quotation.leadRef,
+        issueDate,
+        dueDate,
+        status: 'issued',
+        lines: quotation.lines.map((line) => ({
+          id: line.id || randomUUID(),
+          description: line.description,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          taxPercent: line.taxPercent,
+        })),
+        discount: quotation.discount,
+        taxMode: 'intra',
+        notes: parsed.data.notes ?? quotation.notes ?? content.brand.billing.invoiceNotes,
+        terms: quotation.terms || content.brand.billing.invoiceTerms,
+        payments: [],
+        creditNotes: [],
+        reminderDates: [],
+        lastReminderAt: null,
+        createdAt: now,
+        updatedAt: now,
+      }
+      created = record
+      return [record, ...invoices]
+    })
+    const invoice = created
+    if (!invoice) {
+      res
+        .status(500)
+        .json({ error: { code: 'server_error', message: 'The invoice could not be created.' } })
+      return
+    }
+    let linked: QuotationRecord | undefined
+    await quotationStore.mutate((entries) =>
+      entries.map((entry) => {
+        if (entry.id !== quotation.id) return entry
+        linked = {
+          ...entry,
+          invoiceId: invoice.id,
+          invoiceRef: invoice.ref,
+          invoiceCreatedAt: now,
+          updatedAt: now,
+        }
+        return linked
+      }),
+    )
+    res.status(201).json({
+      data: toInvoiceView(invoice),
+      quotation: linked && { ...linked, totals: quotationTotals(linked) },
+    })
+    const totals = invoiceTotals(invoice)
+    const message = quotationIssuedEmail({
+      name: customer.name,
+      reference: invoice.ref,
+      title: `Invoice raised from ${quotation.ref}`,
+      total: portalMoney.format(totals.total),
+      validUntil: invoice.dueDate,
+      brand: content.brand.name,
+      portalUrl: portalUrl('/portal'),
+    })
+    void emailCustomer({
+      customerId: customer.id,
+      field: 'emailBilling',
+      to: customer.email,
+      kind: 'invoice-from-quotation',
+      ...message,
+    }).catch((error) => console.error('[hvac-api] invoice email failed', error))
+  },
+)
+
+/**
+ * Bill every active AMC contract for a period. Idempotent per contract and
+ * period, so running it twice never double-bills a customer.
+ */
+portalAdminRouter.post('/invoices/amc-run', async (req, res) => {
+  const parsed = amcInvoiceRunSchema.safeParse(req.body ?? {})
+  if (!parsed.success) {
+    res.status(400).json({
+      error: { code: 'validation_error', message: 'Use a YYYY-MM billing period.' },
+    })
+    return
+  }
+  const period =
+    parsed.data.period ??
+    `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+  const [contracts, customers, invoices, content] = await Promise.all([
+    amcStore.read(),
+    customerStore.read(),
+    invoiceStore.read(),
+    readSiteContent(),
+  ])
+  const billable = contracts.filter(
+    (contract) => contract.status === 'active' && contract.price > 0,
+  )
+  const alreadyBilled = new Set(
+    invoices
+      .filter((invoice) => invoice.status !== 'cancelled' && invoice.billingPeriod === period)
+      .map((invoice) => invoice.amcContractId)
+      .filter((value): value is string => Boolean(value)),
+  )
+  const created: InvoiceRecord[] = []
+  let skipped = 0
+  for (const contract of billable) {
+    if (alreadyBilled.has(contract.id)) {
+      skipped += 1
+      continue
+    }
+    const customer = customers.find((entry) => entry.id === contract.customerId)
+    if (!customer) {
+      skipped += 1
+      continue
+    }
+    const customerRecord = customer as unknown as Record<string, unknown>
+    const gstin = typeof customerRecord.gstin === 'string' ? String(customerRecord.gstin) : ''
+    const now = nowIso()
+    created.push({
+      id: randomUUID(),
+      ref: nextInvoiceReference([...invoices, ...created], content.brand.billing.invoicePrefix),
+      customerName: customer.name,
+      customerPhone: customer.phone,
+      customerEmail: customer.email,
+      customerAddress: customer.address,
+      customerGstin: gstin,
+      service: `${contract.plan} maintenance · ${period}`,
+      leadRef: null,
+      issueDate: now.slice(0, 10),
+      dueDate: new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10),
+      status: 'issued',
+      lines: [
+        {
+          id: randomUUID(),
+          description: `${contract.plan} · annual maintenance contract · ${period}`,
+          quantity: 1,
+          unitPrice: contract.price,
+          taxPercent: 0,
+        },
+      ],
+      discount: 0,
+      taxMode: 'intra',
+      notes: content.brand.billing.invoiceNotes,
+      terms: content.brand.billing.invoiceTerms,
+      payments: [],
+      creditNotes: [],
+      reminderDates: [],
+      lastReminderAt: null,
+      amcContractId: contract.id,
+      billingPeriod: period,
+      createdAt: now,
+      updatedAt: now,
+    })
+  }
+  if (created.length) {
+    await invoiceStore.mutate((current) => [...created, ...current])
+  }
+  const all = await invoiceStore.read()
+  res.json({
+    data: {
+      period,
+      created: created.map((invoice) => toInvoiceView(invoice)),
+      createdCount: created.length,
+      skipped,
+      eligible: billable.length,
+    },
+    summary: summarizeInvoices(all),
   })
 })
 
@@ -1404,14 +1676,41 @@ portalAdminRouter.patch('/customers/:id/quotations/:quotationId', async (req, re
   }
   let saved: QuotationRecord | undefined
   let notifyCustomer: QuotationRecord | undefined
+  const revisionBy = String(res.locals.admin?.email ?? 'staff')
   await quotationStore.mutate((quotations) =>
     quotations.map((quotation) => {
       if (quotation.id !== req.params.quotationId || quotation.customerId !== req.params.id) {
         return quotation
       }
+      // Snapshot the version being replaced, so a reissue never loses the
+      // numbers the customer originally received.
+      const revisionNote =
+        parsed.data.status === 'sent'
+          ? 'Reissued to the customer'
+          : parsed.data.status === 'changes-requested'
+            ? 'Changes requested by the customer'
+            : 'Edited by staff'
+      const revisions: QuotationRevision[] = [
+        {
+          id: randomUUID(),
+          version: (quotation.revisions?.[0]?.version ?? 0) + 1,
+          at: nowIso(),
+          by: revisionBy,
+          note: revisionNote,
+          status: quotation.status,
+          lines: quotation.lines,
+          discount: quotation.discount,
+          notes: quotation.notes,
+          terms: quotation.terms,
+          validUntil: quotation.validUntil,
+          total: quotationTotals(quotation).total,
+        },
+        ...(quotation.revisions ?? []),
+      ].slice(0, 20)
       saved = {
         ...quotation,
         ...parsed.data,
+        revisions,
         lines: parsed.data.lines
           ? parsed.data.lines.map((line) => ({ ...line, id: line.id ?? randomUUID() }))
           : quotation.lines,

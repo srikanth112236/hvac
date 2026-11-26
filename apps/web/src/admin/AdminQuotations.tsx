@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useRecordDeepLink } from '@/admin/useDeepLink'
 import {
@@ -15,17 +15,16 @@ import {
   Button,
   ButtonAnchor,
   EmptyState,
-  Input,
   Modal,
+  Pagination,
   RecordDrawer,
   RecordViewButton,
   SearchSuggest,
   Select,
-  Textarea,
   useToast,
 } from '@/components/ui'
-import { catalogueServices } from '@/content/services'
 import { adminApi } from '@/admin/api'
+import { QuotationForm } from '@/admin/QuotationForm'
 import { useLiveRefresh } from '@/admin/useLiveRefresh'
 import { AdminLoading, AdminPageHeader, InlineError, formatDate, formatMoney } from '@/admin/ui'
 
@@ -36,29 +35,16 @@ type Row = QuotationRecord & {
   leadName: string | null
 }
 
-function parseLines(value: string) {
-  return value
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [description, qty, price, tax] = line.split('|').map((part) => part.trim())
-      return {
-        description: description ?? '',
-        quantity: Number.parseFloat(qty ?? '1') || 1,
-        unitPrice: Number.parseFloat(price ?? '0') || 0,
-        taxPercent: Number.parseFloat(tax ?? '0') || 0,
-      }
-    })
-    .filter((line) => line.description)
-}
-
 export function AdminQuotations() {
   const { toast } = useToast()
   const [quotes, setQuotes] = useState<Row[]>([])
   const [viewing, setViewing] = useState<Row | null>(null)
   const [meta, setMeta] = useState<{
     count: number
+    total: number
+    page: number
+    pageSize: number
+    pages: number
     totals: { counts: Record<string, number>; value: number }
   } | null>(null)
   const [customers, setCustomers] = useState<CustomerAccount[]>([])
@@ -68,24 +54,17 @@ export function AdminQuotations() {
   const [status, setStatus] = useState('')
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
+  const [page, setPage] = useState(1)
   const [busy, setBusy] = useState(false)
-  const [form, setForm] = useState({
-    customerId: '',
-    leadRef: '',
-    serviceSlug: '',
-    title: '',
-    service: '',
-    validUntil: '',
-    status: 'draft' as QuotationStatus,
-    lines: '',
-    notes: '',
-  })
+  const [editing, setEditing] = useState<QuotationRecord | null>(null)
 
   const load = useCallback(async () => {
     try {
       const params = new URLSearchParams()
       if (status) params.set('status', status)
       if (query.trim()) params.set('q', query.trim())
+      params.set('page', String(page))
+      params.set('pageSize', '20')
       const [quoteResult, customerList, leadResult] = await Promise.all([
         adminApi.quotations(params.toString() ? `?${params}` : ''),
         adminApi.customers(),
@@ -101,8 +80,16 @@ export function AdminQuotations() {
     } finally {
       setLoading(false)
     }
-  }, [query, status])
+  }, [page, query, status])
   useLiveRefresh(load, 20_000)
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  useEffect(() => {
+    setPage(1)
+  }, [query, status])
 
   const totalValue = meta?.totals.value ?? 0
   const counts = meta?.totals.counts ?? {}
@@ -128,54 +115,33 @@ export function AdminQuotations() {
   })
 
   const openCreate = () => {
-    setForm((current) => ({
-      ...current,
-      customerId: '',
-      leadRef: '',
-      serviceSlug: '',
-      title: '',
-      service: '',
-      validUntil: '',
-      lines: '',
-      notes: '',
-      status: 'draft',
-    }))
+    setEditing(null)
     setOpen(true)
   }
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault()
-    const lines = parseLines(form.lines)
-    if (!form.customerId || lines.length === 0) {
-      toast({
-        title: 'Customer and lines required',
-        description: 'Choose a customer and add at least one line.',
-        tone: 'warn',
-      })
-      return
-    }
+  const openEdit = (quote: QuotationRecord) => {
+    setEditing(quote)
+    setViewing(null)
+    setOpen(true)
+  }
+
+  const saveQuotation = async (input: QuotationInput & { customerId: string }) => {
     setBusy(true)
     try {
-      const input: QuotationInput & { customerId: string } = {
-        customerId: form.customerId,
-        leadRef: form.leadRef || null,
-        serviceSlug: form.serviceSlug || null,
-        title: form.title,
-        service: form.service,
-        validUntil: form.validUntil,
-        status: form.status,
-        lines,
-        discount: 0,
-        notes: form.notes,
-        terms: '',
+      if (editing) {
+        const { customerId, ...patch } = input
+        await adminApi.patchQuotation(customerId, editing.id, patch, editing.updatedAt)
+        toast({ title: 'Quotation updated', description: editing.ref, tone: 'success' })
+      } else {
+        await adminApi.createGlobalQuotation(input)
+        toast({ title: 'Quotation created', description: input.title, tone: 'success' })
       }
-      await adminApi.createGlobalQuotation(input)
-      toast({ title: 'Quotation created', description: form.title, tone: 'success' })
       setOpen(false)
+      setEditing(null)
       await load()
     } catch (caught) {
       toast({
-        title: 'Quotation not created',
+        title: editing ? 'Quotation not updated' : 'Quotation not created',
         description: caught instanceof Error ? caught.message : 'Check the fields.',
         tone: 'danger',
       })
@@ -202,8 +168,34 @@ export function AdminQuotations() {
     }
   }
 
-  const selectedCustomer = customers.find((customer) => customer.id === form.customerId)
-  const selectedLead = leads.find((lead) => lead.ref === form.leadRef)
+  const [converting, setConverting] = useState(false)
+
+  const convertToInvoice = async (quote: Row) => {
+    if (
+      !window.confirm(
+        `Raise an invoice from ${quote.ref} for ${formatMoney(quote.totals.total)}?`,
+      )
+    ) {
+      return
+    }
+    setConverting(true)
+    try {
+      const result = await adminApi.convertQuotation(quote.customerId, quote.id, {
+        dueInDays: 14,
+      })
+      toast({ title: 'Invoice raised', description: result.data.ref, tone: 'success' })
+      setViewing(null)
+      await load()
+    } catch (caught) {
+      toast({
+        title: 'Invoice not raised',
+        description: caught instanceof Error ? caught.message : 'Try again.',
+        tone: 'danger',
+      })
+    } finally {
+      setConverting(false)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -367,12 +359,13 @@ export function AdminQuotations() {
                 >
                   PDF
                 </ButtonAnchor>
-                <Link
-                  to={`/admin/customers/${quote.customerId}`}
-                  className="flex h-8 items-center border border-line px-2 font-mono text-[8px] uppercase text-fg-faint hover:text-cold"
+                <button
+                  type="button"
+                  onClick={() => openEdit(quote)}
+                  className="flex h-8 items-center border border-line px-2 font-mono text-[8px] uppercase text-fg-faint hover:border-cold/50 hover:text-cold"
                 >
                   Edit
-                </Link>
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -398,111 +391,35 @@ export function AdminQuotations() {
         </div>
       )}
 
+      {meta && meta.pages > 1 ? (
+        <Pagination
+          page={meta.page}
+          pageCount={meta.pages}
+          onPageChange={setPage}
+          className="justify-end"
+        />
+      ) : null}
+
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title="New quotation"
-        description="Link the quote to a customer, an optional lead and the service being priced."
-        size="lg"
-        footer={
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" form="admin-quote-create-form" loading={busy} icon="plus">
-              Create quotation
-            </Button>
-          </div>
-        }
+        title={editing ? `Edit ${editing.ref}` : 'New quotation'}
+        description="Line items, tax and the sheet on the right update as you type. Saving an existing quote keeps a revision of the version it replaced."
+        size="xl"
       >
-        <form
-          id="admin-quote-create-form"
-          className="grid gap-4 sm:grid-cols-2"
-          onSubmit={(event) => void submit(event)}
-        >
-          <Select
-            label="Customer"
-            required
-            value={form.customerId}
-            onChange={(event) => setForm({ ...form, customerId: event.target.value })}
-            options={[
-              { value: '', label: 'Choose customer' },
-              ...customers.map((customer) => ({
-                value: customer.id,
-                label: `${customer.name} · ${customer.email}`,
-              })),
-            ]}
-          />
-          <Select
-            label="Lead (optional)"
-            value={form.leadRef}
-            onChange={(event) => setForm({ ...form, leadRef: event.target.value })}
-            options={[
-              { value: '', label: 'No lead linked' },
-              ...leads.map((lead) => ({ value: lead.ref, label: `${lead.ref} · ${lead.name}` })),
-            ]}
-          />
-          <Select
-            label="Service (optional)"
-            value={form.serviceSlug}
-            onChange={(event) => {
-              const slug = event.target.value
-              const selected = catalogueServices.find((service) => service.id === slug)
-              setForm({ ...form, serviceSlug: slug, service: selected?.name ?? form.service })
-            }}
-            options={[
-              { value: '', label: 'Define scope below' },
-              ...catalogueServices.map((service) => ({ value: service.id, label: service.name })),
-            ]}
-          />
-          <Input
-            label="Title"
-            required
-            value={form.title}
-            onChange={(event) => setForm({ ...form, title: event.target.value })}
-            placeholder="Cassette replacement · two rooms"
-          />
-          <Input
-            label="Service description"
-            value={form.service}
-            onChange={(event) => setForm({ ...form, service: event.target.value })}
-            placeholder={selectedLead?.serviceName ?? selectedCustomer?.name ?? ''}
-          />
-          <Input
-            label="Valid until"
-            type="date"
-            value={form.validUntil}
-            onChange={(event) => setForm({ ...form, validUntil: event.target.value })}
-          />
-          <Select
-            label="Status"
-            value={form.status}
-            onChange={(event) =>
-              setForm({ ...form, status: event.target.value as QuotationStatus })
-            }
-            options={Object.entries(quotationStatusLabel).map(([value, label]) => ({
-              value,
-              label,
-            }))}
-          />
-          <div className="sm:col-span-2">
-            <Textarea
-              label="Lines — description | qty | rate | tax %"
-              rows={5}
-              value={form.lines}
-              onChange={(event) => setForm({ ...form, lines: event.target.value })}
-              placeholder={'Two 5.5 TR cassettes | 2 | 2400 | 8.25\nCrane and access | 1 | 350 | 0'}
-            />
-          </div>
-          <div className="sm:col-span-2">
-            <Textarea
-              label="Notes"
-              rows={2}
-              value={form.notes}
-              onChange={(event) => setForm({ ...form, notes: event.target.value })}
-            />
-          </div>
-        </form>
+        <QuotationForm
+          key={editing?.id ?? 'new'}
+          initial={editing ?? undefined}
+          customers={customers}
+          leads={leads}
+          busy={busy}
+          submitLabel={editing ? 'Save quotation' : 'Create quotation'}
+          onSubmit={saveQuotation}
+          onCancel={() => {
+            setOpen(false)
+            setEditing(null)
+          }}
+        />
       </Modal>
 
       <RecordDrawer
@@ -552,6 +469,27 @@ export function AdminQuotations() {
         actions={
           viewing ? (
             <>
+              <Button
+                variant="secondary"
+                icon="wrench"
+                onClick={() => openEdit(viewing)}
+              >
+                Edit quotation
+              </Button>
+              {viewing.status === 'accepted' && !viewing.invoiceId ? (
+                <Button
+                  icon="check"
+                  disabled={converting}
+                  onClick={() => void convertToInvoice(viewing)}
+                >
+                  {converting ? 'Raising…' : 'Raise invoice'}
+                </Button>
+              ) : null}
+              {viewing.invoiceRef ? (
+                <span className="flex h-9 items-center border border-success/40 bg-success/[0.06] px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-success">
+                  Invoiced · {viewing.invoiceRef}
+                </span>
+              ) : null}
               <ButtonAnchor
                 href={`/api/v1/admin/customers/${viewing.customerId}/quotations/${viewing.id}/pdf`}
                 download
@@ -559,6 +497,14 @@ export function AdminQuotations() {
               >
                 Download PDF
               </ButtonAnchor>
+                <a
+                  href={`/api/v1/admin/customers/${viewing.customerId}/quotations/${viewing.id}/pdf`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex h-9 items-center border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:border-cold/50 hover:text-cold"
+                >
+                  Print
+                </a>
               <Link
                 to={`/admin/customers/${viewing.customerId}`}
                 className="flex h-9 items-center border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:border-cold/50 hover:text-cold"

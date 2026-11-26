@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useLiveRefresh } from '@/admin/useLiveRefresh'
 import { useRecordDeepLink } from '@/admin/useDeepLink'
 import {
@@ -7,6 +7,7 @@ import {
   EmptyState,
   Input,
   Modal,
+  Pagination,
   RecordDrawer,
   SearchSuggest,
   Select,
@@ -18,7 +19,7 @@ import {
   type Column,
 } from '@/components/ui'
 import type { ExpenseInput, ExpenseRecord } from '@hvac/shared'
-import { adminApi, type ExpenseSummary } from '@/admin/api'
+import { adminApi, type ExpenseSummary, type PageMeta } from '@/admin/api'
 import { EXPENSE_CATEGORY_LABELS, METHOD_LABELS } from '@/admin/invoice-ui'
 import {
   AdminLoading,
@@ -52,21 +53,50 @@ export function AdminExpenses() {
   const [period, setPeriod] = useState<'all' | 'this' | 'last'>('all')
   const [method, setMethod] = useState('all')
   const [search, setSearch] = useState('')
+  const [term, setTerm] = useState('')
+  const [page, setPage] = useState(1)
+  const [meta, setMeta] = useState<PageMeta | null>(null)
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    const params = new URLSearchParams({ page: String(page), pageSize: '20' })
+    if (filter !== 'all') params.set('category', filter)
+    if (method !== 'all') params.set('method', method)
+    if (term.trim()) params.set('q', term.trim())
+    if (period !== 'all') {
+      const now = new Date()
+      const date = period === 'this' ? now : new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      params.set('month', `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`)
+    }
     try {
-      const payload = await adminApi.expenses()
+      const payload = await adminApi.expenses(`?${params.toString()}`)
       setExpenses(payload.data)
       setSummary(payload.summary)
+      setMeta(payload.meta ?? null)
       setError('')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not load expenses.')
     } finally {
       setLoading(false)
     }
-  }
+  }, [filter, method, page, period, term])
 
   useLiveRefresh(load)
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setTerm(search)
+      setPage(1)
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [search])
+
+  useEffect(() => {
+    setPage(1)
+  }, [filter, method, period])
 
   const monthKeys = useMemo(() => {
     const now = new Date()
@@ -75,24 +105,6 @@ export function AdminExpenses() {
     const previous = `${previousDate.getFullYear()}-${String(previousDate.getMonth() + 1).padStart(2, '0')}`
     return { current, previous }
   }, [])
-
-  const filtered = useMemo(() => {
-    const needle = search.trim().toLowerCase()
-    return expenses.filter((expense) => {
-      if (filter !== 'all' && expense.category !== filter) return false
-      if (method !== 'all' && expense.method !== method) return false
-      if (period !== 'all') {
-        const key = expense.date.slice(0, 7)
-        if (key !== (period === 'this' ? monthKeys.current : monthKeys.previous)) return false
-      }
-      if (needle) {
-        const haystack =
-          `${expense.description} ${expense.vendor} ${expense.reference} ${expense.notes}`.toLowerCase()
-        if (!haystack.includes(needle)) return false
-      }
-      return true
-    })
-  }, [expenses, filter, method, period, search, monthKeys])
 
   const suggestions = useMemo(
     () =>
@@ -114,13 +126,9 @@ export function AdminExpenses() {
     onOpen: setViewing,
   })
 
-  const filteredTotal = filtered.reduce((sum, expense) => sum + expense.amount, 0)
-  const thisMonthTotal = expenses
-    .filter((expense) => expense.date.slice(0, 7) === monthKeys.current)
-    .reduce((sum, expense) => sum + expense.amount, 0)
-  const lastMonthTotal = expenses
-    .filter((expense) => expense.date.slice(0, 7) === monthKeys.previous)
-    .reduce((sum, expense) => sum + expense.amount, 0)
+  const pageTotal = expenses.reduce((sum, expense) => sum + expense.amount, 0)
+  const thisMonthTotal = summary?.thisMonth ?? 0
+  const lastMonthTotal = summary?.lastMonth ?? 0
 
   const save = async (input: ExpenseInput) => {
     setBusy(true)
@@ -332,9 +340,13 @@ export function AdminExpenses() {
           <MetricCard label="Last month" value={formatMoney(lastMonthTotal)} />
           <MetricCard label="Lifetime expenses" value={formatMoney(summary.total)} />
           <MetricCard
-            label="Filtered total"
-            value={formatMoney(filteredTotal)}
-            note={`${filtered.length} of ${summary.count} entries`}
+            label="Page total"
+            value={formatMoney(pageTotal)}
+            note={
+              meta
+                ? `${meta.count} matching · page ${meta.page} of ${meta.pages}`
+                : `${expenses.length} entries`
+            }
           />
         </div>
       ) : null}
@@ -401,7 +413,7 @@ export function AdminExpenses() {
 
       {loading ? (
         <AdminLoading rows={5} />
-      ) : filtered.length === 0 ? (
+      ) : expenses.length === 0 ? (
         <EmptyState
           icon="refrigerant"
           title="No expenses in this view."
@@ -420,12 +432,21 @@ export function AdminExpenses() {
       ) : (
         <Table
           columns={columns}
-          rows={filtered}
+          rows={expenses}
           caption="Expenses"
           onRowView={setViewing}
           viewLabel={(row) => row.description}
         />
       )}
+
+      {meta && meta.pages > 1 ? (
+        <Pagination
+          page={meta.page}
+          pageCount={meta.pages}
+          onPageChange={setPage}
+          className="justify-end"
+        />
+      ) : null}
 
       <Modal
         open={open}

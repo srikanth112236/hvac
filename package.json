@@ -28,6 +28,7 @@
     "test:ssr": "npm run test:ssr -w @hvac/web",
     "test:e2e": "playwright test",
     "seed:demo": "npm run seed:demo -w @hvac/api",
+    "seed:reset": "npm run seed:reset -w @hvac/api",
     "verify": "npm run typecheck && npm run lint && npm run test && npm run build && npm run audit",
     "format": "prettier --write .",
     "setup:hooks": "husky",

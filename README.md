@@ -28,6 +28,17 @@ Port 5175 is used because 5173 was occupied on the development machine. Change
 `server.port` in `apps/web/vite.config.ts` and the CORS origins in
 `apps/api/src/server.ts` together.
 
+If API port 4000 is already taken by another process, move the whole stack and
+keep the API and the Vite proxy in step:
+
+```bash
+PORT=4100 API_PORT=4100 npm run dev
+```
+
+`PORT` moves the API listener; `API_PORT` moves the dev/preview proxy. The API
+prints the exact command when it finds its port busy instead of crashing with a
+bare `EADDRINUSE`.
+
 ## Variants
 
 `VITE_THEME=foundry|atelier` (default `foundry`) selects the design language. In
@@ -83,6 +94,18 @@ development the floating switcher also flips it live; the choice is stored in
   blocks. See `docs/newsletters.md`.
 - Journal editor: separate article index, new and edit routes, rich-text body,
   media insertion, SEO fields and safe HTML publication. See `docs/journal.md`.
+- Invoice integrity and quotation control: issued invoices lock their amounts
+  once money is recorded; `Void` keeps the invoice with a reason instead of
+  deleting it; credit notes reduce the balance without rewriting issued lines;
+  payments are reversed with a reason and stay in the ledger; an AMC billing run
+  raises one invoice per active contract per billing period and is idempotent.
+  Quotations keep an immutable revision snapshot on every reissue and convert to
+  an invoice in one action, guarded against double-billing. The reminders page
+  opens with a desk-wide agenda that merges open tasks, unpaid invoices, lead
+  follow-ups, quotations awaiting the customer and expiring AMC contracts.
+  Dispatch refuses a technician double-booking (two-hour slot, travel gap
+  included) unless the overlap is explicitly forced. See
+  `docs/full-platform-audit.md` for the endpoint list.
 - Customer portal: overview, bookings (book, reschedule, cancel), invoices and
   **server-generated PDFs**, quotations (accept / request changes / edit /
   **PDF**), equipment + service history, AMC cover + renewal request +
@@ -131,6 +154,16 @@ Seed a complete local walkthrough dataset:
 ```bash
 npm run seed:demo
 ```
+
+The local data directory accumulates older manual and test records over time.
+To wipe every store (keeping `data/backups`) and rebuild the demo dataset from
+scratch:
+
+```bash
+npm run seed:reset
+```
+
+It refuses to run against a directory that is not literally named `data`.
 
 This adds a verified portal customer, sites, equipment, AMC contract,
 quotations, appointments, jobs, job reports, support tickets, invoices,

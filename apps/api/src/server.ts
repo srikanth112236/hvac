@@ -39,6 +39,18 @@ async function start(): Promise<void> {
     newsletterTimer.unref()
     startJobs()
   })
+  server.on('error', (error: NodeJS.ErrnoException) => {
+    if (error.code === 'EADDRINUSE') {
+      console.error(
+        `[hvac-api] Port ${PORT} is already in use. Free that port, or start the whole dev stack on another one:\n` +
+          `  PORT=4100 API_PORT=4100 npm run dev\n` +
+          'Port 4100 must match in the API and the web proxy (API_PORT).',
+      )
+      process.exit(1)
+    }
+    console.error('[hvac-api] listener error', error)
+    process.exit(1)
+  })
 }
 
 process.on('unhandledRejection', (reason) => {

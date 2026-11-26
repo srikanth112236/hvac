@@ -27,6 +27,7 @@ import {
   type BadgeTone,
 } from '@/components/ui'
 import { adminApi } from '@/admin/api'
+import { AdminAgenda } from '@/admin/AdminAgenda'
 import {
   AdminLoading,
   AdminPageHeader,
@@ -848,7 +849,7 @@ export function AdminReminders() {
       <AdminPageHeader
         eyebrow="Follow-ups"
         title="Nothing falls between calls."
-        description={`${counts.open} open reminder${counts.open === 1 ? '' : 's'} · ${counts.overdue} overdue · ${counts.urgent} urgent. Every follow-up, payment, renewal, parts and site-visit reminder in one queue.`}
+        description={`${counts.open} open reminder${counts.open === 1 ? '' : 's'} · ${counts.overdue} overdue · ${counts.urgent} urgent. The desk agenda above brings payments, leads, follow-ups, quotations and renewals into one queue; the task list below is the same record set with full controls.`}
         actions={
           <>
             <Button
@@ -864,6 +865,8 @@ export function AdminReminders() {
           </>
         }
       />
+
+      <AdminAgenda />
 
       {error ? <InlineError message={error} /> : null}
 

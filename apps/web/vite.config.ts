@@ -2,6 +2,10 @@ import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { fileURLToPath, URL } from 'node:url'
 
+// Keep the dev proxy and the API on the same port. Move both with
+// `PORT=4100 API_PORT=4100 npm run dev` when 4000 is already taken.
+const apiTarget = `http://127.0.0.1:${process.env.API_PORT ?? '4000'}`
+
 const CSP = [
   "default-src 'self'",
   "script-src 'self' https://www.googletagmanager.com",
@@ -43,28 +47,28 @@ export default defineConfig({
     host: '127.0.0.1',
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:4000',
+        target: apiTarget,
         changeOrigin: false,
         ws: true,
       },
       '/uploads': {
-        target: 'http://127.0.0.1:4000',
+        target: apiTarget,
         changeOrigin: false,
       },
       '/sitemap.xml': {
-        target: 'http://127.0.0.1:4000',
+        target: apiTarget,
         changeOrigin: false,
       },
       '/robots.txt': {
-        target: 'http://127.0.0.1:4000',
+        target: apiTarget,
         changeOrigin: false,
       },
       '/llms.txt': {
-        target: 'http://127.0.0.1:4000',
+        target: apiTarget,
         changeOrigin: false,
       },
       '/feed.xml': {
-        target: 'http://127.0.0.1:4000',
+        target: apiTarget,
         changeOrigin: false,
       },
     },
@@ -74,28 +78,28 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:4000',
+        target: apiTarget,
         changeOrigin: false,
         ws: true,
       },
       '/uploads': {
-        target: 'http://127.0.0.1:4000',
+        target: apiTarget,
         changeOrigin: false,
       },
       '/sitemap.xml': {
-        target: 'http://127.0.0.1:4000',
+        target: apiTarget,
         changeOrigin: false,
       },
       '/robots.txt': {
-        target: 'http://127.0.0.1:4000',
+        target: apiTarget,
         changeOrigin: false,
       },
       '/llms.txt': {
-        target: 'http://127.0.0.1:4000',
+        target: apiTarget,
         changeOrigin: false,
       },
       '/feed.xml': {
-        target: 'http://127.0.0.1:4000',
+        target: apiTarget,
         changeOrigin: false,
       },
     },

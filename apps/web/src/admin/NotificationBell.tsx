@@ -7,7 +7,6 @@ import { notificationCategoryLabel, notificationPriorityLabel } from '@hvac/shar
 import {
   notificationCategoryIcon,
   notificationCategoryTone,
-  notificationDestination,
   useAdminNotifications,
 } from '@/admin/notifications'
 
@@ -83,10 +82,10 @@ export function NotificationBell() {
     }
   }, [open])
 
-  const openNotification = (id: string, link: string) => {
+  const openNotification = (id: string) => {
     setOpen(false)
     void markRead(id)
-    navigate(notificationDestination(link))
+    navigate(`/admin/notifications/${id}`)
   }
 
   return (
@@ -151,7 +150,7 @@ export function NotificationBell() {
                       <li key={notification.id}>
                         <button
                           type="button"
-                          onClick={() => openNotification(notification.id, notification.link)}
+                          onClick={() => openNotification(notification.id)}
                           className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-cold/[0.05] ${
                             notification.read ? '' : 'bg-cold/[0.025]'
                           }`}

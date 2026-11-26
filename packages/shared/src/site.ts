@@ -127,6 +127,21 @@ export interface SiteBrand {
     invoiceTerms: string
     invoiceNotes: string
   }
+  documents?: SiteDocuments
+}
+
+/**
+ * One place for how every printed and downloaded document looks: invoices,
+ * quotations, expense reports and any future PDF reuse these values.
+ */
+export interface SiteDocuments {
+  accent: string
+  paper: 'A4' | 'Letter'
+  footerNote: string
+  paymentInstructions: string
+  signatureName: string
+  showBankDetails: boolean
+  showSignature: boolean
 }
 
 export interface SiteHome {
@@ -461,8 +476,73 @@ export interface SiteTheme {
   }
 }
 
+/**
+ * Header navigation, editable from Content Studio.
+ *
+ * A menu item is either a plain link or a mega panel. Mega panels hold columns
+ * of links plus one feature card, so the header can carry a services index, a
+ * company index and any future landing page without touching the code.
+ */
+export interface SiteNavLink {
+  label: string
+  href: string
+  description?: string
+  badge?: string
+}
+
+export interface SiteNavColumn {
+  title: string
+  links: SiteNavLink[]
+}
+
+export interface SiteNavFeature {
+  eyebrow?: string
+  title?: string
+  body?: string
+  image?: string
+  ctaLabel?: string
+  ctaHref?: string
+}
+
+export interface SiteNavItem {
+  id: string
+  label: string
+  /** Route used when the item is a plain link, and for the panel's "view all". */
+  href: string
+  kind: 'link' | 'mega'
+  published: boolean
+  eyebrow?: string
+  description?: string
+  columns: SiteNavColumn[]
+  feature?: SiteNavFeature
+  cta?: SiteNavLink
+}
+
+export interface SiteAnnouncement {
+  enabled: boolean
+  text: string
+  secondary: string
+  linkLabel: string
+  linkHref: string
+}
+
+export interface SiteNavActions {
+  primaryLabel: string
+  primaryHref: string
+  secondaryLabel: string
+  secondaryHref: string
+  showPhone: boolean
+}
+
+export interface SiteNavigation {
+  announcement: SiteAnnouncement
+  items: SiteNavItem[]
+  actions: SiteNavActions
+}
+
 export interface SiteContentPayload {
   brand: SiteBrand
+  navigation: SiteNavigation
   theme?: SiteTheme
   home: SiteHome
   about: SiteAbout
@@ -741,6 +821,60 @@ const pageSectionsSchema = z.object({
   }),
 })
 
+const navLinkSchema = z.object({
+  label: trimmed(60).min(1),
+  href: trimmed(300).min(1),
+  description: trimmed(240).optional(),
+  badge: trimmed(24).optional(),
+})
+
+const navItemSchema = z.object({
+  id: z.string().trim().min(1).max(40),
+  label: trimmed(40).min(1),
+  href: trimmed(300),
+  kind: z.enum(['link', 'mega']),
+  published: z.boolean(),
+  eyebrow: trimmed(80).optional(),
+  description: trimmed(300).optional(),
+  columns: z
+    .array(
+      z.object({
+        title: trimmed(40),
+        links: z.array(navLinkSchema).max(14),
+      }),
+    )
+    .max(4),
+  feature: z
+    .object({
+      eyebrow: trimmed(60).optional(),
+      title: trimmed(120).optional(),
+      body: trimmed(400).optional(),
+      image: trimmed(500).optional(),
+      ctaLabel: trimmed(40).optional(),
+      ctaHref: trimmed(300).optional(),
+    })
+    .optional(),
+  cta: navLinkSchema.optional(),
+})
+
+const navigationSchema = z.object({
+  announcement: z.object({
+    enabled: z.boolean(),
+    text: trimmed(200),
+    secondary: trimmed(200),
+    linkLabel: trimmed(60),
+    linkHref: trimmed(300),
+  }),
+  items: z.array(navItemSchema).max(9),
+  actions: z.object({
+    primaryLabel: trimmed(40),
+    primaryHref: trimmed(300),
+    secondaryLabel: trimmed(40),
+    secondaryHref: trimmed(300),
+    showPhone: z.boolean(),
+  }),
+})
+
 export const siteContentPayloadSchema: z.ZodType<SiteContentPayload> = z.object({
   brand: z.object({
     name: trimmed(80),
@@ -807,6 +941,17 @@ export const siteContentPayloadSchema: z.ZodType<SiteContentPayload> = z.object(
       invoiceTerms: trimmed(2000),
       invoiceNotes: trimmed(1000),
     }),
+    documents: z
+      .object({
+        accent: z.string().trim().min(1).max(40),
+        paper: z.enum(['A4', 'Letter']),
+        footerNote: trimmed(300),
+        paymentInstructions: trimmed(1000),
+        signatureName: trimmed(80),
+        showBankDetails: z.boolean(),
+        showSignature: z.boolean(),
+      })
+      .optional(),
   }),
   theme: z
     .object({
@@ -997,6 +1142,7 @@ export const siteContentPayloadSchema: z.ZodType<SiteContentPayload> = z.object(
     blog: pageCopySchema,
     products: pageCopySchema,
   }),
+  navigation: navigationSchema,
   pageSections: pageSectionsSchema,
   services: z.array(serviceSchema).max(100),
   plans: z.array(planSchema).max(12),

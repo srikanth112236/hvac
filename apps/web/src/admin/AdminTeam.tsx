@@ -18,6 +18,7 @@ import {
 } from '@/components/ui'
 import type { PayrollInput, PayrollRecord, TeamMember, TeamMemberInput } from '@hvac/shared'
 import { adminApi, type PayrollSummary } from '@/admin/api'
+import { AdminRolesPanel } from '@/admin/AdminRolesPanel'
 import { ROLE_LABELS } from '@/admin/invoice-ui'
 import {
   AdminLoading,
@@ -44,7 +45,7 @@ function parseList(value: string): string[] {
 
 export function AdminTeam() {
   const { toast } = useToast()
-  const [tab, setTab] = useState<'team' | 'payroll'>('team')
+  const [tab, setTab] = useState<'team' | 'payroll' | 'roles'>('team')
   const [team, setTeam] = useState<TeamMember[]>([])
   const [payroll, setPayroll] = useState<PayrollRecord[]>([])
   const [summary, setSummary] = useState<PayrollSummary | null>(null)
@@ -454,7 +455,7 @@ export function AdminTeam() {
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2 border-b border-line">
-        {(['team', 'payroll'] as const).map((value) => (
+        {(['team', 'payroll', 'roles'] as const).map((value) => (
           <button
             key={value}
             type="button"
@@ -467,7 +468,9 @@ export function AdminTeam() {
           >
             {value === 'team'
               ? `Team register · ${team.length}`
-              : `Salary ledger · ${payroll.length}`}
+              : value === 'payroll'
+                ? `Salary ledger · ${payroll.length}`
+                : 'Roles & access'}
           </button>
         ))}
         {tab === 'team' ? (
@@ -483,6 +486,8 @@ export function AdminTeam() {
 
       {loading ? (
         <AdminLoading rows={5} />
+      ) : tab === 'roles' ? (
+        <AdminRolesPanel />
       ) : tab === 'team' ? (
         filteredTeam.length === 0 ? (
           <EmptyState

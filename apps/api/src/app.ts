@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { adminRouter } from './admin.js'
+import { agendaRouter } from './agenda.js'
 import { adminUsersRouter } from './adminUsersRouter.js'
 import { auditAdmin } from './audit.js'
 import { authRouter } from './auth.js'
@@ -13,6 +14,8 @@ import { businessRouter } from './business.js'
 import { contentRouter, readSiteContent } from './content.js'
 import { leadsRouter } from './leads.js'
 import { jobsRouter } from './jobStore.js'
+import { leadScoringRouter } from './leadScoring.js'
+import { rolesRouter } from './roles.js'
 import { marketingRouter } from './marketing.js'
 import { mediaRouter, UPLOAD_ROOT } from './media.js'
 import { newsletterSignupsRouter } from './newsletterSignups.js'
@@ -97,9 +100,12 @@ app.use('/api/v1', portalAuthRouter)
 app.use('/api/v1', portalRouter)
 app.use('/api/v1', portalFileRouter)
 app.use('/api/v1', jobsRouter)
+app.use('/api/v1/admin', agendaRouter)
 app.use('/api/v1/admin', notificationsRouter)
 app.use('/api/v1/admin', auditAdmin)
 app.use('/api/v1/admin', adminUsersRouter)
+app.use('/api/v1/admin', rolesRouter)
+app.use('/api/v1/admin', leadScoringRouter)
 app.use('/api/v1/admin', adminRouter)
 app.use('/api/v1/admin', businessRouter)
 app.use('/api/v1/admin', customersRouter)

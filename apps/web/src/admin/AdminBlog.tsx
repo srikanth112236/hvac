@@ -132,6 +132,7 @@ function htmlToText(html: string): string {
 function payloadFor(content: SiteContent): SiteContentPayload {
   return {
     brand: content.brand,
+    navigation: content.navigation,
     theme: content.theme,
     home: content.home,
     about: content.about,

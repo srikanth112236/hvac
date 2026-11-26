@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { LeadAttachment } from './site'
+import type { AdminLead, LeadAttachment } from './site'
 
 /* -------------------------------------------------------------------------- */
 /*  Domain vocabulary shared by web, API and admin                            */
@@ -101,6 +101,229 @@ export const ROLE_PERMISSIONS: Record<AdminRole, AdminPermission[]> = {
 
 export function roleCan(role: AdminRole, permission: AdminPermission): boolean {
   return ROLE_PERMISSIONS[role].includes(permission)
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Editable role matrix                                                       */
+/* -------------------------------------------------------------------------- */
+
+const PERMISSION_KEYS = ADMIN_PERMISSIONS.map(
+  (permission) => permission.key,
+) as unknown as [AdminPermission, ...AdminPermission[]]
+
+export interface RoleMatrixRole {
+  id: AdminRole
+  label: string
+  description: string
+  permissions: AdminPermission[]
+}
+
+export interface RoleMatrix {
+  version: number
+  updatedAt: string
+  updatedBy?: string
+  roles: RoleMatrixRole[]
+}
+
+const ROLE_COPY: Record<AdminRole, { label: string; description: string }> = {
+  owner: { label: 'Owner', description: 'Full access. The only role that can change this matrix.' },
+  admin: { label: 'Admin', description: 'Runs the desk: leads, content, customers, billing and marketing.' },
+  manager: { label: 'Manager', description: 'Leads, content, customers, quotes and portal work.' },
+  accountant: { label: 'Accountant', description: 'Reads everything, writes invoices, payments, payroll and expenses.' },
+  viewer: { label: 'Viewer', description: 'Read-only access to operational data.' },
+}
+
+export function defaultRoleMatrix(): RoleMatrix {
+  return {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    roles: ADMIN_ROLES.map((role) => ({
+      id: role,
+      label: ROLE_COPY[role].label,
+      description: ROLE_COPY[role].description,
+      permissions: [...ROLE_PERMISSIONS[role]],
+    })),
+  }
+}
+
+export const roleMatrixSaveSchema = z.object({
+  expectedVersion: z.number().int().min(1),
+  roles: z
+    .array(
+      z.object({
+        id: z.enum(ADMIN_ROLES),
+        label: z.string().trim().min(1).max(60),
+        description: z.string().trim().max(240),
+        permissions: z.array(z.enum(PERMISSION_KEYS)).max(PERMISSION_KEYS.length),
+      }),
+    )
+    .min(1)
+    .max(ADMIN_ROLES.length),
+})
+export type RoleMatrixSave = z.infer<typeof roleMatrixSaveSchema>
+
+/* -------------------------------------------------------------------------- */
+/*  Lead scoring                                                               */
+/* -------------------------------------------------------------------------- */
+
+export const LEAD_SCORE_FIELDS = [
+  { key: 'source', label: 'Source', hint: 'Where the enquiry came from.' },
+  { key: 'status', label: 'Stage', hint: 'Pipeline stage.' },
+  { key: 'urgency', label: 'Urgency', hint: 'normal or emergency.' },
+  { key: 'value', label: 'Value', hint: 'Estimated job value.' },
+  { key: 'city', label: 'City', hint: 'Service city.' },
+  { key: 'service', label: 'Service', hint: 'Requested service name.' },
+  { key: 'owner', label: 'Owner', hint: 'Assigned team member.' },
+  { key: 'message', label: 'Brief', hint: 'Enquiry message text.' },
+  { key: 'ageDays', label: 'Days old', hint: 'Whole days since the lead arrived.' },
+] as const
+export type LeadScoreField = (typeof LEAD_SCORE_FIELDS)[number]['key']
+
+export const LEAD_SCORE_OPERATORS = [
+  { key: 'equals', label: 'equals' },
+  { key: 'contains', label: 'contains' },
+  { key: 'at-least', label: 'is at least' },
+  { key: 'at-most', label: 'is at most' },
+  { key: 'is-set', label: 'is set' },
+  { key: 'is-empty', label: 'is empty' },
+] as const
+export type LeadScoreOperator = (typeof LEAD_SCORE_OPERATORS)[number]['key']
+
+export interface LeadScoringRule {
+  id: string
+  label: string
+  field: LeadScoreField
+  operator: LeadScoreOperator
+  value: string
+  points: number
+  enabled: boolean
+}
+
+export interface LeadScoringConfig {
+  version: number
+  updatedAt: string
+  hotAt: number
+  warmAt: number
+  rules: LeadScoringRule[]
+}
+
+export const leadScoringRuleSchema = z.object({
+  id: z.string().trim().min(1).max(40),
+  label: z.string().trim().min(1).max(80),
+  field: z.enum(LEAD_SCORE_FIELDS.map((entry) => entry.key) as [LeadScoreField, ...LeadScoreField[]]),
+  operator: z.enum(
+    LEAD_SCORE_OPERATORS.map((entry) => entry.key) as [LeadScoreOperator, ...LeadScoreOperator[]],
+  ),
+  value: z.string().trim().max(120),
+  points: z.number().int().min(-50).max(50),
+  enabled: z.boolean(),
+})
+
+export const leadScoringConfigSchema = z.object({
+  version: z.number().int().min(1),
+  updatedAt: z.string().trim().max(40),
+  hotAt: z.number().int().min(1).max(200),
+  warmAt: z.number().int().min(0).max(200),
+  rules: z.array(leadScoringRuleSchema).max(24),
+})
+
+export const LEAD_SCORING_SAVE_SCHEMA = z.object({
+  expectedVersion: z.number().int().min(1),
+  hotAt: z.number().int().min(1).max(200),
+  warmAt: z.number().int().min(0).max(200),
+  rules: z.array(leadScoringRuleSchema).max(24),
+})
+export type LeadScoringSave = z.infer<typeof LEAD_SCORING_SAVE_SCHEMA>
+
+export function defaultLeadScoring(): LeadScoringConfig {
+  return {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    hotAt: 60,
+    warmAt: 30,
+    rules: [
+      { id: 'emergency', label: 'Emergency call-out', field: 'urgency', operator: 'equals', value: 'emergency', points: 40, enabled: true },
+      { id: 'value-5k', label: 'Value at least 5,000', field: 'value', operator: 'at-least', value: '5000', points: 25, enabled: true },
+      { id: 'referral', label: 'Came from a referral', field: 'source', operator: 'contains', value: 'referral', points: 20, enabled: true },
+      { id: 'quoted', label: 'Quotation issued', field: 'status', operator: 'equals', value: 'quoted', points: 20, enabled: true },
+      { id: 'site-visit', label: 'Site visit booked', field: 'status', operator: 'equals', value: 'site-visit', points: 10, enabled: true },
+      { id: 'fresh', label: 'Arrived yesterday or today', field: 'ageDays', operator: 'at-most', value: '1', points: 10, enabled: true },
+      { id: 'unassigned', label: 'No owner assigned', field: 'owner', operator: 'is-empty', value: '', points: -10, enabled: true },
+    ],
+  }
+}
+
+export interface LeadScoreResult {
+  total: number
+  band: 'hot' | 'warm' | 'cold'
+  matched: { id: string; label: string; points: number }[]
+}
+
+function leadFieldValue(lead: AdminLead, field: LeadScoreField): string | number | null {
+  switch (field) {
+    case 'source':
+      return lead.source
+    case 'status':
+      return lead.status
+    case 'urgency':
+      return lead.urgency
+    case 'value':
+      return lead.value ?? null
+    case 'city':
+      return lead.city ?? null
+    case 'service':
+      return lead.serviceName ?? null
+    case 'owner':
+      return lead.owner ?? null
+    case 'message':
+      return lead.message ?? null
+    case 'ageDays': {
+      const created = Date.parse(lead.createdAt)
+      return Number.isFinite(created) ? Math.floor((Date.now() - created) / 86_400_000) : null
+    }
+    default:
+      return null
+  }
+}
+
+function ruleMatches(rule: LeadScoringRule, lead: AdminLead): boolean {
+  const raw = leadFieldValue(lead, rule.field)
+  const text = raw === null || raw === undefined ? '' : String(raw).trim().toLowerCase()
+  const target = rule.value.trim().toLowerCase()
+  switch (rule.operator) {
+    case 'is-set':
+      return text.length > 0
+    case 'is-empty':
+      return text.length === 0
+    case 'equals':
+      return text === target
+    case 'contains':
+      return target.length > 0 && text.includes(target)
+    case 'at-least':
+      return Number.isFinite(Number(text)) && Number(text) >= Number(target)
+    case 'at-most':
+      return Number.isFinite(Number(text)) && Number(text) <= Number(target)
+    default:
+      return false
+  }
+}
+
+/** Pure evaluation so the API and the kanban agree on the same number. */
+export function scoreLead(lead: AdminLead, config: LeadScoringConfig): LeadScoreResult {
+  const matched: LeadScoreResult['matched'] = []
+  let total = 0
+  for (const rule of config.rules) {
+    if (!rule.enabled || rule.points === 0) continue
+    if (!ruleMatches(rule, lead)) continue
+    total += rule.points
+    matched.push({ id: rule.id, label: rule.label, points: rule.points })
+  }
+  const bounded = Math.max(0, Math.min(100, total))
+  return {
+    total: bounded,
+    band: bounded >= config.hotAt ? 'hot' : bounded >= config.warmAt ? 'warm' : 'cold',
+    matched,
+  }
 }
 
 export function rolesForPermission(permission: AdminPermission): AdminRole[] {
