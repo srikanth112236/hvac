@@ -22,7 +22,9 @@ import {
   type TicketInput,
   type TicketStatus,
 } from '@hvac/shared'
-import { Icon } from '@/components/icons'
+import { Icon, type IconName } from '@/components/icons'
+import { cn } from '@/lib/cn'
+import { PortalSearch } from '@/portal/PortalSearch'
 import {
   Badge,
   Button,
@@ -808,8 +810,33 @@ export function PortalPage() {
 
   if (!customer) {
     return (
-      <section className="border-b border-line">
-        <div className="shell grid gap-10 pb-16 pt-12 lg:grid-cols-12 lg:pt-16">
+      <div className="min-h-[100svh] bg-base">
+        <header className="border-b border-line bg-panel/30">
+          <div className="shell flex items-center justify-between gap-4 py-4">
+            <Link to="/" className="flex items-center gap-3">
+              <span className="flex h-8 w-8 items-center justify-center border border-line-strong font-mono text-[10px] text-cold">
+                CV
+              </span>
+              <span className="flex flex-col">
+                <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg">
+                  Customer portal
+                </span>
+                <span className="font-mono text-[8px] uppercase tracking-[0.14em] text-fg-faint">
+                  Coolvane HVAC
+                </span>
+              </span>
+            </Link>
+            <Link
+              to="/"
+              className="flex h-8 items-center gap-1.5 border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:border-cold/50 hover:text-cold"
+            >
+              <Icon name="external" size={12} />
+              Back to site
+            </Link>
+          </div>
+        </header>
+        <section className="border-b border-line">
+          <div className="shell grid gap-10 pb-16 pt-12 lg:grid-cols-12 lg:pt-16">
           <div className="lg:col-span-6">
             <span className="annot">Customer portal · CV-PORTAL</span>
             <h1 className="t-display mt-6 max-w-[13ch] text-fg">
@@ -1089,60 +1116,87 @@ export function PortalPage() {
           </div>
         </div>
       </section>
+      </div>
     )
   }
 
-  const tabs: { id: PortalTab; label: string; count?: number }[] = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'visits', label: 'Service visits', count: overview?.appointments.length },
-    { id: 'invoices', label: 'Invoices', count: overview?.invoices.length },
+  const tabs: { id: PortalTab; label: string; icon: IconName; count?: number }[] = [
+    { id: 'overview', label: 'Overview', icon: 'gauge' },
+    { id: 'visits', label: 'Service visits', icon: 'calendar', count: overview?.appointments.length },
+    { id: 'invoices', label: 'Invoices', icon: 'coil', count: overview?.invoices.length },
     {
       id: 'quotes',
       label: 'Quotations',
+      icon: 'tag',
       count: overview?.quotations.filter((quote) => quote.status === 'sent').length,
     },
-    { id: 'equipment', label: 'Equipment', count: overview?.equipment.length },
+    { id: 'equipment', label: 'Equipment', icon: 'wrench', count: overview?.equipment.length },
     {
       id: 'cover',
       label: 'AMC cover',
+      icon: 'shield',
       count: overview?.amc.filter((contract) => contract.status === 'active').length,
     },
-    { id: 'reports', label: 'Reports', count: overview?.reports.length },
+    { id: 'reports', label: 'Reports', icon: 'clock', count: overview?.reports.length },
     {
       id: 'support',
       label: 'Support',
+      icon: 'mail',
       count: overview?.tickets.filter(
         (ticket) => ticket.status === 'open' || ticket.status === 'in-progress',
       ).length,
     },
-    { id: 'account', label: 'Account' },
+    { id: 'account', label: 'Account', icon: 'thermostat' },
   ]
 
+  const activeTabMeta = tabs.find((entry) => entry.id === tab) ?? tabs[0]
+
   return (
-    <section className="border-b border-line">
-      <div className="shell pb-16 pt-10 lg:pt-14">
-        <div className="flex flex-wrap items-end justify-between gap-4 border-b border-line pb-6">
-          <div>
-            <span className="annot">Customer portal</span>
-            <h1 className="t-h1 mt-3 text-fg">{customer.name}</h1>
-            <p className="mt-2 text-[12px] text-fg-dim">
-              {customer.email} · {customer.phone || 'No phone on file'}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" size="sm" icon="calendar" onClick={() => openBooking()}>
-              Book a visit
-            </Button>
+    <div className="min-h-[100svh] bg-base lg:grid lg:grid-cols-[236px_minmax(0,1fr)]">
+      <a
+        href="#portal-main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:border focus:border-cold focus:bg-base focus:px-4 focus:py-2 focus:text-[11px] focus:text-fg"
+      >
+        Skip to portal content
+      </a>
+
+      <aside className="border-b border-line bg-panel/30 lg:sticky lg:top-0 lg:flex lg:h-[100svh] lg:flex-col lg:border-b-0 lg:border-r">
+        <div className="flex items-center justify-between gap-4 border-b border-line px-4 py-4 lg:px-5">
+          <button
+            type="button"
+            onClick={() => setTab('overview')}
+            className="flex items-center gap-3 text-left"
+          >
+            <span className="flex h-8 w-8 items-center justify-center border border-line-strong font-mono text-[10px] text-cold">
+              CV
+            </span>
+            <span className="flex flex-col">
+              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg">
+                Customer portal
+              </span>
+              <span className="font-mono text-[8px] uppercase tracking-[0.14em] text-fg-faint">
+                Coolvane HVAC
+              </span>
+            </span>
+          </button>
+          <div className="flex items-center gap-2 lg:hidden">
+            <Link
+              to="/"
+              aria-label="Open public site"
+              className="flex h-8 w-8 items-center justify-center border border-line text-fg-faint hover:text-cold"
+            >
+              <Icon name="external" size={14} />
+            </Link>
             <Button variant="quiet" size="sm" onClick={() => void signOut()}>
               Sign out
             </Button>
           </div>
         </div>
 
-        <div
+        <nav
           role="tablist"
           aria-label="Portal sections"
-          className="mt-6 flex flex-wrap gap-1 border border-line bg-panel/30 p-1"
+          className="flex gap-1 overflow-x-auto px-3 py-2 lg:flex-col lg:overflow-visible lg:py-4"
         >
           {tabs.map((entry) => (
             <button
@@ -1153,17 +1207,88 @@ export function PortalPage() {
               aria-controls={`portal-panel-${entry.id}`}
               id={`portal-tab-${entry.id}`}
               onClick={() => setTab(entry.id)}
-              className={
+              className={cn(
+                'flex shrink-0 items-center justify-between gap-2.5 border px-3 py-2 font-mono text-[10px] uppercase tracking-[0.1em] transition-colors duration-2',
                 tab === entry.id
-                  ? 'bg-cold px-3 py-2 font-mono text-[10px] uppercase tracking-[0.1em] text-base'
-                  : 'px-3 py-2 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim hover:text-fg'
-              }
+                  ? 'border-cold/40 bg-cold/[0.07] text-cold'
+                  : 'border-transparent text-fg-dim hover:border-line hover:text-fg',
+              )}
             >
-              {entry.label}
-              {entry.count ? <span className="ml-2 opacity-70">{entry.count}</span> : null}
+              <span className="flex items-center gap-2.5">
+                <Icon name={entry.icon} size={14} />
+                {entry.label}
+              </span>
+              {entry.count ? (
+                <span className="border border-line px-1.5 py-0.5 text-[8px] leading-none opacity-80">
+                  {entry.count}
+                </span>
+              ) : null}
             </button>
           ))}
+        </nav>
+
+        <div className="flex flex-col gap-2 px-3 py-2 lg:px-4 lg:py-3">
+          <PortalSearch overview={overview} onNavigate={(nextTab) => setTab(nextTab)} />
         </div>
+
+        <div className="mt-auto hidden border-t border-line p-4 lg:block">
+          <span className="font-mono text-[8px] uppercase tracking-[0.12em] text-fg-faint">
+            Signed in as
+          </span>
+          <p className="mt-1 truncate text-[12px] font-medium text-fg">{customer.name}</p>
+          <p className="truncate font-mono text-[10px] text-fg-dim">{customer.email}</p>
+          <div className="mt-3 flex items-center gap-2">
+            <Link
+              to="/"
+              target="_blank"
+              className="flex h-8 flex-1 items-center justify-center gap-1.5 border border-line font-mono text-[9px] uppercase tracking-[0.1em] text-fg-dim hover:border-cold/50 hover:text-cold"
+            >
+              <Icon name="external" size={12} />
+              Site
+            </Link>
+            <button
+              type="button"
+              onClick={() => void signOut()}
+              className="flex h-8 items-center border border-line px-3 font-mono text-[9px] uppercase tracking-[0.1em] text-fg-faint hover:border-danger/50 hover:text-danger"
+            >
+              Sign out
+            </button>
+          </div>
+          <p className="mt-4 flex items-center gap-1.5 font-mono text-[8px] uppercase tracking-[0.08em] text-fg-faint">
+            <span className="h-1 w-1 bg-success" />
+            Portal live · encrypted
+          </p>
+        </div>
+      </aside>
+
+      <div className="flex min-w-0 flex-col">
+        <header className="sticky top-0 z-20 border-b border-line bg-base/90 backdrop-blur">
+          <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-10">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.14em] text-fg-faint">
+                <span>Customer portal</span>
+                <span>/</span>
+                <span className="text-cold">{activeTabMeta?.label ?? 'Overview'}</span>
+              </div>
+              <div className="mt-1 flex flex-wrap items-baseline gap-3">
+                <h1 className="t-h2 text-fg">{customer.name}</h1>
+                <span className="hidden font-mono text-[10px] text-fg-dim sm:inline">
+                  {customer.email} · {customer.phone || 'No phone on file'}
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="hidden sm:block">
+                <PortalSearch compact overview={overview} onNavigate={(nextTab) => setTab(nextTab)} />
+              </div>
+              <Button variant="secondary" size="sm" icon="calendar" onClick={() => openBooking()}>
+                Book a visit
+              </Button>
+            </div>
+          </div>
+        </header>
+
+        <main id="portal-main" className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
 
         {loadingOverview && !overview ? (
           <p className="py-12 text-center font-mono text-[10px] uppercase tracking-[0.14em] text-fg-faint">
@@ -2267,7 +2392,7 @@ export function PortalPage() {
             </section>
           </div>
         ) : null}
-      </div>
+      </main>
 
       <Modal
         open={bookingOpen}
@@ -2959,6 +3084,7 @@ export function PortalPage() {
         record={detail?.record ?? null}
         exclude={detail?.exclude}
       />
-    </section>
+      </div>
+    </div>
   )
 }

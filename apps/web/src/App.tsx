@@ -38,6 +38,14 @@ const AdminNotifications = lazy(() =>
 const AdminLeads = lazy(() =>
   import('@/admin/AdminLeads').then((module) => ({ default: module.AdminLeads })),
 )
+const AdminNotificationDetail = lazy(() =>
+  import('@/admin/AdminNotificationDetail').then((module) => ({
+    default: module.AdminNotificationDetail,
+  })),
+)
+const AdminSearchPage = lazy(() =>
+  import('@/admin/AdminSearchPage').then((module) => ({ default: module.AdminSearchPage })),
+)
 const AdminReminders = lazy(() =>
   import('@/admin/AdminReminders').then((module) => ({ default: module.AdminReminders })),
 )
@@ -128,7 +136,6 @@ export function App() {
           <Route path="/quote" element={<QuotePage />} />
           <Route path="/tools" element={<ToolsPage />} />
           <Route path="/tools/:slug" element={<ToolDetailPage />} />
-          <Route path="/portal" element={<PortalPage />} />
           <Route path="/legal/:slug" element={<LegalPage />} />
           <Route path="/privacy" element={<Navigate to="/legal/privacy" replace />} />
           <Route path="/terms" element={<Navigate to="/legal/terms" replace />} />
@@ -141,6 +148,7 @@ export function App() {
           <Route path="/shop" element={<Navigate to="/products" replace />} />
           <Route path="/portfolio" element={<Navigate to="/work" replace />} />
         </Route>
+        <Route path="/portal" element={<PortalPage />} />
         <Route
           path="/admin"
           element={
@@ -151,6 +159,8 @@ export function App() {
         >
           <Route index element={<AdminOverview />} />
           <Route path="notifications" element={<AdminNotifications />} />
+          <Route path="notifications/:notificationId" element={<AdminNotificationDetail />} />
+          <Route path="search" element={<AdminSearchPage />} />
           <Route path="leads" element={<AdminLeads />} />
           <Route path="customers" element={<AdminCustomers />} />
           <Route path="customers/:customerId" element={<AdminCustomerFile />} />
