@@ -162,11 +162,11 @@ export function MetricCard({
           ? 'text-warn'
           : 'text-cold'
   return (
-    <div className="marks relative border border-line bg-panel/50 p-5">
+    <div className="marks relative min-w-0 overflow-hidden border border-line bg-panel/50 p-4 sm:p-5">
       <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-fg-faint">
         {label}
       </span>
-      <p className={cn('t-num mt-4 text-h2 leading-none', accentClass)}>{value}</p>
+      <p className={cn('t-metric mt-3 sm:mt-4', accentClass)}>{value}</p>
       {note ? <div className="mt-3 text-[11px] leading-snug text-fg-faint">{note}</div> : null}
     </div>
   )

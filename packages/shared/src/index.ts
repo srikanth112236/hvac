@@ -18,12 +18,13 @@ export const ROLES = [
 export type Role = (typeof ROLES)[number]
 
 /** Roles for the single-workspace admin panel. */
-export const ADMIN_ROLES = ['owner', 'admin', 'manager', 'accountant', 'viewer'] as const
+export const ADMIN_ROLES = ['owner', 'admin', 'manager', 'sales', 'accountant', 'viewer'] as const
 export type AdminRole = (typeof ADMIN_ROLES)[number]
 export const adminRoleLabel: Record<AdminRole, string> = {
   owner: 'Owner',
   admin: 'Admin',
   manager: 'Manager',
+  sales: 'Sales',
   accountant: 'Accountant',
   viewer: 'Viewer',
 }
@@ -95,6 +96,7 @@ export const ROLE_PERMISSIONS: Record<AdminRole, AdminPermission[]> = {
     'data.export',
   ],
   manager: ['data.read', 'leads.write', 'content.write', 'customers.write', 'portal.write'],
+  sales: ['data.read', 'leads.write', 'portal.write'],
   accountant: ['data.read', 'billing.write'],
   viewer: ['data.read'],
 }
@@ -129,6 +131,10 @@ const ROLE_COPY: Record<AdminRole, { label: string; description: string }> = {
   owner: { label: 'Owner', description: 'Full access. The only role that can change this matrix.' },
   admin: { label: 'Admin', description: 'Runs the desk: leads, content, customers, billing and marketing.' },
   manager: { label: 'Manager', description: 'Leads, content, customers, quotes and portal work.' },
+  sales: {
+    label: 'Sales',
+    description: 'Owns assigned leads, follow-ups and customer quotes in the sales portal.',
+  },
   accountant: { label: 'Accountant', description: 'Reads everything, writes invoices, payments, payroll and expenses.' },
   viewer: { label: 'Viewer', description: 'Read-only access to operational data.' },
 }
@@ -491,8 +497,12 @@ export function formatTonnage(tr: number): string {
 export const SITE_URL_PLACEHOLDER = 'https://coolvane.example'
 
 export * from './site'
+export * from './sales'
 export * from './contentHistory'
 export * from './business'
+export * from './payroll'
+export * from './reports'
+export * from './analytics'
 export * from './seed'
 export * from './editorial'
 export * from './media'

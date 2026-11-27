@@ -13,6 +13,12 @@ import type {
   PayrollRecord,
   QuotationRecord,
   ReminderRecord,
+  AttendanceRecord,
+  LeaveRequest,
+  SalaryAdvance,
+  SalaryStructure,
+  SalesRepProfile,
+  SalesTargetRecord,
   SupportTicket,
   TeamMember,
 } from '@hvac/shared'
@@ -35,7 +41,7 @@ import { preferenceStore } from './customerPreferences.js'
 import { signupStore } from './newsletterSignups.js'
 import { createStore } from './store.js'
 
-if (process.env.NODE_ENV === 'production') {
+if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DEMO_SEED !== 'true') {
   throw new Error('Refusing to seed demo operational data in production.')
 }
 
@@ -1175,6 +1181,153 @@ async function seedResetToken() {
   }))
 }
 
+async function seedSalesAndPayrollPro() {
+  const salesProfileStore = createStore<SalesRepProfile[]>('sales-profiles.json', () => [])
+  const salesTargetStore = createStore<SalesTargetRecord[]>('sales-targets.json', () => [])
+  const structureStore = createStore<Record<string, SalaryStructure>>(
+    'salary-structures.json',
+    () => ({}),
+  )
+  const attendanceStore = createStore<AttendanceRecord[]>('attendance.json', () => [])
+  const leaveStore = createStore<LeaveRequest[]>('team-leaves.json', () => [])
+  const advanceStore = createStore<SalaryAdvance[]>('salary-advances.json', () => [])
+
+  const profiles: SalesRepProfile[] = [
+    {
+      email: 'priya.shah@coolvane.example',
+      name: 'Priya Shah',
+      userId: null,
+      teamMemberId: TEAM.priya,
+      baseSalary: 8200,
+      active: true,
+      updatedAt: iso,
+    },
+    {
+      email: 'marcus.reed@coolvane.example',
+      name: 'Marcus Reed',
+      userId: null,
+      teamMemberId: TEAM.marcus,
+      baseSalary: 6800,
+      active: true,
+      updatedAt: iso,
+    },
+  ]
+  await salesProfileStore.mutate((current) => {
+    const map = new Map(current.map((p) => [p.email, p]))
+    for (const p of profiles) map.set(p.email, p)
+    return Array.from(map.values())
+  })
+
+  const targets: SalesTargetRecord[] = [
+    {
+      email: 'priya.shah@coolvane.example',
+      month,
+      revenueTarget: 45000,
+      dealsTarget: 6,
+      quotesTarget: 12,
+      commissionRate: 0.04,
+      updatedAt: iso,
+      updatedBy: 'seed',
+    },
+    {
+      email: 'marcus.reed@coolvane.example',
+      month,
+      revenueTarget: 28000,
+      dealsTarget: 4,
+      quotesTarget: 8,
+      commissionRate: 0.03,
+      updatedAt: iso,
+      updatedBy: 'seed',
+    },
+  ]
+  await salesTargetStore.mutate((current) => {
+    const map = new Map(current.map((t) => [`${t.email}:${t.month}`, t]))
+    for (const t of targets) map.set(`${t.email}:${t.month}`, t)
+    return Array.from(map.values())
+  })
+
+  await structureStore.mutate((current) => ({
+    ...current,
+    [TEAM.marcus]: {
+      memberId: TEAM.marcus,
+      components: [
+        { id: 'basic', name: 'Basic salary', kind: 'earning', mode: 'fixed', value: 5200, base: 'gross', taxable: true },
+        { id: 'field', name: 'Field allowance', kind: 'earning', mode: 'fixed', value: 1600, base: 'gross', taxable: true },
+        { id: 'tax', name: 'Withholding tax', kind: 'deduction', mode: 'percent', value: 12, base: 'gross', taxable: false },
+      ],
+      updatedAt: iso,
+    },
+    [TEAM.priya]: {
+      memberId: TEAM.priya,
+      components: [
+        { id: 'basic', name: 'Basic salary', kind: 'earning', mode: 'fixed', value: 6500, base: 'gross', taxable: true },
+        { id: 'eng', name: 'Engineering allowance', kind: 'earning', mode: 'fixed', value: 1700, base: 'gross', taxable: true },
+        { id: 'tax', name: 'Withholding tax', kind: 'deduction', mode: 'percent', value: 14, base: 'gross', taxable: false },
+      ],
+      updatedAt: iso,
+    },
+    [TEAM.luis]: {
+      memberId: TEAM.luis,
+      components: [
+        { id: 'basic', name: 'Basic salary', kind: 'earning', mode: 'fixed', value: 4200, base: 'gross', taxable: true },
+        { id: 'van', name: 'Service allowance', kind: 'earning', mode: 'fixed', value: 1000, base: 'gross', taxable: true },
+        { id: 'tax', name: 'Withholding tax', kind: 'deduction', mode: 'percent', value: 10, base: 'gross', taxable: false },
+      ],
+      updatedAt: iso,
+    },
+  }))
+
+  const attendance: AttendanceRecord[] = [
+    { id: 'demo-att-1', memberId: TEAM.marcus, date: date(-2), status: 'present', hours: 8, overtimeHours: 1.5, note: 'Chiller plant commissioning', createdAt: iso, updatedAt: iso },
+    { id: 'demo-att-2', memberId: TEAM.priya, date: date(-2), status: 'remote', hours: 8, overtimeHours: 0, note: 'Load calculations & quotes', createdAt: iso, updatedAt: iso },
+    { id: 'demo-att-3', memberId: TEAM.luis, date: date(-2), status: 'present', hours: 8, overtimeHours: 0, note: 'Cassette service route', createdAt: iso, updatedAt: iso },
+    { id: 'demo-att-4', memberId: TEAM.marcus, date: date(-1), status: 'present', hours: 8, overtimeHours: 0, note: 'McKinney HQ inspection', createdAt: iso, updatedAt: iso },
+    { id: 'demo-att-5', memberId: TEAM.priya, date: date(-1), status: 'present', hours: 8, overtimeHours: 1, note: 'Client site walkthrough', createdAt: iso, updatedAt: iso },
+    { id: 'demo-att-6', memberId: TEAM.luis, date: date(-1), status: 'half-day', hours: 4, overtimeHours: 0, note: 'Morning route only', createdAt: iso, updatedAt: iso },
+  ]
+  await attendanceStore.mutate((current) => attendance.reduce(upsert, current))
+
+  const leaves: LeaveRequest[] = [
+    {
+      id: 'demo-leave-1',
+      memberId: TEAM.luis,
+      type: 'paid',
+      from: date(4),
+      to: date(5),
+      note: 'Scheduled family travel',
+      status: 'approved',
+      createdAt: iso,
+      updatedAt: iso,
+    },
+    {
+      id: 'demo-leave-2',
+      memberId: TEAM.marcus,
+      type: 'sick',
+      from: date(9),
+      to: date(9),
+      note: 'Dental appointment',
+      status: 'pending',
+      createdAt: iso,
+      updatedAt: iso,
+    },
+  ]
+  await leaveStore.mutate((current) => leaves.reduce(upsert, current))
+
+  const advances: SalaryAdvance[] = [
+    {
+      id: 'demo-adv-1',
+      memberId: TEAM.luis,
+      date: date(-6),
+      amount: 400,
+      note: 'Tool kit upgrade advance',
+      recoverInPeriod: month,
+      createdAt: iso,
+      updatedAt: iso,
+    },
+  ]
+  await advanceStore.mutate((current) => advances.reduce(upsert, current))
+}
+
 async function main() {
   await seedCustomers()
   await seedSites()
@@ -1188,6 +1341,7 @@ async function main() {
   await seedInvoices()
   await seedLeads()
   await seedTeamAndPayroll()
+  await seedSalesAndPayrollPro()
   await seedExpenses()
   await seedReminders()
   await seedPreferencesAndSignups()

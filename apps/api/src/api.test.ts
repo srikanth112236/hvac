@@ -715,7 +715,7 @@ describe('email two-factor authentication', () => {
 describe('permissions matrix', () => {
   it('exposes the matrix and enforces role-specific writes', async () => {
     const matrix = await admin.get('/api/v1/admin/permissions').expect(200)
-    expect(matrix.body.data.roles).toEqual(['owner', 'admin', 'manager', 'accountant', 'viewer'])
+    expect(matrix.body.data.roles).toEqual(['owner', 'admin', 'manager', 'sales', 'accountant', 'viewer'])
     expect(matrix.body.data.permissions.length).toBeGreaterThanOrEqual(8)
     expect(matrix.body.data.matrix.owner.length).toBe(matrix.body.data.permissions.length)
     expect(matrix.body.data.matrix.viewer).toEqual(['data.read'])
@@ -761,6 +761,107 @@ describe('permissions matrix', () => {
       .expect(403)
     await accountant.get('/api/v1/admin/export').expect(403)
     await accountant.get('/api/v1/admin/users').expect(403)
+  })
+})
+
+describe('sales desk isolation', () => {
+  it('scopes a sales account to its assigned book and blocks the admin API', async () => {
+    const stamp = Date.now()
+    const salesEmail = `sales-desk-${stamp}@test.local`
+    const ownName = `Sales Own ${stamp}`
+    const otherName = `Sales Other ${stamp}`
+
+    await adminHeaders(admin.post('/api/v1/admin/users'))
+      .send({
+        name: 'Sales Desk Test',
+        email: salesEmail,
+        password: 'SalesPass123!',
+        role: 'sales',
+      })
+      .expect(201)
+
+    const own = await request(app)
+      .post('/api/v1/leads')
+      .set('Origin', ORIGIN)
+      .send({
+        name: ownName,
+        email: `sales-own-${stamp}@example.com`,
+        phone: '2145550301',
+        message: 'Assigned lead for isolation testing.',
+        urgency: 'normal',
+      })
+      .expect(201)
+    const other = await request(app)
+      .post('/api/v1/leads')
+      .set('Origin', ORIGIN)
+      .send({
+        name: otherName,
+        email: `sales-other-${stamp}@example.com`,
+        phone: '2145550302',
+        message: 'Unassigned lead that sales must not see.',
+        urgency: 'normal',
+      })
+      .expect(201)
+
+    await adminHeaders(admin.post('/api/v1/sales/leads/assign'))
+      .send({ refs: [own.body.data.ref], owner: salesEmail })
+      .expect(200)
+
+    const sales = request.agent(app)
+    await sales
+      .post('/api/v1/auth/login')
+      .set('Origin', ORIGIN)
+      .send({ email: salesEmail, password: 'SalesPass123!' })
+      .expect(200)
+
+    const workspace = await sales.get('/api/v1/sales/workspace').expect(200)
+    expect(workspace.body.data.scope.mode).toBe('own')
+    expect(workspace.body.data.leads.map((lead: { ref: string }) => lead.ref)).toEqual([
+      own.body.data.ref,
+    ])
+    await sales.get('/api/v1/admin/leads').expect(403)
+    await sales.get('/api/v1/admin/payroll/overview').expect(403)
+
+    await adminHeaders(sales.patch(`/api/v1/sales/leads/${other.body.data.ref}`))
+      .send({ status: 'contacted' })
+      .expect(403)
+    await adminHeaders(sales.patch(`/api/v1/sales/leads/${own.body.data.ref}`))
+      .send({ status: 'contacted' })
+      .expect(200)
+
+    await adminHeaders(admin.put(`/api/v1/sales/targets/${encodeURIComponent(salesEmail)}`))
+      .send({
+        month: workspace.body.data.month,
+        revenueTarget: 250_000,
+        dealsTarget: 10,
+        quotesTarget: 15,
+        commissionRate: 6,
+      })
+      .expect(200)
+    const retargeted = await sales.get('/api/v1/sales/workspace').expect(200)
+    expect(retargeted.body.data.target.revenueTarget).toBe(250_000)
+    await adminHeaders(sales.put(`/api/v1/sales/targets/${encodeURIComponent(salesEmail)}`))
+      .send({
+        month: workspace.body.data.month,
+        revenueTarget: 1,
+        dealsTarget: 1,
+        quotesTarget: 1,
+        commissionRate: 1,
+      })
+      .expect(403)
+
+    await adminHeaders(
+      sales.patch(`/api/v1/sales/reps/${encodeURIComponent(salesEmail)}`),
+    )
+      .send({ active: false })
+      .expect(403)
+    await adminHeaders(admin.patch(`/api/v1/sales/reps/${encodeURIComponent(salesEmail)}`))
+      .send({ active: false })
+      .expect(200)
+    await sales.get('/api/v1/sales/workspace').expect(403)
+    await adminHeaders(admin.patch(`/api/v1/sales/reps/${encodeURIComponent(salesEmail)}`))
+      .send({ active: true })
+      .expect(200)
   })
 })
 

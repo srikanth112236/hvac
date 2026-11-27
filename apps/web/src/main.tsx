@@ -72,3 +72,13 @@ if (hasBootstrap && container.hasChildNodes()) {
 } else {
   createRoot(container).render(tree)
 }
+
+// Installable app shell. The worker is network-first for navigation and only
+// caches static build assets, so live admin and portal responses stay fresh.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((error) => {
+      console.warn('[coolvane] service worker registration failed', error)
+    })
+  })
+}

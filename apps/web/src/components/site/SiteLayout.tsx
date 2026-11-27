@@ -3,6 +3,7 @@ import { ConsentBanner } from '@/components/site/ConsentBanner'
 import { SiteFooter } from '@/components/site/SiteFooter'
 import { SiteHeader } from '@/components/site/SiteHeader'
 import { StickyActions } from '@/components/site/StickyActions'
+import { PwaInstallPrompt } from '@/components/site/PwaInstallPrompt'
 
 /**
  * Public marketing shell: announcement bar, sticky header, footer and the
@@ -20,6 +21,7 @@ export function SiteLayout() {
       <SiteFooter />
       <StickyActions />
       <ConsentBanner />
+      <PwaInstallPrompt />
     </div>
   )
 }

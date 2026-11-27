@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0A0D10" />
+    <title>Offline · Coolvane HVAC</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: #0a0d10;
+        color: #e8eef2;
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+      }
+      main { width: min(520px, 100%); border: 1px solid #26303a; padding: 32px; }
+      .mark { font: 700 20px/1 ui-monospace, monospace; color: #94c8e5; letter-spacing: 0.08em; }
+      .eyebrow { margin-top: 28px; font: 11px/1.4 ui-monospace, monospace; letter-spacing: 0.14em; text-transform: uppercase; color: #6b7783; }
+      h1 { margin: 10px 0 0; font-size: clamp(28px, 6vw, 40px); line-height: 1.05; font-weight: 600; }
+      p { margin: 14px 0 0; color: #aab7c2; line-height: 1.65; font-size: 14px; }
+      a { display: inline-flex; margin-top: 24px; border: 1px solid #94c8e5; padding: 11px 16px; color: #94c8e5; text-decoration: none; font: 11px ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; }
+      .line { margin-top: 28px; border-top: 1px solid #26303a; padding-top: 14px; font: 10px ui-monospace, monospace; color: #6b7783; text-transform: uppercase; letter-spacing: 0.1em; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark">CV</div>
+      <div class="eyebrow">Connection paused</div>
+      <h1>You are offline.</h1>
+      <p>The Coolvane site is saved for fast access, but this page needs a connection. Check your network and try again — your saved work is not affected.</p>
+      <a href="/">Try again</a>
+      <div class="line">Coolvane HVAC · field operations</div>
+    </main>
+  </body>
+</html>

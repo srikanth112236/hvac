@@ -109,6 +109,13 @@ app.use(
   express.static(dist, {
     index: false,
     setHeaders(res, filePath) {
+      if (filePath.endsWith(`${path.sep}sw.js`)) {
+        res.setHeader('Cache-Control', 'no-cache')
+      }
+      if (filePath.endsWith(`${path.sep}manifest.webmanifest`)) {
+        res.setHeader('Content-Type', 'application/manifest+json')
+        res.setHeader('Cache-Control', 'public, max-age=3600')
+      }
       if (filePath.includes(`${path.sep}assets${path.sep}`)) {
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
       }

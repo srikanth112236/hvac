@@ -2,7 +2,7 @@ import type { Response } from 'express'
 import PDFDocument from 'pdfkit'
 import type { InvoiceWithTotals, QuotationRecord, QuotationTotals } from '@hvac/shared'
 
-interface PdfBrand {
+export interface PdfBrand {
   name: string
   legalName: string
   contact: { phone: string; phoneDisplay?: string; email: string }

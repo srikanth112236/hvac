@@ -286,6 +286,52 @@ export function invoiceReminderEmail(input: {
   }
 }
 
+export function payslipEmail(input: {
+  name: string
+  period: string
+  net: string
+  paid: string
+  status: string
+  balance: string
+  note: string
+  brand: string
+}): { subject: string; html: string } {
+  return {
+    subject: `Payslip ${input.period} · ${input.brand}`,
+    html: SHELL(
+      `Payslip ${input.period}`,
+      `<p style="margin:0 0 14px">Hello ${escapeHtml(input.name)},</p>
+<p style="margin:0 0 14px">Your payslip for <strong>${escapeHtml(input.period)}</strong> is attached. Net pay is <strong>${escapeHtml(input.net)}</strong> and the current status is ${escapeHtml(input.status)}.</p>
+<p style="margin:0 0 14px">Paid to date: ${escapeHtml(input.paid)}. Balance remaining: <strong>${escapeHtml(input.balance)}</strong>.</p>
+<p style="margin:0 0 14px">${escapeHtml(input.note)}</p>
+<p style="margin:0">— ${escapeHtml(input.brand)}</p>`,
+      input.brand,
+    ),
+  }
+}
+
+export function profitLossEmail(input: {
+  month: string
+  revenue: string
+  costs: string
+  net: string
+  margin: string
+  note: string
+  brand: string
+}): { subject: string; html: string } {
+  return {
+    subject: `Profit & loss · ${input.month} · ${input.brand}`,
+    html: SHELL(
+      `Profit & loss · ${input.month}`,
+      `<p style="margin:0 0 14px">The ${escapeHtml(input.month)} profit & loss statement is attached.</p>
+<p style="margin:0 0 14px">Billed revenue <strong>${escapeHtml(input.revenue)}</strong> · operating costs <strong>${escapeHtml(input.costs)}</strong> · net <strong>${escapeHtml(input.net)}</strong> (${escapeHtml(input.margin)} margin).</p>
+<p style="margin:0 0 14px">${escapeHtml(input.note)}</p>
+<p style="margin:0">— ${escapeHtml(input.brand)}</p>`,
+      input.brand,
+    ),
+  }
+}
+
 export function passwordResetEmail(input: {
   name: string
   resetUrl: string

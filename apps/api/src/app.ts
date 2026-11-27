@@ -8,14 +8,17 @@ import { adminRouter } from './admin.js'
 import { agendaRouter } from './agenda.js'
 import { adminUsersRouter } from './adminUsersRouter.js'
 import { auditAdmin } from './audit.js'
-import { authRouter } from './auth.js'
+import { adminSessionFromCookie, authRouter } from './auth.js'
 import { allowedOrigins, IS_PROD, mailerConfigured } from './config.js'
 import { businessRouter } from './business.js'
+import { payrollRouter } from './payrollPro.js'
+import { reportsRouter } from './reports.js'
 import { contentRouter, readSiteContent } from './content.js'
 import { leadsRouter } from './leads.js'
 import { jobsRouter } from './jobStore.js'
 import { leadScoringRouter } from './leadScoring.js'
 import { rolesRouter } from './roles.js'
+import { salesRouter } from './sales.js'
 import { marketingRouter } from './marketing.js'
 import { mediaRouter, UPLOAD_ROOT } from './media.js'
 import { newsletterSignupsRouter } from './newsletterSignups.js'
@@ -100,6 +103,18 @@ app.use('/api/v1', portalAuthRouter)
 app.use('/api/v1', portalRouter)
 app.use('/api/v1', portalFileRouter)
 app.use('/api/v1', jobsRouter)
+app.use('/api/v1/sales', salesRouter)
+/** Keep sales accounts out of the operational admin API entirely. */
+app.use('/api/v1/admin', async (req, res, next) => {
+  const session = await adminSessionFromCookie(req.headers.cookie)
+  if (session?.role === 'sales') {
+    res.status(403).json({
+      error: { code: 'sales_portal_only', message: 'Sales accounts use the sales portal.' },
+    })
+    return
+  }
+  next()
+})
 app.use('/api/v1/admin', agendaRouter)
 app.use('/api/v1/admin', notificationsRouter)
 app.use('/api/v1/admin', auditAdmin)
@@ -108,6 +123,8 @@ app.use('/api/v1/admin', rolesRouter)
 app.use('/api/v1/admin', leadScoringRouter)
 app.use('/api/v1/admin', adminRouter)
 app.use('/api/v1/admin', businessRouter)
+app.use('/api/v1/admin', payrollRouter)
+app.use('/api/v1/admin', reportsRouter)
 app.use('/api/v1/admin', customersRouter)
 app.use('/api/v1/admin', portalAdminRouter)
 app.use('/api/v1/admin', marketingRouter)

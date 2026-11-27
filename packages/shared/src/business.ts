@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { AttendanceSummary, PayslipLine, SalaryComponent } from './payroll'
 
 /* -------------------------------------------------------------------------- */
 /*  Invoices, expenses, team and payroll                                      */
@@ -282,6 +283,32 @@ export interface PayrollRecord {
   notes: string
   createdAt: string
   updatedAt: string
+  /** Enhanced payslip fields. Older entries simply omit them. */
+  number?: string
+  gross?: number
+  earnings?: PayslipLine[]
+  deductionLines?: PayslipLine[]
+  attendance?: AttendanceSummary
+  advanceRecovery?: number
+  structure?: SalaryComponent[]
+  payments?: PayrollPayment[]
+  paidAmount?: number
+  balance?: number
+  emailSentAt?: string | null
+  /** Operator adjustments kept across recalculations. */
+  manualBonus?: number
+  manualDeductions?: number
+  /** Advance recovery applied by this specific payslip, used to recalculate safely. */
+  advanceAllocations?: { advanceId: string; amount: number }[]
+}
+
+export interface PayrollPayment {
+  id: string
+  amount: number
+  paidAt: string
+  method: InvoicePaymentMethod
+  reference: string
+  note: string
 }
 
 export const payrollInputSchema = z.object({

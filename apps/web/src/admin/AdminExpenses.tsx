@@ -252,6 +252,14 @@ export function AdminExpenses() {
         actions={
           <>
             <ButtonAnchor
+              href="/admin/reports/profit-loss"
+              variant="secondary"
+              size="sm"
+              icon="gauge"
+            >
+              Profit & loss
+            </ButtonAnchor>
+            <ButtonAnchor
               href={`/api/v1/admin/expenses/report.pdf?month=${monthKeys.current}`}
               download
               variant="secondary"

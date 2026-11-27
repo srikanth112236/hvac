@@ -489,7 +489,7 @@ function teamDescriptor(
       method === 'DELETE' || !id
         ? '/admin/team'
         : isPayroll
-          ? `/admin/team?payroll=${encodeURIComponent(id)}`
+          ? `/admin/team/payroll?payroll=${encodeURIComponent(id)}`
           : `/admin/team?member=${encodeURIComponent(id)}`,
     entityType: isPayroll ? 'payroll' : 'team',
     entityId: id || null,

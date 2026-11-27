@@ -58,8 +58,45 @@ const AdminInvoiceDetail = lazy(() =>
 const AdminExpenses = lazy(() =>
   import('@/admin/AdminExpenses').then((module) => ({ default: module.AdminExpenses })),
 )
+const AdminProfitLoss = lazy(() =>
+  import('@/admin/AdminProfitLoss').then((module) => ({ default: module.AdminProfitLoss })),
+)
+const AdminReports = lazy(() =>
+  import('@/admin/AdminReports').then((module) => ({ default: module.AdminReports })),
+)
+const AdminSales = lazy(() =>
+  import('@/admin/AdminSales').then((module) => ({ default: module.AdminSales })),
+)
+const SalesPortal = lazy(() =>
+  import('@/sales/SalesPortal').then((module) => ({ default: module.SalesPortal })),
+)
 const AdminTeam = lazy(() =>
   import('@/admin/AdminTeam').then((module) => ({ default: module.AdminTeam })),
+)
+const AdminTeamRoles = lazy(() =>
+  import('@/admin/AdminTeam').then((module) => ({ default: module.AdminTeamRoles })),
+)
+const AdminTeamDirectory = lazy(() =>
+  import('@/admin/AdminTeamDirectory').then((module) => ({ default: module.AdminTeamDirectory })),
+)
+const AdminSalaryStructures = lazy(() =>
+  import('@/admin/AdminSalaryStructures').then((module) => ({
+    default: module.AdminSalaryStructures,
+  })),
+)
+const AdminPayroll = lazy(() =>
+  import('@/admin/AdminPayroll').then((module) => ({ default: module.AdminPayroll })),
+)
+const AdminAttendance = lazy(() =>
+  import('@/admin/AdminAttendance').then((module) => ({ default: module.AdminAttendance })),
+)
+const AdminTeamLeave = lazy(() =>
+  import('@/admin/AdminTeamLeave').then((module) => ({ default: module.AdminTeamLeave })),
+)
+const AdminPayrollSettings = lazy(() =>
+  import('@/admin/AdminPayrollSettings').then((module) => ({
+    default: module.AdminPayrollSettings,
+  })),
 )
 const AdminContent = lazy(() =>
   import('@/admin/AdminContent').then((module) => ({ default: module.AdminContent })),
@@ -150,6 +187,14 @@ export function App() {
         </Route>
         <Route path="/portal" element={<PortalPage />} />
         <Route
+          path="/sales/*"
+          element={
+            <Suspense fallback={null}>
+              <SalesPortal />
+            </Suspense>
+          }
+        />
+        <Route
           path="/admin"
           element={
             <Suspense fallback={<AdminFallback />}>
@@ -173,7 +218,18 @@ export function App() {
           <Route path="invoices/:invoiceId" element={<AdminInvoiceDetail />} />
           <Route path="quotations" element={<AdminQuotations />} />
           <Route path="expenses" element={<AdminExpenses />} />
-          <Route path="team" element={<AdminTeam />} />
+          <Route path="reports" element={<AdminReports />} />
+          <Route path="sales" element={<AdminSales />} />
+          <Route path="reports/profit-loss" element={<AdminProfitLoss />} />
+          <Route path="team" element={<AdminTeam />}>
+            <Route index element={<AdminTeamDirectory />} />
+            <Route path="salary" element={<AdminSalaryStructures />} />
+            <Route path="payroll" element={<AdminPayroll />} />
+            <Route path="attendance" element={<AdminAttendance />} />
+            <Route path="leave" element={<AdminTeamLeave />} />
+            <Route path="settings" element={<AdminPayrollSettings />} />
+            <Route path="roles" element={<AdminTeamRoles />} />
+          </Route>
           <Route path="content" element={<ContentStudioV2 />} />
           <Route path="content/classic" element={<AdminContent />} />
           <Route path="content/revisions" element={<AdminRevisions />} />

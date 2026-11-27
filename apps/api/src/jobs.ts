@@ -30,6 +30,7 @@ import { buildExpenseReportPdf } from './expensePdf.js'
 import { reminderStore } from './reminders.js'
 import { createStore, DATA_DIR } from './store.js'
 import { quotationTotals } from '@hvac/shared'
+import { autoSendProfitLossReport } from './financeReports.js'
 import { hourInZone, startOfTodayInZone, todayInZone, zonedTimeToUtc } from './time.js'
 
 interface JobState {
@@ -517,6 +518,7 @@ async function tick(): Promise<void> {
     await runAmcReminders(now)
     await runDailyDigest(now)
     await runMonthlyExpenseReport(now)
+    await autoSendProfitLossReport(now)
     await runBackup(now)
     await runRetention()
   } catch (error) {

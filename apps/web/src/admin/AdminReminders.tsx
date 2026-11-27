@@ -252,7 +252,7 @@ function SummaryCard({
       <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-fg-faint">
         {label}
       </span>
-      <p className={`t-num mt-3 text-h2 leading-none ${toneClass}`}>{value}</p>
+      <p className={`t-metric mt-3 ${toneClass}`}>{value}</p>
       <p className="mt-2 text-[10px] leading-snug text-fg-faint">{note}</p>
     </div>
   )

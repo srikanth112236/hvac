@@ -217,6 +217,34 @@ export function requireWriteRole(...roles: AdminRole[]) {
   }
 }
 
+/** The sales portal is for sales staff; owners, admins and managers can inspect it. */
+export function requireSalesAccess(_req: Request, res: Response, next: NextFunction): void {
+  const admin = res.locals.admin as Session | undefined
+  if (!admin) {
+    res.status(401).json({ error: { code: 'unauthorised', message: 'Sign in to the sales portal.' } })
+    return
+  }
+  if (!['owner', 'admin', 'manager', 'sales'].includes(admin.role)) {
+    res.status(403).json({
+      error: { code: 'forbidden_role', message: 'This account does not have sales access.' },
+    })
+    return
+  }
+  next()
+}
+
+/** Staffing, targets and assignments are management-only actions. */
+export function requireSalesManager(_req: Request, res: Response, next: NextFunction): void {
+  const admin = res.locals.admin as Session | undefined
+  if (!admin || !['owner', 'admin', 'manager'].includes(admin.role)) {
+    res.status(403).json({
+      error: { code: 'forbidden_role', message: 'Only managers can change sales settings.' },
+    })
+    return
+  }
+  next()
+}
+
 /**
  * Permission-based write guard. Reads stay available to every authenticated
  * role; the editable matrix (Settings → team → roles) is the source of truth.

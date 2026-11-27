@@ -7,11 +7,13 @@
 html {
   -webkit-text-size-adjust: 100%;
   scroll-behavior: auto; /* Lenis owns scrolling when active */
+  overflow-x: clip;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
+  overflow-x: clip;
   background-color: rgb(var(--base));
   color: rgb(var(--fg));
   font-family: var(--font-body);
@@ -30,6 +32,12 @@ body {
   position: relative;
   z-index: 1;
   isolation: isolate;
+}
+
+/* Grid children in the workspace must be allowed to shrink; wide tables then
+   scroll inside their own frame instead of widening the page. */
+#admin-main .grid > * {
+  min-width: 0;
 }
 
 h1,
@@ -194,6 +202,16 @@ body::after {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
+}
+
+/* Fluid metric value: large enough to lead a card, never wider than its column. */
+.t-metric {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(1.35rem, 2.1vw, 2.15rem);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
 }
 
 /* --- crafted details ---------------------------------------------------- */

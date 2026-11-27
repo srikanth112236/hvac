@@ -30,6 +30,29 @@ import type {
   PayrollInput,
   PayrollPatch,
   PayrollRecord,
+  PayrollSettings,
+  PayrollSettingsInput,
+  SalaryStructure,
+  SalaryComponent,
+  AttendanceInput,
+  AttendanceRecord,
+  LeaveInput,
+  LeaveRequest,
+  AdvanceInput,
+  SalaryAdvance,
+  ProfitLossReport,
+  ProfitLossHistoryEntry,
+  ReportDelivery,
+  ReportSettings,
+  ReportSettingsInput,
+  ReportsAnalytics,
+  SalesFollowUpCreate,
+  SalesFollowUpPatch,
+  SalesLeadPatch,
+  SalesQuoteStatus,
+  SalesRepPatch,
+  SalesTargetSave,
+  SalesWorkspace,
   QuotationRecord,
   QuotationRevision,
   QuotationTotals,
@@ -193,6 +216,46 @@ export interface PayrollSummary {
   activeTeam: number
   monthlyPayrollCommitment: number
   count: number
+}
+
+export interface PayrollAttentionItem {
+  id: string
+  kind: 'missing' | 'due' | 'partial' | 'overdue'
+  title: string
+  message: string
+  amount: number
+  memberId: string
+  payrollId: string | null
+}
+
+export interface PayrollOverview {
+  period: string
+  records: PayrollRecord[]
+  team: TeamMember[]
+  settings: PayrollSettings
+  daysToPayday: number
+  windowOpen: boolean
+  payDate: string
+  attention: PayrollAttentionItem[]
+  summary: {
+    count: number
+    paid: number
+    pending: number
+    total: number
+    paidAmount: number
+  }
+}
+
+export interface PreparedPayroll {
+  period: string
+  created: number
+  updated: number
+  skipped: number
+  records: PayrollRecord[]
+  attention: PayrollAttentionItem[]
+  windowOpen: boolean
+  daysToPayday: number
+  settings: PayrollSettings
 }
 
 interface ApiErrorBody {
@@ -593,6 +656,146 @@ export const adminApi = {
       summary: PayrollSummary
     }>('/admin/payroll/generate', { method: 'POST', body: JSON.stringify({ period }) }),
 
+  payrollSettings: () =>
+    request<{ data: PayrollSettings }>('/admin/payroll/settings').then((payload) => payload.data),
+  savePayrollSettings: (input: PayrollSettingsInput) =>
+    request<{ data: PayrollSettings }>('/admin/payroll/settings', {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }).then((payload) => payload.data),
+  salaryStructures: () =>
+    request<{ data: Record<string, SalaryStructure> }>('/admin/payroll/structures').then(
+      (payload) => payload.data,
+    ),
+  saveSalaryStructure: (memberId: string, components: SalaryComponent[]) =>
+    request<{ data: SalaryStructure }>(
+      `/admin/payroll/structures/${encodeURIComponent(memberId)}`,
+      { method: 'PUT', body: JSON.stringify({ components }) },
+    ).then((payload) => payload.data),
+  attendance: (period: string, memberId?: string) =>
+    request<{ data: AttendanceRecord[] }>(
+      `/admin/attendance?period=${encodeURIComponent(period)}${memberId ? `&memberId=${encodeURIComponent(memberId)}` : ''}`,
+    ).then((payload) => payload.data),
+  saveAttendance: (memberId: string, date: string, input: AttendanceInput) =>
+    request<{ data: AttendanceRecord }>(
+      `/admin/attendance/${encodeURIComponent(memberId)}/${encodeURIComponent(date)}`,
+      { method: 'PUT', body: JSON.stringify(input) },
+    ).then((payload) => payload.data),
+  deleteAttendance: (memberId: string, date: string) =>
+    request<{ data: { deleted: string } }>(
+      `/admin/attendance/${encodeURIComponent(memberId)}/${encodeURIComponent(date)}`,
+      { method: 'DELETE' },
+    ),
+  leaves: (period: string) =>
+    request<{ data: LeaveRequest[] }>(
+      `/admin/leaves?period=${encodeURIComponent(period)}`,
+    ).then((payload) => payload.data),
+  createLeave: (input: LeaveInput) =>
+    request<{ data: LeaveRequest }>('/admin/leaves', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }).then((payload) => payload.data),
+  patchLeave: (id: string, patch: Partial<LeaveInput>) =>
+    request<{ data: LeaveRequest }>(`/admin/leaves/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }).then((payload) => payload.data),
+  deleteLeave: (id: string) =>
+    request<{ data: { deleted: string } }>(`/admin/leaves/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }),
+  advances: () =>
+    request<{ data: SalaryAdvance[] }>('/admin/advances').then((payload) => payload.data),
+  createAdvance: (input: AdvanceInput) =>
+    request<{ data: SalaryAdvance }>('/admin/advances', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }).then((payload) => payload.data),
+  deleteAdvance: (id: string) =>
+    request<{ data: { deleted: string } }>(`/admin/advances/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }),
+  payrollOverview: (period: string) =>
+    request<{ data: PayrollOverview }>(
+      `/admin/payroll/overview?period=${encodeURIComponent(period)}`,
+    ).then((payload) => payload.data),
+  preparePayroll: (period: string) =>
+    request<{ data: PreparedPayroll; summary: PayrollSummary }>('/admin/payroll/prepare', {
+      method: 'POST',
+      body: JSON.stringify({ period }),
+    }),
+  payPayroll: (
+    id: string,
+    input: {
+      amount: number
+      method: InvoicePaymentInput['method']
+      reference?: string
+      note?: string
+      paidAt?: string
+    },
+  ) =>
+    request<{ data: PayrollRecord }>(`/admin/payroll/${encodeURIComponent(id)}/payment`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }).then((payload) => payload.data),
+  adjustPayroll: (id: string, input: { bonus: number; deductions: number }) =>
+    request<{ data: PayrollRecord }>(`/admin/payroll/${encodeURIComponent(id)}/adjustments`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }).then((payload) => payload.data),
+  remindPayroll: (id: string) =>
+    request<{ data: { reminded: boolean; id: string } }>(
+      `/admin/payroll/${encodeURIComponent(id)}/remind`,
+      { method: 'POST' },
+    ),
+  remindPayrollPeriod: (period: string) =>
+    request<{ data: { period: string; count: number } }>('/admin/payroll/remind-period', {
+      method: 'POST',
+      body: JSON.stringify({ period }),
+    }),
+  emailPayslip: (id: string) =>
+    request<{ data: PayrollRecord; delivery: { ok: boolean; status: string; error?: string } }>(
+      `/admin/payroll/${encodeURIComponent(id)}/email`,
+      { method: 'POST' },
+    ),
+
+  profitLoss: (month: string) =>
+    request<{ data: ProfitLossReport; meta: { settings: ReportSettings } }>(
+      `/admin/reports/profit-loss?month=${encodeURIComponent(month)}`,
+    ),
+  profitLossHistory: (months = 12) =>
+    request<{ data: ProfitLossHistoryEntry[] }>(
+      `/admin/reports/profit-loss/history?months=${months}`,
+    ).then((payload) => payload.data),
+  profitLossDeliveries: (month: string) =>
+    request<{ data: ReportDelivery[] }>(
+      `/admin/reports/profit-loss/deliveries?month=${encodeURIComponent(month)}`,
+    ).then((payload) => payload.data),
+  sendProfitLoss: (month: string, recipients: string[]) =>
+    request<{
+      data: {
+        status: 'sent' | 'skipped' | 'failed'
+        sent: number
+        skipped: number
+        failed: number
+        recipients: string[]
+        deliveries: ReportDelivery[]
+      }
+      report: ProfitLossReport
+    }>('/admin/reports/profit-loss/send', {
+      method: 'POST',
+      body: JSON.stringify({ month, recipients }),
+    }),
+  reportSettings: () =>
+    request<{ data: ReportSettings }>('/admin/reports/settings').then(
+      (payload) => payload.data,
+    ),
+  saveReportSettings: (input: ReportSettingsInput) =>
+    request<{ data: ReportSettings }>('/admin/reports/settings', {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }).then((payload) => payload.data),
+
   content: () => request<{ data: SiteContent }>('/admin/content').then((payload) => payload.data),
   saveContent: (content: SiteContentPayload, baseVersion?: number) =>
     request<{
@@ -710,6 +913,53 @@ export const adminApi = {
     request<{ data: { customer: CustomerAccount; file: CustomerPortalFile } }>(
       `/admin/customers/${encodeURIComponent(id)}/file`,
     ).then((payload) => payload.data),
+  analytics: (months = 6) =>
+    request<{ data: ReportsAnalytics }>(`/admin/reports/analytics?months=${months}`).then(
+      (payload) => payload.data,
+    ),
+
+  salesWorkspace: (month: string, rep?: string) => {
+    const query = new URLSearchParams({ month })
+    if (rep) query.set('rep', rep)
+    return request<{ data: SalesWorkspace }>(`/sales/workspace?${query}`).then(
+      (payload) => payload.data,
+    )
+  },
+  salesUpdateLead: (ref: string, patch: SalesLeadPatch) =>
+    request<{ data: unknown }>(`/sales/leads/${encodeURIComponent(ref)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }).then((payload) => payload.data),
+  salesAssignLeads: (refs: string[], owner: string | null) =>
+    request<{ data: { assigned: number; owner: string | null } }>('/sales/leads/assign', {
+      method: 'POST',
+      body: JSON.stringify({ refs, owner }),
+    }).then((payload) => payload.data),
+  salesCreateFollowUp: (input: SalesFollowUpCreate) =>
+    request<{ data: unknown }>('/sales/follow-ups', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }).then((payload) => payload.data),
+  salesUpdateFollowUp: (id: string, patch: SalesFollowUpPatch) =>
+    request<{ data: unknown }>(`/sales/follow-ups/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }).then((payload) => payload.data),
+  salesUpdateQuoteStatus: (id: string, status: SalesQuoteStatus['status']) =>
+    request<{ data: unknown }>(`/sales/quotations/${encodeURIComponent(id)}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }).then((payload) => payload.data),
+  salesSaveTarget: (email: string, input: SalesTargetSave) =>
+    request<{ data: unknown }>(`/sales/targets/${encodeURIComponent(email)}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }).then((payload) => payload.data),
+  salesUpdateRep: (email: string, patch: SalesRepPatch) =>
+    request<{ data: unknown }>(`/sales/reps/${encodeURIComponent(email)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }).then((payload) => payload.data),
   createCustomerSite: (id: string, input: CustomerSiteInput) =>
     request<{ data: CustomerSite }>(`/admin/customers/${encodeURIComponent(id)}/sites`, {
       method: 'POST',
